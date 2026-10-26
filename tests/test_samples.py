@@ -103,6 +103,21 @@ def test_package_without_the_soundfont_is_rejected_and_leaves_nothing_behind(tmp
     assert not cache.exists() or not any(cache.iterdir())
 
 
+def test_package_with_an_unreadable_copyright_is_rejected_and_leaves_nothing_behind(tmp_path, deb, monkeypatch):
+    extractfile = tarfile.TarFile.extractfile
+
+    def missing_copyright(self, member, *args, **kwargs):
+        if member.name.removeprefix("./") == samples.COPYRIGHT_MEMBER:
+            return None
+        return extractfile(self, member, *args, **kwargs)
+
+    monkeypatch.setattr(tarfile.TarFile, "extractfile", missing_copyright)
+    cache = tmp_path / "cache"
+    with pytest.raises(samples.SetupError, match="copyright"):
+        samples.setup_samples(cache, url=deb[0], sha256=deb[1])
+    assert not cache.exists() or not any(cache.iterdir())
+
+
 def test_setup_is_idempotent_and_never_downloads_twice(tmp_path, deb):
     url, sha = deb
     cache = tmp_path / "cache"
@@ -159,7 +174,9 @@ def test_engine_uses_samples_when_installed():
 @needs_sf2
 @pytest.mark.parametrize("name", ["piano", "rhodes", "nylon", "pad"])
 def test_sampled_tonal_instruments_respect_duration_and_velocity(name):
-    inst = samples.SampleInstruments(samples.load_renderer(REAL), np.random.default_rng(0))
+    renderer = samples.load_renderer(REAL)
+    assert renderer is not None
+    inst = samples.SampleInstruments(renderer, np.random.default_rng(0))
     fn = getattr(inst, name)
     loud, soft, long = fn(60, 0.5, 1.0), fn(60, 0.5, 0.4), fn(60, 1.5, 1.0)
     for x in (loud, soft, long):
@@ -172,12 +189,15 @@ def test_sampled_tonal_instruments_respect_duration_and_velocity(name):
 
 @needs_sf2
 def test_sampled_drums_and_sub_render():
-    inst = samples.SampleInstruments(samples.load_renderer(REAL), np.random.default_rng(0))
+    renderer = samples.load_renderer(REAL)
+    assert renderer is not None
+    inst = samples.SampleInstruments(renderer, np.random.default_rng(0))
     for x in (inst.kick(), inst.brush(), inst.rim(), inst.hat(), inst.hat(0.6), inst.sub(36, 0.8)):
         assert x.ndim == 1 and np.all(np.isfinite(x)) and np.max(np.abs(x)) > 0.01
 
 
 def _engine(**kw):
+    assert REAL is not None
     return Engine(samples=REAL, **kw)
 
 
@@ -214,6 +234,7 @@ def test_samples_backend_renders_more_than_ten_times_real_time():
 def test_a_note_renders_the_same_whatever_was_rendered_before(program):
     """FluidSynth carries voice state between notes for some presets; every note must be history-free."""
     r = samples.load_renderer(REAL)
+    assert r is not None
     first = r.note(0, 0, program, 64, 90, 0.4, 0.3)
     for other in (81, 0, 38, 90):
         r.note(0, 0, other, 50, 100, 0.3, 0.2)

@@ -16,10 +16,11 @@ import tempfile
 import threading
 import urllib.request
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Callable
+from typing import Any, cast
 
 import numpy as np
 
@@ -129,31 +130,39 @@ class _Slice:
 
 def _extract(deb: Path, cache: Path, temps: list[Path]) -> tuple[Path, str]:
     """Stream `data.tar.*` out of the .deb (an `ar` archive) and pull the soundfont and copyright file."""
-    with open(deb, "rb") as f:
-        if f.read(8) != b"!<arch>\n":
-            raise SetupError("not a Debian package")
-        while header := f.read(60):
-            if len(header) < 60:
-                break
-            name, size = header[:16].decode().strip().rstrip("/"), int(header[48:58])
-            if not name.startswith("data.tar"):
-                f.seek(size + (size & 1), os.SEEK_CUR)
-                continue
-            sf2, copyright = None, None
-            with tarfile.open(fileobj=_Slice(f, size), mode="r|*") as tf:
-                for m in tf:
-                    member = m.name.removeprefix("./")
-                    if member == COPYRIGHT_MEMBER and m.isfile():
-                        copyright = tf.extractfile(m).read().decode("utf-8")
-                    elif member == SF2_MEMBER and m.isfile():
-                        sf2 = _temp(cache, temps)
-                        src = tf.extractfile(m)
-                        with open(sf2, "wb") as out:
-                            while chunk := src.read(CHUNK):
-                                out.write(chunk)
-            if sf2 is None or copyright is None:
-                raise SetupError(f"the package has no {SF2_NAME} or no copyright file")
-            return sf2, copyright
+    try:
+        with open(deb, "rb") as f:
+            if f.read(8) != b"!<arch>\n":
+                raise SetupError("not a Debian package")
+            while header := f.read(60):
+                if len(header) < 60:
+                    break
+                name, size = header[:16].decode().strip().rstrip("/"), int(header[48:58])
+                if not name.startswith("data.tar"):
+                    f.seek(size + (size & 1), os.SEEK_CUR)
+                    continue
+                sf2, copyright = None, None
+                with tarfile.open(fileobj=cast(Any, _Slice(f, size)), mode="r|*") as tf:
+                    for m in tf:
+                        member = m.name.removeprefix("./")
+                        if member == COPYRIGHT_MEMBER and m.isfile():
+                            src = tf.extractfile(m)
+                            if src is None:
+                                raise SetupError("the package has an unreadable copyright file")
+                            copyright = src.read().decode("utf-8")
+                        elif member == SF2_MEMBER and m.isfile():
+                            sf2 = _temp(cache, temps)
+                            src = tf.extractfile(m)
+                            if src is None:
+                                raise SetupError(f"the package has an unreadable {SF2_NAME}")
+                            with open(sf2, "wb") as out:
+                                while chunk := src.read(CHUNK):
+                                    out.write(chunk)
+                if sf2 is None or copyright is None:
+                    raise SetupError(f"the package has no {SF2_NAME} or no copyright file")
+                return sf2, copyright
+    except (OSError, tarfile.TarError, UnicodeDecodeError, ValueError) as e:
+        raise SetupError(f"cannot extract package: {e}") from e
     raise SetupError("the package has no data archive")
 
 
