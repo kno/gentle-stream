@@ -14,7 +14,7 @@ Branch: `feat/autonomous-journey`, stacked on `feat/live-evolution` (M1, pushed 
 
 | ID | Specs | Route | Status | Commit |
 |----|-------|-------|--------|--------|
-| T1 PM-004 | S1, S4 | gentle-ai-worker, background; independent verify (Risk 4: journey commands from daemon threads applied on the render thread) | done (verified; J1-J5 correction pending commit) | fb03b31 |
+| T1 PM-004 | S1, S4 | gentle-ai-worker, background; independent verify (Risk 4: journey commands from daemon threads applied on the render thread) | done (verified; J1-J5 corrected) | fb03b31, bcbd588 |
 | T2 PM-005 | S2, S4 | same worker, continued after T1 commit | done | 9923a93 |
 | T3 PM-006 | S3, S4 | same worker, continued after T2 commit | pending | |
 
@@ -24,4 +24,4 @@ Branch: `feat/autonomous-journey`, stacked on `feat/live-evolution` (M1, pushed 
 - L2: T1 done fb03b31 (545 passed, known flake only; golden hashes unchanged; ctl/render differential identical vs a44779f). Independent verify mvp97xla-7-ueyr runs on a worktree of fb03b31 while T2 proceeds.
 - L3 (PM-004 verify mvp97xla-7-ueyr): S1 criteria 1-6 PASS, S4 PASS. Fix list for after T2 (separate commit): J1 MEDIUM a glide on a journey-owned field is overwritten every bar yet still reported as target, and takes over abruptly when the journey stops or releases (66.5 -> 112.4 bpm in one bar), contradicting "journey stop leaves the music as it is"; J2 LOW a journey queued then stopped in the same bar drops the glides it cancelled; J3 LOW `journey`/`journey_seconds` show a just-started journey before any of its bars rendered (relevant for PM-005 snapshots); J4 LOW `next` advances journey time by the dropped prebuffer (consistent with D2, document it); J5 INFO built-in Stage.to dicts are mutable module globals.
 - L4: T2 done 9923a93 (565 passed, known flake only; ctl/render differential identical except additive `journey` key). J1-J5 fixes in progress with the same worker. Decision (parent): a field driven by a running or queued journey cannot be glided (one-line error, exit 1); glides on a journey's fields are cancelled when the journey starts, not when queued.
-- L5: J1-J5 corrected pending commit: journey-owned fields reject direct glides atomically; glides are cancelled only when the journey starts; rendered-bar state avoids premature journey visibility; stage targets are immutable and hashable; README documents `next` advancing rendered journey time by the dropped buffer. Focused tests: 135 passed plus six known teardown-only daemon-race errors; LSP clean. 
+- L5: J1-J5 corrected in bcbd588: journey-owned fields reject direct glides atomically; glides are cancelled only when the journey starts; rendered-bar state avoids premature journey visibility; stage targets are immutable and hashable; README documents `next` advancing rendered journey time by the dropped buffer. Focused tests: 135 passed plus six known teardown-only daemon-race errors; LSP clean.
