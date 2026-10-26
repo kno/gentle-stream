@@ -280,6 +280,8 @@ class Composer:
         """Question/answer phrases from the motif; strong beats on chord tones, the answer ends on the tonic."""
         scale = self._scale(key)
         q, a, lift = DEVELOPMENT[name]
+        if a is None:
+            raise RuntimeError(f"missing answer transform for {name}")
         phrases = ((0, q), (4, a)) if n == 8 else ((4, a),)
         tonic = (self.ton + key) % 12
         last = scale[self.anchor]
@@ -333,8 +335,9 @@ class Composer:
                     m = min(cands, key=lambda c: abs(c - (lo + hi) / 2))
                 else:
                     want = 0 if lead is None or prev[1] is None else -np.sign(lead - prev[1])
-                    ways = [c for c in cands if np.sign(c - prev[0]) == want] if want else []
-                    m = min(ways or cands, key=lambda c: abs(c - prev[0]))
+                    prev_midi, _ = prev
+                    ways = [c for c in cands if np.sign(c - prev_midi) == want] if want else []
+                    m = min(ways or cands, key=lambda c: abs(c - prev_midi))
                 notes.append(Note(beat, m, ln))
                 prev = (m, lead)
             b.counter = tuple(notes)

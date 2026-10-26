@@ -15,6 +15,7 @@ cabasa 69, guiro 73-74, cowbell 56, timbales 65-66). Only originally composed ma
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import cast
 
 import numpy as np
 
@@ -88,7 +89,7 @@ class Instruments:
         if reg == "tango":                                                # the bandoneon-like low reed
             s = s + 0.35 * osc("saw", f / 2 * vib, n, self.sr, phase=0.3)
         cut = (2600 if reg == "tango" else 3800) * bright
-        s = lp(s, cut, self.sr) + 0.5 * bp(s, 1100, 3200, self.sr)
+        s = cast(np.ndarray, lp(s, cut, self.sr)) + 0.5 * cast(np.ndarray, bp(s, 1100, 3200, self.sr))
         bellows = adsr(n, self.sr, 0.045, 0.15, 0.85, 0.08, hold=dur) * (0.9 + 0.1 * np.minimum(1, t / 0.6))
         return s * bellows * REED_LEVEL[reg]
 
@@ -138,7 +139,7 @@ class Instruments:
         s = sum(a * np.sin(2 * np.pi * f * h * t) for h, a in ((0.5, 0.5), (1, 1.0), (2, 0.6), (3, 0.35), (4, 0.2)))
         if perc:                                                            # the drawbar organ's percussion click
             s = s + 0.6 * np.sin(2 * np.pi * f * 3 * t) * np.exp(-t * 22)
-        return lp(s, 5000, self.sr) * adsr(n, self.sr, 0.004, 0.05, 0.9, 0.05, hold=dur) * 0.22
+        return cast(np.ndarray, lp(s, 5000, self.sr)) * adsr(n, self.sr, 0.004, 0.05, 0.9, 0.05, hold=dur) * 0.22
 
     def counter(self, m, dur, vel=1.0):
         """The counter-melody on a soft drawbar organ."""
@@ -152,8 +153,8 @@ class Instruments:
 
     def _bass(self, m, dur, vel):
         n = int((dur + 0.05) * self.sr); t = self._t(n); f = mtof(m)
-        s = np.sin(2 * np.pi * f * t) + 0.3 * osc("triangle", f, n, self.sr) + 0.15 * lp(osc("saw", f, n, self.sr),
-                                                                                       900 + 600 * vel, self.sr)
+        s = np.sin(2 * np.pi * f * t) + 0.3 * osc("triangle", f, n, self.sr) + 0.15 * cast(np.ndarray, lp(osc("saw", f, n, self.sr),
+                                                                                       900 + 600 * vel, self.sr))
         env = adsr(n, self.sr, 0.004, 0.0, 1.0, 0.04, hold=dur) * (0.6 + 0.4 * np.exp(-t * 4))
         return distort(s * env * 1.3, 1.2) * vel * 0.65
 
@@ -338,7 +339,7 @@ class CumbiaGenre(Genre):
               "nylon": "off-beat nylon guitar chops / dry-reed accordion lead",
               "pad": "off-beat accordion chords / musette accordion lead"}
 
-    def instruments(self, rng, sr, sampled):
+    def instruments(self, rng: np.random.Generator, sr: int, sampled):
         return SampledVoices(sampled, rng, sr) if sampled is not None else Instruments(rng, sr)
 
     def start(self, piece):
@@ -350,7 +351,8 @@ class CumbiaGenre(Genre):
         """Plain triads, the cumbia harmony; chromatic dominants keep their seventh."""
         return Chord(chord.degree, chord.tones[:3]) if chord.degree else chord
 
-    def schedule(self, piece, p):
+    def schedule(self, piece, plan):
+        p = plan
         s, ins, add, st, rng = piece.style, piece.inst, piece.add, piece.state, piece.rng
         B = 60 / s.bpm
         e, k = p.energy, p.key_offset
@@ -360,7 +362,8 @@ class CumbiaGenre(Genre):
         segments = [(p.chord, 0.0)] + ([(p.passing, 2.0)] if p.passing is not None else [])
         voicings = []
         for chord, at in segments:
-            vc = piece.voice([x + k for x in chord.tones]); piece.center = float(np.mean(vc))
+            vc = piece.voice([x + k for x in chord.tones])
+            piece.center = int(np.mean(vc))
             pc = (piece.ton + chord.tones[0] + k) % 12            # the root too: a full triad on each stab
             root = min((m for m in range(36, 96) if m % 12 == pc), key=lambda m: abs(m - piece.center))
             voicings.append((at, sorted(set(vc) | {root})))
@@ -416,7 +419,8 @@ class CumbiaGenre(Genre):
             for n in p.counter:
                 add(ins.counter(n.midi, n.length * B * 0.9, 0.6), n.beat * B + 0.01, -0.3, 0.1)
 
-    def master(self, s):
+    def master(self, style):
+        s = style
         return Master(space=0.15 + 0.3 * s.space, reverb=0.04 + 0.1 * s.space, room=0.25 + 0.55 * s.space,
                       vinyl=0.0, wow=0.05, tone=int(min(16000, 4500 * 2.6 ** s.brightness)), drive=1.7,
                       threshold=-18.0, ratio=3.0)

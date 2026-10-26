@@ -12,6 +12,7 @@ the Electronic drum kit (bank 128, preset 24), with the procedural gated tail la
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import cast
 
 import numpy as np
 
@@ -129,7 +130,7 @@ class Instruments:
         else:
             s, cut = osc("saw", f, n, self.sr), 5000
         att = 0.06 if color == "pad" else 0.008
-        return lp(s, cut, self.sr) * adsr(n, self.sr, att, 0.2, 0.8, 0.15, hold=dur) * 0.5
+        return cast(np.ndarray, lp(s, cut, self.sr)) * cast(np.ndarray, adsr(n, self.sr, att, 0.2, 0.8, 0.15, hold=dur)) * 0.5
 
     def arp(self, m, dur, vel=1.0):
         d = _bucket(dur)
@@ -152,8 +153,8 @@ class Instruments:
         s = 0.6 * osc("saw", f, n, self.sr) + 0.4 * osc("square", f, n, self.sr, 0.25)
         cut = 260 + 900 * vel
         w = np.exp(-t * 18)
-        dark = lp(s, cut * 0.5, self.sr) + 0.5 * bp(s, cut * 0.4, cut * 0.65, self.sr)
-        bright = lp(s, cut * 1.6, self.sr) + 0.5 * bp(s, cut * 1.2, cut * 2.0, self.sr)
+        dark = cast(np.ndarray, lp(s, cut * 0.5, self.sr)) + 0.5 * cast(np.ndarray, bp(s, cut * 0.4, cut * 0.65, self.sr))
+        bright = cast(np.ndarray, lp(s, cut * 1.6, self.sr)) + 0.5 * cast(np.ndarray, bp(s, cut * 1.2, cut * 2.0, self.sr))
         env = adsr(n, self.sr, 0.003, 0.08, 0.7, 0.04, hold=dur)
         return distort((dark * (1 - w) + bright * w) * env * 1.4, 1.3) * vel * 0.6
 
@@ -294,7 +295,7 @@ class SynthwaveGenre(Genre):
     voices = {"piano": "brassy polysynth stabs / bright saw lead", "rhodes": "FM electric piano / square lead",
               "nylon": "plucked pulse synth", "pad": "detuned saw pad"}
 
-    def instruments(self, rng, sr, sampled):
+    def instruments(self, rng: np.random.Generator, sr: int, sampled):
         return SampledVoices(sampled, rng, sr) if sampled is not None else Instruments(rng, sr)
 
     def start(self, piece):
@@ -303,7 +304,8 @@ class SynthwaveGenre(Genre):
         piece.state["arp"] = ARP_SHAPES[int(r.integers(len(ARP_SHAPES)))]
         piece.state["open_hats"] = OPEN_HATS[int(r.integers(len(OPEN_HATS)))]
 
-    def schedule(self, piece, p):
+    def schedule(self, piece, plan):
+        p = plan
         s, ins, add, st = piece.style, piece.inst, piece.add, piece.state
         B = 60 / s.bpm; BAR = 4 * B
         e, k = p.energy, p.key_offset
@@ -314,7 +316,8 @@ class SynthwaveGenre(Genre):
             segments.append((p.passing, 2.0, 2.0))
         voicings = []
         for chord, at, beats in segments:
-            vc = piece.voice([x + k for x in chord.tones]); piece.center = float(np.mean(vc))
+            vc = piece.voice([x + k for x in chord.tones])
+            piece.center = cast(int, float(np.mean(vc)))
             root = piece.ton + 12 + (chord.tones[0] + k) % 12
             while root > min(vc) - 3:
                 root -= 12
@@ -383,7 +386,8 @@ class SynthwaveGenre(Genre):
             for n in p.counter:
                 add(ins.stab(s.chords, n.midi, n.length * B * 0.9, 0.6), n.beat * B + 0.02, -0.3, 0.08)
 
-    def master(self, s):
+    def master(self, style):
+        s = style
         return Master(space=0.45 + 0.55 * s.space, reverb=0.16 + 0.24 * s.space, room=0.35 + 1.2 * s.space,
                       vinyl=0.0, wow=0.25, tone=min(20000, int(6000 * 3 ** s.brightness)), drive=1.8)
 

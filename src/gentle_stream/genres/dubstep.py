@@ -19,6 +19,7 @@ program can follow a synced filter LFO).
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import cast
 
 import numpy as np
 from scipy.signal import sosfilt
@@ -133,7 +134,7 @@ class Instruments:
             y += w * sosfilt(_resonant(fc, RESONANCE, self.sr), s)
         y = hp(y, 70, self.sr)
         env = adsr(n, self.sr, 0.004, 0.05, 0.95, 0.015, hold=dur)
-        return distort(y * 0.8, 1.4) * env * 0.6
+        return cast(np.ndarray, distort(y * 0.8, 1.4)) * env * 0.6
 
     def growl(self, m, dur, beat, off, rates, depth=1.0, vel=1.0):
         """The wobble's growling twin: driven hard, then through vowel formants the LFO morphs from "o" to "a"."""
@@ -145,8 +146,8 @@ class Instruments:
         n = int((dur + 0.02) * self.sr)
         s = distort(self._saws(m, n) * 5, 1.0)
         w = self._curve(n, beat, off, rates, depth)
-        vowels = [sum(bp(s, a, b, self.sr) for a, b in bands) for bands in GROWL]
-        y = vowels[0] * (1 - w) + vowels[1] * w + 0.25 * lp(s, 250, self.sr)
+        vowels = [sum((cast(np.ndarray, bp(s, a, b, self.sr)) for a, b in bands), start=np.zeros(n)) for bands in GROWL]
+        y = vowels[0] * (1 - w) + vowels[1] * w + 0.25 * cast(np.ndarray, lp(s, 250, self.sr))
         env = adsr(n, self.sr, 0.004, 0.05, 0.95, 0.015, hold=dur)
         return distort(y * 2.2, 1.2) * env * 0.42
 
@@ -159,7 +160,7 @@ class Instruments:
     def _pad(self, m, dur):
         n = int((dur + 0.8) * self.sr); f = mtof(m)
         s = sum(osc("saw", f * 2 ** (c / 1200), n, self.sr, phase=i / 3) for i, c in enumerate((-10, 0, 9))) / 3
-        return lp(s, 750, self.sr) * adsr(n, self.sr, 0.5, 0.5, 0.85, 0.8, hold=dur) * 0.6
+        return cast(np.ndarray, lp(s, 750, self.sr)) * adsr(n, self.sr, 0.5, 0.5, 0.85, 0.8, hold=dur) * 0.6
 
     def pluck(self, color, m, dur, vel=1.0):
         """The Style.chords colour as a short pluck: saw (piano), FM bell (rhodes), pulse (nylon), soft saw (pad)."""
@@ -197,7 +198,7 @@ class Instruments:
             s, cut = 0.7 * osc("sine", f, n, self.sr) + 0.3 * osc("saw", f, n, self.sr), 2200
         else:
             s, cut = 0.5 * (osc("saw", f, n, self.sr) + osc("saw", f * 1.004, n, self.sr, 0.3)), 5000
-        return lp(s, cut, self.sr) * adsr(n, self.sr, 0.01, 0.2, 0.8, 0.15, hold=dur) * 0.45
+        return cast(np.ndarray, lp(s, cut, self.sr)) * adsr(n, self.sr, 0.01, 0.2, 0.8, 0.15, hold=dur) * 0.45
 
     def riser(self, seconds):
         """White noise swept up through band-passes, swelling over `seconds` and cut with a short fade."""
@@ -212,7 +213,7 @@ class Instruments:
         u = x * (len(bands) - 1)
         y = sum(np.clip(1 - np.abs(u - k), 0, 1) * b for k, b in enumerate(bands))
         f = 200 * 8 ** x                                            # a rising saw underneath
-        y = y + 0.3 * lp(osc("saw", f, n, self.sr), 3000, self.sr)
+        y = y + 0.3 * cast(np.ndarray, lp(osc("saw", f, n, self.sr), 3000, self.sr))
         return y * x ** 2 * np.clip((dur - t) / 0.01, 0, 1) * 0.5
 
     # ------------------------------------------------------------ drums
@@ -328,7 +329,7 @@ class DubstepGenre(Genre):
     voices = {"piano": "wobble bass drops, saw plucks / saw lead", "rhodes": "growl bass drops, FM bell plucks",
               "nylon": "wobble bass drops, pulse plucks", "pad": "wobble bass drops, dark pad / soft sine lead"}
 
-    def instruments(self, rng, sr, sampled):
+    def instruments(self, rng: np.random.Generator, sr: int, sampled):
         return SampledVoices(sampled, rng, sr) if sampled is not None else Instruments(rng, sr)
 
     def start(self, piece):
@@ -342,7 +343,8 @@ class DubstepGenre(Genre):
         piece.state["plucks"] = PLUCK_PATTERNS[int(r.integers(len(PLUCK_PATTERNS)))]
         piece.state["light"] = (QUARTER, TRIPLET4)[int(r.integers(2))]
 
-    def schedule(self, piece, p):
+    def schedule(self, piece, plan):
+        p = plan
         s, ins, add, st = piece.style, piece.inst, piece.add, piece.state
         B = 60 / s.bpm
         e, k = p.energy, p.key_offset
@@ -356,7 +358,8 @@ class DubstepGenre(Genre):
             segments.append((p.passing, 2.0, 2.0))
         voicings = []
         for chord, at, beats in segments:
-            vc = piece.voice([x + k for x in chord.tones]); piece.center = float(np.mean(vc))
+            vc = piece.voice([x + k for x in chord.tones])
+            piece.center = int(np.mean(vc))
             voicings.append((at, vc))
             for i, m in enumerate(vc):
                 add(ins.pad(m, beats * B * 0.99, 0.8), at * B, (i - (len(vc) - 1) / 2) * 0.4,
@@ -427,7 +430,8 @@ class DubstepGenre(Genre):
             for n in p.counter:
                 add(ins.pluck(s.chords, n.midi, n.length * B * 0.9, 0.6), n.beat * B + 0.01, -0.3, 0.07)
 
-    def master(self, s):
+    def master(self, style):
+        s = style
         return Master(space=0.25 + 0.4 * s.space, reverb=0.06 + 0.12 * s.space, room=0.15 + 0.5 * s.space,
                       vinyl=0.0, wow=0.0, tone=min(20000, int(9000 * 2 ** s.brightness)), drive=2.3,
                       threshold=-20.0, ratio=3.5)

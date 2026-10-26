@@ -248,9 +248,12 @@ class PresetPicker(ModalScreen[Preset | None]):
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         event.stop()
-        preset = self.store.get(event.option.id)
+        option_id = event.option.id
+        if option_id is None:
+            return
+        preset = self.store.get(option_id)
         if preset is None:
-            self._show_status(self.store.error or f"“{event.option.id}” is no longer saved.")
+            self._show_status(self.store.error or f"“{option_id}” is no longer saved.")
             return
         self.dismiss(preset)
 
@@ -259,12 +262,15 @@ class PresetPicker(ModalScreen[Preset | None]):
         if options.highlighted is None:
             return
         option = options.get_option_at_index(options.highlighted)
+        option_id = option.id
+        if option_id is None:
+            return
         try:
-            self.store.delete(option.id)
+            self.store.delete(option_id)
         except PresetError as e:
             self._show_status(str(e))
             return
-        options.remove_option(option.id)
+        options.remove_option(option_id)
         self._show_status()
 
     def action_cancel(self) -> None:
@@ -332,8 +338,16 @@ class StreamApp(App):
     def on_mount(self) -> None:
         # keep references: the timer also fires while a modal is on top or the app is shutting down,
         # when queries would search another screen
-        self._w = {name: self.query_one(f"#{name}") for name in ("title", "details", "mood-line", "journey",
-                                                                 "spectrum", "state", "model", "status")}
+        self._spectrum = self.query_one("#spectrum", Spectrum)
+        self._w: dict[str, Static] = {
+            "title": self.query_one("#title", Static),
+            "details": self.query_one("#details", Static),
+            "mood-line": self.query_one("#mood-line", Static),
+            "journey": self.query_one("#journey", Static),
+            "state": self.query_one("#state", Static),
+            "model": self.query_one("#model", Static),
+            "status": self.query_one("#status", Static),
+        }
         self.player.start()
         self._show_model()
         self._tick()
@@ -352,7 +366,7 @@ class StreamApp(App):
     def _tick(self) -> None:
         w = self._w
         try:
-            w["spectrum"].tick()   # first: polling a background player also refreshes what is shown below
+            self._spectrum.tick()   # first: polling a background player also refreshes what is shown below
         except ConnectionError:    # the background player was stopped elsewhere (`gentle-stream ctl stop`)
             self.exit(message="gentle-stream: the music was stopped")
             return
@@ -376,11 +390,11 @@ class StreamApp(App):
         self._w["status"].update(text)
 
     # ------------------------------------------------------------ actions
-    def action_back(self) -> None:
+    async def action_back(self) -> None:
         self._keep_playing = True
         self.exit()
 
-    def action_toggle(self) -> None:
+    async def action_toggle(self, attribute_name: str = "", *, animate: bool = True) -> None:
         self.player.toggle()
         self._tick()
 

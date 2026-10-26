@@ -10,6 +10,8 @@ procedural.
 """
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 
 from ..composer import Chord
@@ -156,7 +158,7 @@ class AmbientGenre(Genre):
     modes = ("lydian", "major", "dorian", "minor")
     voices = {"piano": "soft distant piano", "rhodes": "celesta", "nylon": "harp", "pad": "slow evolving pad"}
 
-    def instruments(self, rng, sr, sampled):
+    def instruments(self, rng: np.random.Generator, sr: int, sampled):
         return Voices(rng, sr) if sampled is None else SampledVoices(sampled, rng, sr)
 
     def start(self, piece):
@@ -176,9 +178,11 @@ class AmbientGenre(Genre):
             return chord
         return Chord(chord.degree, chord.tones + (deg(8),))
 
-    def schedule(self, piece, p):
+    def schedule(self, piece, plan):
+        p = plan
         s, v, add, st = piece.style, piece.inst, piece.add, piece.state
-        B = 60 / s.bpm; BAR = 4 * B
+        B = 60 / s.bpm
+        BAR = 4 * B
         e, k = p.energy, p.key_offset
         quiet = p.section in ("intro", "breakdown")
         lead = "lead" in p.layers and s.lead != "none"
@@ -190,7 +194,8 @@ class AmbientGenre(Genre):
             spans.append((2 * B, 2 * B, p.passing))
         tops = []
         for t0, dur, ch in spans:
-            vc = piece.voice([x + k for x in ch.tones]); piece.center = float(np.mean(vc))
+            vc = piece.voice([x + k for x in ch.tones])
+            piece.center = cast(int, float(np.mean(vc)))
             root = 43 + (piece.ton + ch.tones[0] + k - 43) % 12
             notes = [root] + vc
             for i, m in enumerate(notes):
@@ -248,7 +253,8 @@ class AmbientGenre(Genre):
             for n in p.counter:
                 add(v.glass(n.midi, n.length * B, 0.6), n.beat * B, -0.3, 0.24)
 
-    def master(self, s):
+    def master(self, style):
+        s = style
         return Master(space=0.6 + 0.4 * s.space, reverb=0.32 + 0.2 * s.space, room=0.5 + 0.8 * s.space, vinyl=0.0,
                       wow=0.08, tone=int(5000 * 2.4 ** s.brightness), drive=1.2, threshold=-22.0, ratio=2.0)
 

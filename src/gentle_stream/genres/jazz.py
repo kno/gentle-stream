@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from functools import lru_cache
+from typing import cast
 
 import numpy as np
 
@@ -112,7 +113,7 @@ class Voices:
         fr = f * vib * scoop
         s = osc("saw", fr, n, self.sr) * 0.6 + osc("pulse", fr, n, self.sr, duty=0.35) * 0.4
         s = lp(lp(s, 900 + 1800 * vel), 2600 + 1000 * vel)
-        s += bp(self.rng.standard_normal(n), 1500, 5000) * 0.05                          # breath
+        s += cast(np.ndarray, bp(self.rng.standard_normal(n), 1500, 5000)) * 0.05                          # breath
         return s * adsr(n, self.sr, 0.03, 0.12, 0.8, 0.1) * vel * 0.9
 
     def bass(self, m, dur, vel=1.0):
@@ -158,7 +159,7 @@ class Voices:
         return self.lofi.brush() * vel
 
     def kick(self, vel=1.0):
-        return self._kick * vel
+        return cast(np.ndarray, self._kick) * vel
 
     def pedal(self, vel=1.0):
         return self._pedal * vel
@@ -224,7 +225,7 @@ class JazzGenre(Genre):
     voices = {"piano": "acoustic piano comping", "rhodes": "rhodes electric piano", "nylon": "warm jazz guitar",
               "pad": "vibraphone (tenor sax when it plays the lead)"}
 
-    def instruments(self, rng, sr, sampled):
+    def instruments(self, rng: np.random.Generator, sr: int, sampled):
         proc = Voices(rng, sr)
         return proc if sampled is None else SampledVoices(sampled, proc, sr)
 
@@ -257,14 +258,16 @@ class JazzGenre(Genre):
         return type(chord)(chord.degree, tuple(tones))
 
     # ------------------------------------------------------------ schedule
-    def schedule(self, piece, p):
+    def schedule(self, piece, plan):
+        p = plan
         s = piece.style
         B, S = 60 / s.bpm, swing_position(s.bpm)
         self._comp(piece, p, B, S)
         self._bass(piece, p, B)
         if "drums" in p.layers:
             self._drums(piece, p, B, S)
-        jitter = lambda: 0.004 * float(piece.rng.random())
+        def jitter():
+            return 0.004 * float(piece.rng.random())
         if "lead" in p.layers:
             for n in sorted(p.melody, key=lambda n: n.beat):
                 on, off = swing(n.beat, S), swing(n.beat + n.length, S)
@@ -320,7 +323,8 @@ class JazzGenre(Genre):
 
     def _bass(self, piece, p, B):
         st, ins, ton, k = piece.state, piece.inst, piece.ton, p.key_offset
-        pcs = lambda c: [(ton + t + k) % 12 for t in c.tones]
+        def pcs(c):
+            return [(ton + t + k) % 12 for t in c.tones]
 
         def place(pc, near):
             return min((m for m in range(BASS_RANGE[0], BASS_RANGE[1] + 1) if m % 12 == pc),
@@ -384,7 +388,8 @@ class JazzGenre(Genre):
             for j in (1, 2):
                 add(ins.tap(0.5 + 0.15 * j), (3 + j / 3) * B, 0.1, 0.12 * dg)
 
-    def master(self, s):
+    def master(self, style):
+        s = style
         return Master(space=0.8 * s.space, reverb=0.05 + 0.15 * s.space, room=0.25 + 0.9 * s.space,
                       vinyl=0.25 * s.vinyl, wow=0.12, tone=int(min(20000, 3800 * 4 ** s.brightness)), drive=1.35,
                       threshold=-16.0, ratio=2.0)   # light bus compression: keep the dynamics

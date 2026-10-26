@@ -105,13 +105,19 @@ def _spawn(deadline: float) -> None:
             left = deadline - time.monotonic()
             if left <= 0 or not select.select([r], [], [], left)[0]:
                 raise PlayerError(f"the player did not start in time (see {paths.log})")
-            chunk = os.read(r, 4096)
+            try:
+                chunk = os.read(r, 4096)
+            except OSError as e:
+                raise PlayerError(f"the player stopped while starting (see {paths.log})") from e
             if not chunk:
                 raise PlayerError(f"the player stopped while starting (see {paths.log})")
             line += chunk
     finally:
         os.close(r)
-    message = json.loads(line)
+    try:
+        message = json.loads(line)
+    except (json.JSONDecodeError, TypeError) as e:
+        raise PlayerError(f"the player sent invalid startup data (see {paths.log})") from e
     if "error" in message:
         raise (AudioError if message.get("audio") else PlayerError)(message["error"])
 

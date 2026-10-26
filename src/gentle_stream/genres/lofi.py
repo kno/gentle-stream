@@ -5,6 +5,8 @@ tape wow. With the samples backend the tonal voices and drums are FluidR3_GM (`s
 """
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 
 from ..synth import SR, bp, hp, lp, mtof
@@ -28,9 +30,9 @@ class Instruments:
             if fk > 9000:
                 break
             s += np.sin(2 * np.pi * fk * t + self.rng.random()) * k ** -1.6 * np.exp(-t * (0.55 + 0.35 * k))
-        s += lp(self.rng.standard_normal(n), 900) * np.exp(-t * 60) * 0.05        # soft felt hammer
+        s += cast(np.ndarray, lp(self.rng.standard_normal(n), 900)) * np.exp(-t * 60) * 0.05        # soft felt hammer
         env = np.minimum(1, t / 0.006) * np.clip((dur + 0.35 - t) / 0.35, 0, 1)
-        return lp(s * env, 100 * round(22 + 6 * vel)) * vel
+        return cast(np.ndarray, lp(s * env, 100 * round(22 + 6 * vel))) * vel
 
     def rhodes(self, m, dur, vel=1.0):
         f = mtof(m); n = int((dur + 0.3) * self.sr); t = self._t(n)
@@ -55,7 +57,7 @@ class Instruments:
             for k in range(1, 9):
                 s += np.sin(2 * np.pi * k * f * 2 ** (det / 12) * t + self.rng.random() * 6) / k
         env = np.clip(t / 0.7, 0, 1) * np.clip((dur + 0.9 - t) / 0.9, 0, 1)
-        return lp(s * env, 1100) * vel * 0.22
+        return cast(np.ndarray, lp(s * env, 1100)) * vel * 0.22
 
     def sub(self, m, dur):
         n = int(dur * self.sr); t = self._t(n)
@@ -88,7 +90,7 @@ class LofiGenre(Genre):
     voices = {"piano": "felt piano", "rhodes": "rhodes electric piano", "nylon": "nylon guitar",
               "pad": "warm pad"}
 
-    def instruments(self, rng, sr, sampled):
+    def instruments(self, rng: np.random.Generator, sr: int, sampled):
         return sampled or Instruments(rng, sr)
 
     def start(self, piece):
@@ -97,18 +99,21 @@ class LofiGenre(Genre):
         else:
             piece.state["kick_beats"] = KICK_PATTERNS[int(piece.rng.integers(len(KICK_PATTERNS)))]
 
-    def schedule(self, piece, p):
+    def schedule(self, piece, plan):
+        p = plan
         s, ins, bar = piece.style, piece.inst, p.bar
         B = 60 / s.bpm; BAR = 4 * B
         e, k = p.energy, p.key_offset
         add = piece.add
         chord_fn = getattr(ins, s.chords)
         # chords: soft strum; a passing chord takes beats 3-4, otherwise a quieter re-hit there every other bar
-        vc = piece.voice([x + k for x in p.chord.tones]); piece.center = float(np.mean(vc))
+        vc = piece.voice([x + k for x in p.chord.tones])
+        piece.center = cast(int, float(np.mean(vc)))
         for i, m in enumerate(vc):
             add(chord_fn(m, (BAR * 0.98 if p.passing is None else 2 * B), 0.8), i * 0.022, (i - 1.5) * 0.18, 0.11)
         if p.passing is not None:
-            vp = piece.voice([x + k for x in p.passing.tones]); piece.center = float(np.mean(vp))
+            vp = piece.voice([x + k for x in p.passing.tones])
+            piece.center = cast(int, float(np.mean(vp)))
             for i, m in enumerate(vp):
                 add(chord_fn(m, 2 * B * 0.98, 0.7), 2 * B + i * 0.02, (i - 1.5) * 0.18, 0.09)
         elif bar % 2 == 1 and e > 0.3 and p.section != "breakdown":
@@ -146,7 +151,8 @@ class LofiGenre(Genre):
             for n in p.counter:
                 add(chord_fn(n.midi, n.length * B * 0.95, 0.6), n.beat * B + 0.03, -0.25, 0.08)
 
-    def master(self, s):
+    def master(self, style):
+        s = style
         return Master(space=s.space, reverb=0.08 + 0.22 * s.space, room=0.2 + 1.6 * s.space, vinyl=s.vinyl,
                       wow=1.0, tone=int(2800 * 5 ** s.brightness), drive=MASTER_GAIN)
 

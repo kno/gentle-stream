@@ -21,6 +21,7 @@ stay procedural: no GM bass has the detuned, distorted, filter-swept character t
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import cast
 
 import numpy as np
 
@@ -76,7 +77,7 @@ def _sweep(x: np.ndarray, c0: float, c1: float, sr: int) -> np.ndarray:
     top = 0.45 * sr
     c0, c1 = min(c0, top), min(c1, top)
     if abs(np.log2(c1 / c0)) < 1e-3:
-        return lp(x, c0, sr)
+        return cast(np.ndarray, lp(x, c0, sr))
     k = max(2, int(np.ceil(abs(np.log2(c1 / c0)) * 1.5)) + 1)
     ys = np.stack([lp(x, c, sr) for c in np.geomspace(c0, c1, k)])
     u = np.linspace(0, k - 1, len(x))
@@ -213,7 +214,7 @@ class Instruments:
             s, cut = 0.5 * (osc("saw", f * 2 ** (-7 / 1200), n, self.sr) + osc("saw", f * 2 ** (7 / 1200), n,
                                                                                 self.sr, 0.4)), 6000
         att = 0.05 if color == "pad" else 0.006
-        return lp(s, cut, self.sr) * adsr(n, self.sr, att, 0.2, 0.8, 0.12, hold=dur) * 0.5
+        return cast(np.ndarray, lp(s, cut, self.sr)) * adsr(n, self.sr, att, 0.2, 0.8, 0.12, hold=dur) * 0.5
 
     def bass(self, m, dur, vel=1.0, cut=900.0):
         """Dirty bass: detuned saws through a waveshaper, a low-pass that snaps open on the attack and settles
@@ -225,7 +226,7 @@ class Instruments:
         n = int((dur + 0.03) * self.sr); t = self._t(n); f = mtof(m)
         saws = sum(osc("saw", f * 2 ** (c / 1200), n, self.sr, phase=0.3 * i)
                    for i, c in enumerate(BASS_DETUNE)) / len(BASS_DETUNE)
-        dirty = distort(saws * 3.0, 1.0)
+        dirty = cast(np.ndarray, distort(cast(np.ndarray, saws * 3.0), 1.0))
         w = np.exp(-t * 14)
         top = min(0.45 * self.sr, cut * 3.5)
         dirty = lp(dirty, cut, self.sr) * (1 - w) + lp(dirty, top, self.sr) * w
@@ -248,7 +249,7 @@ class Instruments:
 
     def _riser(self, dur):
         n = int(dur * self.sr); t = self._t(n)
-        x = _sweep(hp(self.rng.standard_normal(n), 250, self.sr), 400, 12000, self.sr)
+        x = _sweep(cast(np.ndarray, hp(self.rng.standard_normal(n), 250, self.sr)), 400, 12000, self.sr)
         swell = (t / dur) ** 2 * np.clip((dur - t) / 0.015, 0, 1)
         return x * swell * 0.5
 
@@ -265,7 +266,7 @@ class Instruments:
         noise = bp(self.rng.standard_normal(n), 900, 5500, self.sr)
         env = sum(np.where(t >= d, np.exp(-(t - d) * 160), 0.0) for d in (0.0, 0.011, 0.022))
         env = env + 0.45 * np.where(t >= 0.03, np.exp(-(t - 0.03) * 16), 0.0)
-        return noise * np.minimum(env, 1.2) * 0.5
+        return cast(np.ndarray, noise) * np.minimum(env, 1.2) * 0.5
 
     def _make_snare(self):
         n = int(0.22 * self.sr); t = self._t(n)
@@ -421,7 +422,7 @@ class ElectroHouseGenre(Genre):
     voices = {"piano": "supersaw chord stabs / bright saw lead", "rhodes": "FM electric piano stabs / square lead",
               "nylon": "short pluck synth", "pad": "wide sustained supersaw pad"}
 
-    def instruments(self, rng, sr, sampled):
+    def instruments(self, rng: np.random.Generator, sr: int, sampled):
         return SampledVoices(sampled, rng, sr) if sampled is not None else Instruments(rng, sr)
 
     def start(self, piece):
@@ -430,7 +431,8 @@ class ElectroHouseGenre(Genre):
         piece.state["riff16"] = RIFFS_16[int(r.integers(len(RIFFS_16)))]
         piece.state["stabs"] = STAB_PATTERNS[int(r.integers(len(STAB_PATTERNS)))]
 
-    def schedule(self, piece, p):
+    def schedule(self, piece, plan):
+        p = plan
         s, ins, add, st = piece.style, piece.inst, piece.add, piece.state
         B = 60 / s.bpm
         e, k = p.energy, p.key_offset
@@ -458,7 +460,8 @@ class ElectroHouseGenre(Genre):
         voicings = []
         pad_g = 0.3 if dark or s.chords == "pad" else 0.2
         for chord, at, beats in segments:
-            vc = piece.voice([x + k for x in chord.tones]); piece.center = float(np.mean(vc))
+            vc = piece.voice([x + k for x in chord.tones])
+            piece.center = int(np.mean(vc))
             root = piece.ton + 12 + (chord.tones[0] + k) % 12
             while root > min(vc) - 3:
                 root -= 12
@@ -534,7 +537,8 @@ class ElectroHouseGenre(Genre):
             cut *= 2 ** (-1 + 1.5 * (build * 4 + beat) / (4 * BUILD_BARS))
         return _q(cut)
 
-    def master(self, s):
+    def master(self, style):
+        s = style
         return Master(space=0.25 + 0.3 * s.space, reverb=0.05 + 0.12 * s.space, room=0.1 + 0.4 * s.space,
                       vinyl=0.0, wow=0.0, tone=min(20000, int(10000 * 2 ** s.brightness)), drive=2.6,
                       threshold=-24.0, ratio=4.0)

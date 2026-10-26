@@ -17,6 +17,8 @@ and a low-pass before the distortion); synthesized drums. With samples: FluidR3_
 """
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 
 from ..composer import FIRST_FORM
@@ -37,6 +39,10 @@ VIBRATO_CENTS = 35
 # drum levels: RMS of the first 0.5 s, shared by both backends (`samples.Hit.rms`)
 DRUM_RMS = {"kick": 0.30, "snare": 0.20, "tom": 0.18, "hat": 0.05, "open_hat": 0.05, "ride": 0.05, "crash": 0.08,
             "china": 0.08}
+
+
+def _audio(value: object) -> np.ndarray:
+    return cast(np.ndarray, value)
 
 
 def _norm(x: np.ndarray, rms: float, sr: int = SR) -> np.ndarray:
@@ -101,7 +107,7 @@ class Instruments:
         env = adsr(n, self.sr, attack=0.002, decay=0.0, sustain=1.0, release=rel, hold=dur)
         if mute:
             env *= np.exp(-t * 12)
-        return _fade(y * env * 0.35, self.sr)
+        return _fade(_audio(y) * env * 0.35, self.sr)
 
     def lead(self, m, dur, vel=1.0, tone="piano", vibrato=0.0):
         vib = vibrato
@@ -116,10 +122,10 @@ class Instruments:
         n = int((dur + 0.2) * self.sr)
         x = (osc("saw", mtof(m), n, self.sr, phase=self.rng.random())
              + 0.4 * osc("square", mtof(m) * 1.003, n, self.sr, phase=self.rng.random()))
-        y = distort(lp(x, 2800) * 0.7 * vel, drive) / np.tanh(drive * 0.5)
+        y = distort(_audio(lp(x, 2800)) * 0.7 * vel, drive) / np.tanh(drive * 0.5)
         y = lp(bp(y, 180, cab), cab)
         env = adsr(n, self.sr, attack=0.006, decay=0.15, sustain=0.85, release=0.2, hold=dur)
-        return _fade(_vibrato(y * env * 0.32, vib, self.sr), self.sr)
+        return _fade(_vibrato(_audio(y) * env * 0.32, vib, self.sr), self.sr)
 
     def strings(self, m, dur, vel=1.0):
         d = max(1, round(dur / 0.05)) * 0.05
@@ -188,19 +194,19 @@ class Instruments:
         def make():
             w, t = self._noise(1.2)
             bell = sum(np.sin(2 * np.pi * f * t) * a for f, a in ((540, .3), (1263, .2), (2710, .15), (3930, .1)))
-            return (hp(w, 5000) * 0.25 + bell * np.exp(-t * 6)) * np.exp(-t * 3) * 0.5
+            return (_audio(hp(w, 5000)) * 0.25 + bell * np.exp(-t * 6)) * np.exp(-t * 3) * 0.5
         return self._drum("ride", make)
 
     def crash(self):
         def make():
             w, t = self._noise(1.8)
-            return (hp(w, 3500) + 0.4 * bp(w, 1200, 4000)) * np.minimum(1, t / 0.002) * np.exp(-t * 2.6) * 0.5
+            return (_audio(hp(w, 3500)) + 0.4 * _audio(bp(w, 1200, 4000))) * np.minimum(1, t / 0.002) * np.exp(-t * 2.6) * 0.5
         return self._drum("crash", make)
 
     def china(self):
         def make():
             w, t = self._noise(1.0)
-            return distort(bp(w, 1400, 7000) * 2, 2) * np.minimum(1, t / 0.002) * np.exp(-t * 5) * 0.35
+            return distort(_audio(bp(w, 1400, 7000)) * 2, 2) * np.minimum(1, t / 0.002) * np.exp(-t * 5) * 0.35
         return self._drum("china", make)
 
 
@@ -218,10 +224,10 @@ class SampledInstruments(Instruments):
         level = {k: 0.09 if k == "nylon" else 0.15 for k in self.GUITAR}   # the clean guitar adds up louder
         self._open = {k: Program(p, velocity=(70, 122), tail=0.35, rms=level[k]) for k, p in self.GUITAR.items()}
         self._mute = {k: Program(p, velocity=(60, 115), tail=0.04, rms=level[k]) for k, p in self.GUITAR.items()}
-        self._lead = {**{k: Program(p, velocity=(70, 120), tail=0.3, rms=0.24) for k, p in self.GUITAR.items()},
+        self._lead_programs = {**{k: Program(p, velocity=(70, 120), tail=0.3, rms=0.24) for k, p in self.GUITAR.items()},
                       "pad": Program(48, velocity=(70, 120), tail=0.6, rms=0.2)}
         self._strings = Program(48, velocity=(50, 100), tail=0.8, rms=0.1)
-        self._bass = Program(34, velocity=(70, 120), tail=0.1, rms=0.25)
+        self._bass_program = Program(34, velocity=(70, 120), tail=0.1, rms=0.25)
 
     def _guitar(self, notes, dur, vel, tone, mute, take):
         v = vel * (1.0 if take % 2 == 0 else 0.86)
@@ -238,19 +244,19 @@ class SampledInstruments(Instruments):
             x = lp(x, 900 + 600 * vel) * np.exp(-t * 18) * 2.2
         elif take % 2:
             x = lp(x, 4200)
-        return _fade(x, self.sr)
+        return _fade(_audio(x), self.sr)
 
     def lead(self, m, dur, vel=1.0, tone="piano", vibrato=0.0):
         vib = vibrato
         d = max(1, round(dur / 0.05)) * 0.05
         return self._cached(("lead", int(m), d, round(vel * 8), tone, round(vib, 2)), lambda: _fade(
-            _vibrato(np.array(self.s.play(self._lead[tone], m, d, vel)), vib, self.sr), self.sr))
+            _vibrato(np.array(self.s.play(self._lead_programs[tone], m, d, vel)), vib, self.sr), self.sr))
 
     def strings(self, m, dur, vel=1.0):
         return self.s.play(self._strings, m, dur, vel)
 
     def bass(self, m, dur, vel=1.0):
-        return self.s.play(self._bass, m, dur, vel)
+        return self.s.play(self._bass_program, m, dur, vel)
 
     def _hit(self, name):
         key, v, secs = self.DRUM_KEYS[name]
@@ -279,7 +285,7 @@ class RockGenre(Genre):
     def flavor(style) -> str:
         return "metal" if style.drums == "busy" and style.energy >= 0.7 else "rock"
 
-    def instruments(self, rng, sr, sampled):
+    def instruments(self, rng: np.random.Generator, sr: int, sampled):
         return Instruments(rng, sr) if sampled is None else SampledInstruments(sampled, rng, sr)
 
     def start(self, piece):
@@ -290,7 +296,8 @@ class RockGenre(Genre):
         piece.state["lag"] = float(piece.rng.uniform(0.006, 0.012))   # the right take plays a hair late
 
     # ------------------------------------------------------------ per bar
-    def schedule(self, piece, p):
+    def schedule(self, piece, plan):
+        p = plan
         s, ins, add, rng = piece.style, piece.inst, piece.add, piece.rng
         B = 60 / s.bpm; e, k = p.energy, p.key_offset
         metal = self.flavor(s) == "metal"
@@ -330,7 +337,8 @@ class RockGenre(Genre):
                 else:
                     strum(i / 4, B / 4 * 0.9, True, 1.0 if i % 4 == 0 else 0.85)
         if s.chords == "pad":   # a string section holds the chord behind the guitars
-            vc = piece.voice([x + k for x in p.chord.tones]); piece.center = float(np.mean(vc))
+            vc = piece.voice([x + k for x in p.chord.tones])
+            piece.center = cast(int, float(np.mean(vc)))
             for i, m in enumerate(vc):
                 add(ins.strings(m, (2 if p.passing is not None else 4) * B * 0.98, 0.7), i * 0.02,
                     (i - 1.5) * 0.25, 0.10)
@@ -397,7 +405,8 @@ class RockGenre(Genre):
             if metal and p.section_bar % 4 == 0 and p.section_bar:
                 add(ins.crash(), 0.0, -0.35, 0.4 * dg)
 
-    def master(self, s):
+    def master(self, style):
+        s = style
         metal = self.flavor(s) == "metal"
         return Master(space=0.3 * s.space, reverb=0.04 + 0.08 * s.space, room=0.1 + 0.5 * s.space, vinyl=0.0,
                       wow=0.0, tone=int(7000 * 2 ** s.brightness), drive=2.8 if metal else 2.2,

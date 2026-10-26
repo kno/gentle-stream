@@ -82,7 +82,7 @@ class Instruments:
     def _pad(self, m, dur):
         n = int((dur + 0.5) * self.sr); f = mtof(m)
         s = sum(osc("saw", f * 2 ** (c / 1200), n, self.sr, phase=i / 3) for i, c in enumerate((-7, 0, 7))) / 3
-        return lp(s, 2200, self.sr) * adsr(n, self.sr, 0.12, 0.3, 0.8, 0.45, hold=dur) * 0.4
+        return np.asarray(lp(s, 2200, self.sr)) * adsr(n, self.sr, 0.12, 0.3, 0.8, 0.45, hold=dur) * 0.4
 
     def stab(self, color, m, dur, vel=1.0):
         """The Style.chords colour: square riff stab (piano), FM electric piano (rhodes), pluck (nylon), string
@@ -128,7 +128,7 @@ class Instruments:
             s, cut = 0.5 * osc("square", f, n, self.sr) + 0.5 * osc("saw", f, n, self.sr), 2600
         else:
             s, cut = osc("saw", f, n, self.sr), 5500
-        return lp(s, cut, self.sr) * adsr(n, self.sr, 0.004, 0.1, 0.75, 0.05, hold=dur) * 0.45
+        return np.asarray(lp(s, cut, self.sr)) * adsr(n, self.sr, 0.004, 0.1, 0.75, 0.05, hold=dur) * 0.45
 
     def arp(self, m, dur, vel=1.0, cut=0.5):
         """Gated square/saw 16th through a resonant low-pass at `cut` (0 dark .. 1 open)."""
@@ -139,7 +139,7 @@ class Instruments:
         n = int((dur + 0.05) * self.sr); t = self._t(n); f = mtof(m)
         s = 0.7 * osc("square", f, n, self.sr) + 0.3 * osc("saw", f * 1.004, n, self.sr, 0.3)
         fc = 450 * 2 ** (4 * cut)                                  # 450 Hz .. 7.2 kHz
-        s = lp(s, fc, self.sr) + 0.6 * bp(s, fc * 0.8, fc * 1.25, self.sr)
+        s = np.asarray(lp(s, fc, self.sr)) + 0.6 * np.asarray(bp(s, fc * 0.8, fc * 1.25, self.sr))
         return s * np.exp(-t * 8) * np.minimum(1, t / 0.002) * np.clip((dur + 0.05 - t) / 0.02, 0, 1) * 0.4
 
     def bass(self, m, dur, vel=1.0):
@@ -151,7 +151,7 @@ class Instruments:
         n = int((dur + 0.03) * self.sr); t = self._t(n); f = mtof(m)
         s = 0.55 * osc("square", f, n, self.sr, 0.25) + 0.45 * osc("saw", f, n, self.sr)
         w = np.exp(-t * 28)
-        tone = lp(s, 380, self.sr) * (1 - w) + (lp(s, 1800, self.sr) + 0.5 * bp(s, 900, 1500, self.sr)) * w
+        tone = np.asarray(lp(s, 380, self.sr)) * (1 - w) + (np.asarray(lp(s, 1800, self.sr)) + 0.5 * np.asarray(bp(s, 900, 1500, self.sr))) * w
         env = adsr(n, self.sr, 0.002, 0.06, 0.65, 0.025, hold=dur)
         return distort(tone * env * 1.5, 1.4) * vel * 0.6
 
@@ -277,7 +277,7 @@ class SampledVoices:
                 self._arp_cache.clear()
             x = self.s.play(self.arp_p, m, dur, vel)
             fc = 450 * 2 ** (4 * cut)
-            y = self._arp_cache[key] = (lp(x, fc, self.sr) + 0.4 * bp(x, fc * 0.8, fc * 1.25, self.sr)) * (
+            y = self._arp_cache[key] = (np.asarray(lp(x, fc, self.sr)) + 0.4 * np.asarray(bp(x, fc * 0.8, fc * 1.25, self.sr))) * (
                 1.0 + 0.8 * (1 - cut))
         return y
 
@@ -311,7 +311,7 @@ class ElectroGenre(Genre):
     voices = {"piano": "square synth riff stabs / saw lead", "rhodes": "FM electric piano / square lead",
               "nylon": "pluck synth", "pad": "string synth pad"}
 
-    def instruments(self, rng, sr, sampled):
+    def instruments(self, rng: np.random.Generator, sr: int, sampled):
         return SampledVoices(sampled, rng, sr) if sampled is not None else Instruments(rng, sr)
 
     def start(self, piece):
@@ -320,7 +320,8 @@ class ElectroGenre(Genre):
         piece.state.update(kicks=pick(KICKS), bells=pick(BELLS), stabs=pick(STABS), bass=pick(BASSES),
                            arp=pick(ARP_SHAPES), accents=pick(HAT_ACCENTS), open_hats=pick(OPEN_HATS))
 
-    def schedule(self, piece, p):
+    def schedule(self, piece, plan):
+        p = plan
         s, ins, add, st = piece.style, piece.inst, piece.add, piece.state
         B = 60 / s.bpm; S = B / 4
         e, k = p.energy, p.key_offset
@@ -331,7 +332,8 @@ class ElectroGenre(Genre):
             segments.append((p.passing, 8, 8))
         voicings = []
         for chord, at, steps in segments:
-            vc = piece.voice([x + k for x in chord.tones]); piece.center = float(np.mean(vc))
+            vc = piece.voice([x + k for x in chord.tones])
+            piece.center = int(np.mean(vc))
             voicings.append((at, vc))
             if s.chords == "pad" or quiet:
                 for i, m in enumerate(vc):
@@ -407,7 +409,8 @@ class ElectroGenre(Genre):
                 g = max(g, 0.08)
             add(ins.hat(is_open), j * S, -0.25, g * dg * (1.2 if is_open else 1.0))
 
-    def master(self, s):
+    def master(self, style):
+        s = style
         return Master(space=0.25 * s.space, reverb=0.02 + 0.05 * s.space, room=0.08 + 0.4 * s.space, vinyl=0.0,
                       wow=0.0, tone=min(20000, int(8000 * 2 ** s.brightness)), drive=2.0, threshold=-22.0,
                       ratio=3.5)

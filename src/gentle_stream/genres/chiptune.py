@@ -135,7 +135,7 @@ class ChiptuneGenre(Genre):
     voices = {"piano": "50% square wave", "rhodes": "25% pulse wave", "nylon": "thin 12.5% pulse wave",
               "pad": "soft swelling 25% pulse wave"}
 
-    def instruments(self, rng, sr, sampled):
+    def instruments(self, rng: np.random.Generator, sr: int, sampled):
         return Chip(rng, sr)   # samples do not fit 8-bit: both backends play the chip voices
 
     def start(self, piece):
@@ -155,7 +155,8 @@ class ChiptuneGenre(Genre):
         pool = [root] + upper
         return (pool + [x + 12 for x in pool])[:4]
 
-    def schedule(self, piece, p):
+    def schedule(self, piece, plan):
+        p = plan
         s, ins, st = piece.style, piece.inst, piece.state
 
         def add(sig, t, pan=0.0, g=1.0):
@@ -217,7 +218,8 @@ class ChiptuneGenre(Genre):
             for n in p.counter:
                 add(ins.lead(n.midi, n.length * B * 0.9, 0.6, duty, True), n.beat * B, -0.2, 0.04)
 
-    def master(self, s):
+    def master(self, style):
+        s = style
         return Master(space=0.15 * s.space, reverb=0.03 * s.space, room=0.05 + 0.25 * s.space, vinyl=0.0, wow=0.0,
                       tone=int(9000 * 2 ** s.brightness), drive=1.6)
 
