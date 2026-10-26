@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from typing import Any, cast
 
@@ -22,6 +23,8 @@ background playback:
   the music plays in a background player; gentle-stream attaches to it when it is already playing.
   gentle-stream ctl play|pause|toggle|next|stop|status controls it from any terminal
   gentle-stream ctl tempo BPM [--over SECONDS] glides the live tempo (default: 60 seconds)
+  gentle-stream ctl glide FIELD=VALUE... [--over SECONDS] glides energy, brightness, space, swing, vinyl,
+  lead_density or bpm in place, without restarting the piece (a new mood or next cancels glides)
   (status prints one JSON line; the others exit 1 when nothing is playing).
 
 saved prompts live in $XDG_CONFIG_HOME/gentle-stream/presets.json (default ~/.config/gentle-stream/).
@@ -55,7 +58,12 @@ def setup_samples() -> int:
     return 0
 
 
-def ctl(action: str, bpm: float | None = None, seconds: float = 60.0) -> int:
+OLDER_PLAYER = ("the running player is older than this gentle-stream; run `gentle-stream ctl stop` and "
+                "start again")
+
+
+def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
+        fields: dict[str, float] | None = None) -> int:
     from .client import NoPlayer, PlayerError, PlayerGone, connect
 
     try:
@@ -73,12 +81,19 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0) -> int:
         style = player.now.style
         print(json.dumps({"running": True, "playing": player.playing, "name": style.name, "genre": style.genre,
                           "mood": style.mood, "bpm": player.bpm, "target_bpm": player.target_bpm}, ensure_ascii=False))
-    elif action == "tempo":
+    elif action in ("tempo", "glide"):
         try:
-            assert bpm is not None
-            player.tempo(bpm, seconds)
+            if action == "tempo":
+                assert bpm is not None
+                player.tempo(bpm, seconds)
+            else:
+                assert fields
+                player.glide(fields, seconds)
         except PlayerGone:
             print("gentle-stream: nothing is playing", file=sys.stderr)
+            return 1
+        except PlayerError as e:
+            print(f"gentle-stream: {OLDER_PLAYER if 'unknown command' in str(e) else e}", file=sys.stderr)
             return 1
     elif action == "stop":
         player.close()
@@ -91,6 +106,44 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0) -> int:
             return 1
     player.detach()
     return 0
+
+
+def _number(text: str) -> float | None:
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _ctl_args(parser: argparse.ArgumentParser, args) -> tuple[float | None, float, dict[str, float] | None]:
+    """(bpm, seconds, fields) for `ctl`, or a usage error (exit 2) before the player is contacted."""
+    if args.action not in ("tempo", "glide"):
+        if args.args:
+            parser.error(f"{args.action} takes no arguments")
+        return None, args.over, None
+    if not math.isfinite(args.over) or not 0 <= args.over <= 3600:
+        parser.error("--over must be between 0 and 3600 seconds")
+    if args.action == "tempo":
+        if len(args.args) != 1:
+            parser.error("tempo requires BPM")
+        if (bpm := _number(args.args[0])) is None:
+            parser.error(f"invalid BPM: {args.args[0]!r}")
+        return bpm, args.over, None
+    from .engine import GLIDE_FIELDS
+
+    if not args.args:
+        parser.error("glide requires FIELD=VALUE")
+    fields: dict[str, float] = {}
+    for item in args.args:
+        name, sep, text = item.partition("=")
+        if not sep or name not in GLIDE_FIELDS or name in fields:
+            parser.error(f"invalid glide {item!r}: use FIELD=VALUE once per field, FIELD one of "
+                         f"{', '.join(GLIDE_FIELDS)}")
+        if (value := _number(text)) is None:
+            parser.error(f"invalid glide {item!r}: the value must be a number")
+        fields[name] = value
+    return None, args.over, fields
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -109,14 +162,14 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="command", metavar="command")
     sub.add_parser("setup-samples", help="download the FluidR3_GM soundfont (MIT) for sampled instruments, once")
     ctl_parser = sub.add_parser("ctl", help="control the music playing in the background")
-    ctl_parser.add_argument("action", choices=("play", "pause", "toggle", "next", "stop", "status", "tempo"))
-    ctl_parser.add_argument("bpm", nargs="?", type=float)
-    ctl_parser.add_argument("--over", type=float, default=60.0)
+    ctl_parser.add_argument("action", choices=("play", "pause", "toggle", "next", "stop", "status", "tempo",
+                                               "glide"))
+    ctl_parser.add_argument("args", nargs="*", metavar="ARG", help="tempo: BPM; glide: FIELD=VALUE...")
+    ctl_parser.add_argument("--over", type=float, default=60.0, metavar="SECONDS",
+                            help="tempo and glide: seconds to reach the target, 0-3600 (default: 60)")
     args = ap.parse_args(argv)
     if args.command == "ctl":
-        if args.action == "tempo" and args.bpm is None:
-            ctl_parser.error("tempo requires BPM")
-        return ctl(args.action, args.bpm if args.bpm is not None else 0.0, args.over)
+        return ctl(args.action, *_ctl_args(ctl_parser, args))
     if args.command == "setup-samples":
         from . import samples
 

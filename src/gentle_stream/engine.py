@@ -10,6 +10,12 @@ it sounds comes from the style's genre (`genres`, lo-fi by default): its voices 
 treatment and drum patterns, and its master-chain settings (convolution reverb, room, vinyl, tape wow, tone, bus
 compressor from `mastering`, final tape saturation). Style changes and "next" requests are queued from any thread
 and applied at the next bar boundary.
+
+Live glides (`queue_glide`, `queue_tempo`) move the continuous fields of the playing style (`GLIDE_FIELDS`) in
+place, one linear glide per field over the rendered seconds of the piece: no new piece, the form keeps going. Each
+bar takes the values at its start, so tempo is constant within a bar. A new style or "next" cancels every glide.
+Genres that derive something from these fields once per piece in `start` keep the start value (e.g. chiptune's
+arpeggio division follows the bpm the piece started with).
 """
 from __future__ import annotations
 
@@ -31,14 +37,32 @@ from .synth import SR, StatefulFilter, _sos, bp, hp, lp, mtof  # noqa: F401  (re
 
 IR_SEED = 1
 RAMP = 0.05   # seconds over which a changed master gain glides to its new value
+# the continuous style fields a live glide may move, with their bounds (as `Style.from_dict` clamps them)
+GLIDE_FIELDS = {"bpm": (50.0, 140.0), "energy": (0.0, 1.0), "brightness": (0.0, 1.0), "space": (0.0, 1.0),
+                "swing": (0.0, 0.3), "vinyl": (0.0, 1.0), "lead_density": (0.0, 1.0)}
+MAX_GLIDE_SECONDS = 3600.0
 
 
 @dataclass(frozen=True)
 class _Glide:
-    start: float
-    source: float
+    """One field's glide. Queued with only a target and a duration; the render thread fills in where and from what
+    value it starts at the first bar boundary after queueing, so no other thread reads the playing style."""
     target: float
     duration: float
+    start: float = 0.0    # piece seconds at the first bar it applies to
+    source: float = 0.0   # the field's value at that bar
+    started: bool = False
+
+    def at(self, seconds: float) -> float:
+        if self.duration == 0:
+            return self.target
+        return self.source + (self.target - self.source) * min(1.0, max(0.0, (seconds - self.start) / self.duration))
+
+
+def _bounded(name: str, value: float) -> float:
+    lo, hi = GLIDE_FIELDS[name]
+    value = float(np.clip(float(value), lo, hi))
+    return round(value, 1) if name == "bpm" else value
 
 
 @lru_cache(maxsize=16)
@@ -61,7 +85,7 @@ class Engine:
         self._lock = threading.Lock()
         self._pending_style: Style | None = None
         self._pending_next = False
-        self._tempo_glide: _Glide | None = None
+        self._glides: dict[str, _Glide] = {}   # live glides by field; replaced, never mutated, under _lock
         self.piece_seconds = 0.0
         self._root_rng = np.random.default_rng(seed)
         self._acc = np.zeros((int(self.HEADROOM * sr), 2))
@@ -88,26 +112,40 @@ class Engine:
         """Play `style` from the next bar on (a new piece)."""
         with self._lock:
             self._pending_style, self._pending_next = style, False
-            self._tempo_glide = None
+            self._glides = {}
+
+    def queue_glide(self, fields: dict[str, float], seconds: float) -> None:
+        """Glide each named field of the playing style to its value over `seconds`, in place (no new piece), from
+        the next bar boundary on. Values and `seconds` are clamped; a field already gliding gets the new glide,
+        the others keep theirs. Raises ValueError, applying nothing, if any field is not in GLIDE_FIELDS."""
+        unknown = sorted(set(fields) - set(GLIDE_FIELDS))
+        if unknown or not fields:
+            raise ValueError(f"cannot glide {', '.join(map(repr, unknown))}" if unknown else "no fields to glide")
+        seconds = float(np.clip(float(seconds), 0, MAX_GLIDE_SECONDS))
+        new = {name: _Glide(_bounded(name, value), seconds) for name, value in fields.items()}
+        with self._lock:
+            self._glides = {**self._glides, **new}
 
     def queue_tempo(self, bpm: float, seconds: float) -> None:
-        """Glide tempo in place, applying the first step at the next bar boundary."""
+        """Glide tempo in place: `queue_glide({"bpm": bpm}, seconds)`."""
+        self.queue_glide({"bpm": bpm}, seconds)
+
+    @property
+    def targets(self) -> dict[str, float]:
+        """The target of every glide still running (or queued), by field."""
         with self._lock:
-            bpm = float(np.clip(round(float(bpm), 1), 50, 140))
-            seconds = float(np.clip(seconds, 0, 3600))
-            self._tempo_glide = _Glide(self.piece_seconds, self.style.bpm, bpm, seconds)
+            return {name: g.target for name, g in self._glides.items()}
 
     @property
     def target_bpm(self) -> float | None:
-        with self._lock:
-            return None if self._tempo_glide is None else self._tempo_glide.target
+        return self.targets.get("bpm")
 
     def queue_next(self) -> None:
         """Start a new piece with the same mood from the next bar on."""
         with self._lock:
             if self._pending_style is None:
                 self._pending_next = True
-            self._tempo_glide = None
+            self._glides = {}
 
     @property
     def backend(self) -> str:
@@ -120,7 +158,6 @@ class Engine:
     # ------------------------------------------------------------ piece setup
     def _start_piece(self, style: Style) -> None:
         self.style = style
-        self._tempo_glide = None
         self.piece_seconds = 0.0
         self.genre = genres.get(style.genre)
         self.seed = int(self._root_rng.integers(2 ** 31))
@@ -145,7 +182,7 @@ class Engine:
             self._start_piece(style)
         elif nxt:
             self._start_piece(self.style.variation(self._root_rng))
-        self._apply_tempo()
+        self._apply_glides()
         bar_start = self.piece_seconds
         self._schedule_bar()
         n = int(round(self.bar_seconds * self.sr))
@@ -163,23 +200,32 @@ class Engine:
     def bar_start_seconds(self) -> float:
         return getattr(self, "_last_bar_start", 0.0)
 
-    def _apply_tempo(self) -> None:
+    def _apply_glides(self) -> None:
+        """At a bar boundary: start newly queued glides here, set every gliding field to its value at this bar on
+        the style, the piece and the composer, and drop the glides that reached their target."""
         with self._lock:
-            g = self._tempo_glide
-        if g is None:
+            glides = self._glides
+        if not glides:
             return
-        if g.duration == 0:
-            value = g.target
-        else:
-            value = g.source + (g.target - g.source) * min(1.0, max(0.0, (self.piece_seconds - g.start) / g.duration))
-        value = float(np.clip(round(value, 1), 50, 140))
-        self.style = replace(self.style, bpm=value)
-        self._piece.style = replace(self._piece.style, bpm=value)
-        self.composer.style = replace(self.composer.style, bpm=value)
-        if self.piece_seconds - g.start >= g.duration:
-            with self._lock:   # a glide queued meanwhile by another thread must survive
-                if self._tempo_glide is g:
-                    self._tempo_glide = None
+        now, values, running = self.piece_seconds, {}, {}
+        for name, g in glides.items():
+            if not g.started:
+                g = replace(g, start=now, source=getattr(self.style, name), started=True)
+            values[name] = _bounded(name, g.at(now))
+            running[name] = g
+        self.style = replace(self.style, **values)
+        self._piece.style = replace(self._piece.style, **values)
+        self.composer.style = replace(self.composer.style, **values)
+        with self._lock:   # a glide queued or cancelled meanwhile by another thread wins over this bookkeeping
+            current = dict(self._glides)
+            for name, g in glides.items():
+                if current.get(name) is not g:
+                    continue
+                if now - running[name].start >= running[name].duration:
+                    del current[name]
+                else:
+                    current[name] = running[name]
+            self._glides = current
 
     def _schedule_bar(self) -> None:
         p = self.composer.plan(self.bar)

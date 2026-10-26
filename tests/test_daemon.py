@@ -118,8 +118,8 @@ def run_ctl(capsys, *args):
 def fake_player():
     """A `Player` with a fake stream, never started: enough for `daemon.handle` without real audio or threads."""
     streams = []
-    p = Player(Engine(Style(bpm=72), seed=1), stream_factory=lambda **kw: streams.append(FakeStream(**kw)) or streams[-1])
-    return p
+    engine = Engine(Style(bpm=72, energy=0.2), seed=1, samples=False)
+    return Player(engine, stream_factory=lambda **kw: streams.append(FakeStream(**kw)) or streams[-1])
 
 
 # ------------------------------------------------------------ lifecycle
@@ -255,6 +255,46 @@ def test_handle_tempo_rejects_bad_requests_and_leaves_the_style_unchanged(reques
     answer = daemon.handle(player, request_)
     assert answer["ok"] is False and answer["error"].startswith("bad request: ")
     assert player.engine.style.bpm == before and player.engine.target_bpm is None
+
+
+def test_handle_glide_queues_one_glide_per_field():
+    from gentle_stream import daemon
+
+    player = fake_player()
+    answer = daemon.handle(player, {"cmd": "glide", "fields": {"energy": 0.9, "brightness": 0.8}, "seconds": 120})
+    assert answer["ok"] is True
+    assert player.engine.targets == {"energy": 0.9, "brightness": 0.8}
+
+
+@pytest.mark.parametrize("request_", [
+    {"cmd": "glide", "fields": {"energy": 0.9, "genre": "jazz"}, "seconds": 30},
+    {"cmd": "glide", "fields": {"energy": 0.9, "colour": 0.5}, "seconds": 30},
+    {"cmd": "glide", "fields": {"energy": 0.9, "brightness": "bright"}, "seconds": 30},
+    {"cmd": "glide", "fields": {"energy": 0.9, "space": float("nan")}, "seconds": 30},
+    {"cmd": "glide", "fields": {"energy": 0.9, "vinyl": True}, "seconds": 30},
+    {"cmd": "glide", "fields": {}, "seconds": 30},
+    {"cmd": "glide", "fields": ["energy"], "seconds": 30},
+    {"cmd": "glide", "fields": {"energy": 0.9}},
+    {"cmd": "glide", "fields": {"energy": 0.9}, "seconds": 3601},
+    {"cmd": "glide", "seconds": 30},
+], ids=["discrete-field", "unknown-field", "string-value", "nan-value", "bool-value", "no-fields",
+        "fields-not-object", "missing-seconds", "seconds-too-large", "missing-fields"])
+def test_handle_glide_rejects_bad_requests_atomically(request_):
+    from gentle_stream import daemon
+
+    player = fake_player()
+    answer = daemon.handle(player, request_)
+    assert answer["ok"] is False and answer["error"].startswith("bad request: ")
+    assert player.engine.targets == {}            # the valid energy field was not applied either
+    player.engine.render_bar()
+    assert player.engine.style.energy == 0.2
+
+
+def test_handle_glide_names_the_rejected_field():
+    from gentle_stream import daemon
+
+    answer = daemon.handle(fake_player(), {"cmd": "glide", "fields": {"genre": 1}, "seconds": 1})
+    assert "genre" in answer["error"]
 
 
 # ------------------------------------------------------------ controls and state

@@ -190,6 +190,10 @@ class PlayerClient:
     def tempo(self, bpm: float, seconds: float) -> None:
         self._control("tempo", bpm=float(bpm), seconds=float(seconds))
 
+    def glide(self, fields: dict[str, float], seconds: float) -> None:
+        """Glide continuous style fields in place; PlayerError when the player refuses (or predates glides)."""
+        self._control("glide", fields={k: float(v) for k, v in fields.items()}, seconds=float(seconds))
+
     def set_volume(self, volume: float) -> None:
         self._control("set_volume", volume=float(volume))
 

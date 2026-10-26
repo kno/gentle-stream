@@ -46,6 +46,55 @@ def test_ctl_tempo_without_a_player_says_nothing_is_playing(runtime, capsys):
     assert out == "" and err == "gentle-stream: nothing is playing\n"
 
 
+def test_ctl_glide_without_a_player_says_nothing_is_playing(runtime, capsys):
+    assert main(["ctl", "glide", "energy=0.9", "--over", "30"]) == 1
+    assert capsys.readouterr() == ("", "gentle-stream: nothing is playing\n")
+
+
+@pytest.mark.parametrize("argv", [
+    ["ctl", "glide"],
+    ["ctl", "glide", "energy"],
+    ["ctl", "glide", "energy=loud"],
+    ["ctl", "glide", "genre=jazz"],
+    ["ctl", "glide", "energy=0.9", "energy=0.2"],
+    ["ctl", "tempo"],
+    ["ctl", "tempo", "fast"],
+    ["ctl", "tempo", "110", "120"],
+    ["ctl", "play", "5"],
+], ids=["no-fields", "no-value", "not-a-number", "discrete-field", "repeated-field", "tempo-no-bpm",
+        "tempo-not-a-number", "tempo-two-values", "play-with-value"])
+def test_ctl_rejects_malformed_arguments_before_contacting_the_player(argv, capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        main(argv)
+    assert exit_info.value.code == 2 and capsys.readouterr().err.startswith("usage: ")
+
+
+def test_ctl_glide_tells_how_to_restart_an_older_player(monkeypatch, capsys):
+    from gentle_stream import client
+
+    class OldPlayer:
+        def glide(self, fields, seconds):
+            raise client.PlayerError("bad request: unknown command 'glide'")
+
+        def detach(self):
+            pass
+
+    monkeypatch.setattr(client, "connect", lambda: OldPlayer())
+    assert main(["ctl", "glide", "energy=0.9"]) == 1
+    assert capsys.readouterr().err == ("gentle-stream: the running player is older than this gentle-stream; "
+                                       "run `gentle-stream ctl stop` and start again\n")
+
+
+def test_ctl_glide_reaches_a_running_player(runtime, capsys):
+    from gentle_stream import client
+
+    client.ensure()
+    assert main(["ctl", "glide", "energy=0.9", "brightness=0.8", "--over", "30"]) == 0
+    assert capsys.readouterr() == ("", "")
+    assert main(["ctl", "tempo", "100"]) == 0
+    assert capsys.readouterr() == ("", "")
+
+
 def test_ctl_status_includes_bpm_and_target_bpm(runtime, capsys):
     import json
 

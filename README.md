@@ -188,6 +188,7 @@ The music plays in a background player, one per user, that `gentle-stream` start
 ```bash
 gentle-stream ctl status   # ... includes audible "bpm" and "target_bpm"
 gentle-stream ctl tempo 110 --over 60
+gentle-stream ctl glide energy=0.9 brightness=0.8 lead_density=0.9 --over 120
 gentle-stream ctl pause    # also: play, toggle, next
 gentle-stream ctl stop     # ends the background player
 ```
@@ -197,6 +198,9 @@ gentle-stream ctl stop     # ends the background player
 | `ctl status` | One JSON line; just `{"running": false}` when nothing plays | `0` |
 | `ctl play`, `pause`, `toggle`, `next`, `stop` | Nothing, or `gentle-stream: nothing is playing` on stderr | `0`, or `1` when nothing plays |
 | `ctl tempo BPM [--over SECONDS]` | Glide tempo in place (default 60 seconds) | `0`, or `1` when nothing plays |
+| `ctl glide FIELD=VALUE... [--over SECONDS]` | Glide `energy`, `brightness`, `space`, `swing`, `vinyl`, `lead_density` or `bpm` in place (default 60 seconds) | `0`; `1` when nothing plays or the player refuses; `2` for a malformed or discrete field |
+
+A glide changes the piece that is playing instead of starting a new one: the song form keeps going, and each bar takes the values at its start. Each field glides on its own (a second `glide` adds to or replaces per field), values are clamped like a mood's, and a new mood or `next` cancels every glide. Discrete fields (genre, key, mode, instruments, drums) only change with a new piece. Genres that pick something once per piece from the tempo (chiptune's arpeggio speed) keep the value the piece started with. If the background player is older than the command, `ctl` says so: run `gentle-stream ctl stop` and start again.
 
 The player listens on a Unix socket in a private directory (`$XDG_RUNTIME_DIR/gentle-stream`, default `~/.cache/gentle-stream/run`, mode `0700`), authenticated with a random key in a `0600` file. A player that crashed is detected and replaced on the next start. If the audio output cannot be opened, `gentle-stream` prints the error and exits with `1`.
 

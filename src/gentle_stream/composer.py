@@ -4,7 +4,10 @@ The composer decides WHAT plays in every bar; the engine decides how it sounds. 
 it plans the piece one form cycle at a time (the stream is endless, so the form loops with fresh variation) and
 answers `plan(bar)` with a `BarPlan`: section, energy, chord (and an optional passing chord on beats 3-4), key
 lift, active layers and the notes of the lead, the counter-melody and the bass. It is pure and deterministic per
-seed: it owns its random generator and never touches the audio one. A genre may reshape the diatonic chords
+seed: it owns its random generator and never touches the audio one. Energy, the counter-melody and how often the
+lead plays are decided from `style` when a bar is planned (`plan`), not when its cycle is, so a live glide of
+`energy` or `lead_density` reaches the cycle already playing; none of them draws randomness, so a constant style
+plans exactly what it always did. A genre may reshape the diatonic chords
 through `chord_hook` (see `genres.base.Genre.chord`); everything else is shared by every genre.
 """
 from __future__ import annotations
@@ -31,6 +34,11 @@ LIFT_CHANCE = 0.5
 CADENCES = {"minor": (4, 5), "major": (4, 5), "dorian": (4, 5), "phrygian": (7, 2), "lydian": (5, 2),
             "mixolydian": (4, 7)}
 RAISED = ("minor", "dorian")   # these borrow the major dominant (raised leading tone) at cadences
+
+
+def _plays(lead_density: float) -> tuple[int, ...]:
+    """Positions of the 8-bar melody phrase where the lead plays, sparser at a low `lead_density`."""
+    return (0, 1, 6, 7) if lead_density < 0.34 else (0, 1, 3, 4, 5, 7) if lead_density < 0.67 else tuple(range(8))
 
 
 def cycle_position(bar: int) -> tuple[int, int]:
@@ -103,13 +111,14 @@ DEVELOPMENT = {
 class _Bar:
     section: str
     section_bar: int
-    energy: float
+    base: float              # the section's energy before the style scales it (see `plan`)
     chord: Chord
     passing: Chord | None = None
     key_offset: int = 0
     melody: tuple = ()
     counter: tuple = ()
-    lead: bool = False
+    linked: bool = False     # the counter-melody was on when the cycle was planned: the next section's leads on
+    phrase: int | None = None   # position in the 8-bar melody phrase, for `_plays`
     approach: float = 0.0   # random draw that picks the bass approach note
 
 
@@ -132,15 +141,21 @@ class Composer:
         while len(self._bars) < bar + 2:
             self._plan_cycle()
         b, nxt = self._bars[bar], self._bars[bar + 1]
+        s = self.style
+        energy = self._energy(b.base)
         layers = {"chords", "bass"}
-        if self.style.drums != "none" and b.section not in ("intro", "breakdown"):
+        if s.drums != "none" and b.section not in ("intro", "breakdown"):
             layers.add("drums")
-        if b.lead:
+        if s.lead != "none" and b.phrase is not None and b.phrase in _plays(s.lead_density):
             layers.add("lead")
-        if b.counter:
+        counter = b.counter if s.lead != "none" and energy >= COUNTER_ENERGY else ()
+        if counter:
             layers.add("counter")
-        return BarPlan(bar, b.section, b.section_bar, b.energy, b.chord, b.passing, b.key_offset,
-                       frozenset(layers), b.melody, b.counter, self._bass(bar, b, nxt))
+        return BarPlan(bar, b.section, b.section_bar, energy, b.chord, b.passing, b.key_offset,
+                       frozenset(layers), b.melody, counter, self._bass(bar, b, nxt, energy))
+
+    def _energy(self, base: float) -> float:
+        return float(min(1.0, base * (0.5 + self.style.energy)))
 
     # ------------------------------------------------------------ harmony
     def _chord(self, degree: int, raised: bool = False) -> Chord:
@@ -204,21 +219,19 @@ class Composer:
         if self.rng.random() < LIFT_CHANCE:
             lift_at = ("A'", "B'")[int(self.rng.integers(2))]
             lift = int(self.rng.choice([1, 2]))
-        scale = 0.5 + self.style.energy
         for name, n in form:
-            energy = float(min(1.0, ENERGY[name] * scale))
+            linked = self._energy(ENERGY[name]) >= COUNTER_ENERGY
             chords, passing = self._harmony(name, n)
             key = lift if name == lift_at else 0
             if key and self._bars:   # pivot: the dominant of the new key on the last beats before the lift
                 self._bars[-1].passing = self._dominant7(7 + key)
             start = len(self._bars)
             for i in range(n):
-                self._bars.append(_Bar(name, i, energy, chords[i], passing[i], key,
+                self._bars.append(_Bar(name, i, ENERGY[name], chords[i], passing[i], key, linked=linked,
                                        approach=float(self.rng.random())))
-            if name in MAIN:
+            if name in MAIN:   # the counter-melody is planned for every main section; `plan` turns it on
                 self._melody(start, name, n, key)
-                if energy >= COUNTER_ENERGY and self.style.lead != "none":
-                    self._counter(start, n, key)
+                self._counter(start, n, key)
         self.cycle += 1
 
     # ------------------------------------------------------------ melody
@@ -265,10 +278,9 @@ class Composer:
 
     def _melody(self, start: int, name: str, n: int, key: int) -> None:
         """Question/answer phrases from the motif; strong beats on chord tones, the answer ends on the tonic."""
-        scale, s = self._scale(key), self.style
+        scale = self._scale(key)
         q, a, lift = DEVELOPMENT[name]
         phrases = ((0, q), (4, a)) if n == 8 else ((4, a),)
-        plays = (0, 1, 6, 7) if s.lead_density < 0.34 else (0, 1, 3, 4, 5, 7) if s.lead_density < 0.67 else range(8)
         tonic = (self.ton + key) % 12
         last = scale[self.anchor]
         for first, transform in phrases:
@@ -288,13 +300,13 @@ class Composer:
                         m = self._nearest(m, self._tones(bar, b))
                     notes.append(Note(b, m, ln))
                     last = m
-                bar.melody, bar.lead = tuple(notes), s.lead != "none" and pos in plays
+                bar.melody, bar.phrase = tuple(notes), pos
             # phrase end: the question holds a non-tonic chord tone, the answer lands on the tonic
             pos = first + 3
             bar = self._bars[start + pos - (8 - n)]
             pcs = self._tones(bar, 0)
             m = self._nearest(last, {tonic}) if first else self._nearest(last, pcs, avoid={tonic})
-            bar.melody, bar.lead = (Note(0, m, 4),), s.lead != "none" and pos in plays
+            bar.melody, bar.phrase = (Note(0, m, 4),), pos
 
     def _sounding(self, i: int, beat: float) -> int | None:
         for j in range(i, -1, -1):
@@ -307,7 +319,7 @@ class Composer:
         """A slower inner voice on chord tones, moving against the lead's direction."""
         lo, hi = self.ton + key + 5, self.ton + key + 21
         prev = None
-        if start and self._bars[start - 1].counter:
+        if start and self._bars[start - 1].counter and self._bars[start - 1].linked:
             last = self._bars[start - 1].counter[-1]
             prev = (last.midi, self._sounding(start - 1, last.beat))
         for i in range(start, start + n):
@@ -332,7 +344,7 @@ class Composer:
         root = (chord.tones[0] + key) % 12
         return self.ton - 12 + root if self.ton - 12 + root < 46 else self.ton - 24 + root
 
-    def _bass(self, i: int, b: _Bar, nxt: _Bar) -> tuple[Note, ...]:
+    def _bass(self, i: int, b: _Bar, nxt: _Bar, energy: float) -> tuple[Note, ...]:
         """Root on beat 1, the passing chord's root or a fifth on the back half, an approach into the next root."""
         root = self._bass_midi(b.chord, b.key_offset)
         target = self._bass_midi(nxt.chord, nxt.key_offset)
@@ -341,7 +353,7 @@ class Composer:
         notes = [Note(0, root, 2 if b.passing is not None else 2.5)]
         if b.passing is not None:
             notes.append(Note(2, self._bass_midi(b.passing, b.key_offset), end - 2))
-        elif b.energy >= 0.4 and b.section != "breakdown":
+        elif energy >= 0.4 and b.section != "breakdown":
             notes.append(Note(2.5, root + (7 if i % 2 else 0), end - 2.5))
         if moves:
             if b.approach < 0.4:

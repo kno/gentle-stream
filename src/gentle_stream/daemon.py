@@ -10,7 +10,9 @@ key kept in a 0600 file. Messages are JSON (never pickle), one request and one r
     {"cmd": "play" | "pause" | "toggle" | "next"}
     {"cmd": "set_volume", "volume": 0.5}
     {"cmd": "set_style", "style": {...Style.to_dict()...}}
-    {"cmd": "tempo", "bpm": 110, "seconds": 60}
+    {"cmd": "glide", "fields": {"energy": 0.9, "brightness": 0.8}, "seconds": 120}
+                                     (continuous fields only, see engine.GLIDE_FIELDS; one bad field rejects all)
+    {"cmd": "tempo", "bpm": 110, "seconds": 60}   (a bpm glide)
     {"cmd": "stop"}                  -> {"ok": true}, then the process exits and every connection sees EOF
     anything else                    -> {"ok": false, "error": "..."}
 
@@ -24,6 +26,7 @@ import argparse
 import fcntl
 import importlib
 import json
+import math
 import os
 import secrets
 import signal
@@ -127,6 +130,31 @@ def state(player, bands: int = 0) -> dict:
     return out
 
 
+def _finite(value, what: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{what} must be a finite number")
+    return float(value)
+
+
+def _seconds(request) -> float:
+    seconds = _finite(request["seconds"], "seconds")
+    if not 0 <= seconds <= 3600:
+        raise ValueError("seconds must be between 0 and 3600")
+    return seconds
+
+
+def _glide_fields(fields) -> dict[str, float]:
+    """Validated glide fields; any unknown or discrete field or bad value rejects the whole request."""
+    from .engine import GLIDE_FIELDS
+
+    if not isinstance(fields, dict) or not fields:
+        raise TypeError("fields must be a non-empty object")
+    unknown = [name for name in fields if name not in GLIDE_FIELDS]
+    if unknown:
+        raise ValueError(f"cannot glide {', '.join(map(repr, unknown))}: only {', '.join(GLIDE_FIELDS)}")
+    return {name: _finite(value, name) for name, value in fields.items()}
+
+
 def handle(player, request) -> dict:
     """Run one request against the player; bad requests get an error answer, never an exception."""
     from .style import Style
@@ -140,15 +168,11 @@ def handle(player, request) -> dict:
         elif cmd == "set_volume":
             player.set_volume(float(request["volume"]))
         elif cmd == "tempo":
-            import math
-            bpm, seconds = request["bpm"], request["seconds"]
-            if isinstance(bpm, bool) or not isinstance(bpm, (int, float)) or not math.isfinite(bpm):
-                raise ValueError("bpm must be a finite number")
-            if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds):
-                raise ValueError("seconds must be a finite number")
-            if not 0 <= seconds <= 3600:
-                raise ValueError("seconds must be between 0 and 3600")
-            player.engine.queue_tempo(bpm, seconds)
+            bpm = _finite(request["bpm"], "bpm")
+            player.engine.queue_tempo(bpm, _seconds(request))
+        elif cmd == "glide":
+            fields = _glide_fields(request["fields"])
+            player.engine.queue_glide(fields, _seconds(request))
         elif cmd == "set_style":
             if not isinstance(request["style"], dict):
                 raise TypeError("style must be an object")

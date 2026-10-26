@@ -154,6 +154,39 @@ def test_counter_melody_plays_only_in_high_energy_sections_and_moves_against_the
     assert all(not p.counter for p in plans(Style(lead="none"), bars=CYCLE1))
 
 
+def test_energy_is_evaluated_at_plan_time_and_raises_the_playing_cycle():
+    """A glide changes `style` on a composer whose cycle is already planned: energy and the counter-melody follow."""
+    from dataclasses import replace
+
+    c = Composer(Style(energy=0.2), 1, TON)
+    before = [c.plan(b) for b in range(CYCLE1)]
+    c.style = replace(c.style, energy=1.0)
+    after = [c.plan(b) for b in range(CYCLE1)]
+    assert all(a.energy >= b.energy for a, b in zip(after, before, strict=True))
+    assert sum(a.energy for a in after) > sum(b.energy for b in before)
+    assert not any("counter" in p.layers for p in before)
+    main = [p for p in after if p.section in MAIN and p.energy >= COUNTER_ENERGY]
+    assert main and all("counter" in p.layers and p.counter for p in main)
+    assert all(("counter" in p.layers) == (p.energy >= COUNTER_ENERGY and p.section in MAIN) for p in after)
+
+
+def test_lead_density_is_evaluated_at_plan_time():
+    from dataclasses import replace
+
+    c = Composer(Style(lead_density=0.0), 1, TON)
+    sparse = sum("lead" in c.plan(b).layers for b in range(CYCLE1))
+    c.style = replace(c.style, lead_density=1.0)
+    dense = sum("lead" in c.plan(b).layers for b in range(CYCLE1))
+    assert 0 < sparse < dense
+
+
+def test_a_constant_style_plans_exactly_as_a_fresh_composer():
+    """Plan-time evaluation draws no randomness: re-planning with the same style changes nothing."""
+    for seed in range(4):
+        for style in (Style(), Style(energy=0.9, lead_density=0.8), Style(energy=0.1, lead_density=0.2)):
+            assert plans(style, seed) == plans(style, seed)
+
+
 def test_bass_plays_the_root_and_approaches_the_next_chord():
     ps = plans(seed=5)
     approaches = 0
