@@ -176,6 +176,7 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 | `--gentle-shell PATH` | `gentle-shell` executable to run (default: `gentle-shell`) |
 | `setup-samples` | Subcommand: download the FluidR3_GM soundfont once (see below) |
 | `ctl ACTION` | Subcommand: control the music playing in the background (see below) |
+| `render OUT.wav` | Subcommand: render music into a WAV file, without a player or an audio device (see below) |
 
 <div align="right"><a href="#top">Back to top</a></div>
 
@@ -203,6 +204,30 @@ gentle-stream ctl stop     # ends the background player
 A glide changes the piece that is playing instead of starting a new one: the song form keeps going, and each bar takes the values at its start. Each field glides on its own (a second `glide` adds to or replaces per field), values are clamped like a mood's, and a new mood or `next` cancels every glide. Discrete fields (genre, key, mode, instruments, drums) only change with a new piece. Genres that pick something once per piece from the tempo (chiptune's arpeggio speed) keep the value the piece started with. If the background player is older than the command, `ctl` says so: run `gentle-stream ctl stop` and start again.
 
 The player listens on a Unix socket in a private directory (`$XDG_RUNTIME_DIR/gentle-stream`, default `~/.cache/gentle-stream/run`, mode `0700`), authenticated with a random key in a `0600` file. A player that crashed is detected and replaced on the next start. If the audio output cannot be opened, `gentle-stream` prints the error and exits with `1`.
+
+<div align="right"><a href="#top">Back to top</a></div>
+
+<div align="center"><img src="https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/rose.png" width="28" alt="" /></div>
+
+## Render to a file
+
+`gentle-stream render` writes music to a WAV file with the engine alone: no background player, no audio device, faster than real time.
+
+```bash
+gentle-stream render --seconds 60 --genre synthwave /tmp/synth.wav   # wrote /tmp/synth.wav: 60 s, synthwave, seed 1234567
+gentle-stream render --seed 1234567 --genre synthwave /tmp/again.wav # the same seed and style write the same bytes
+```
+
+| Flag | Meaning |
+| :--- | :--- |
+| `OUT.wav` | The file to write: 16-bit PCM, stereo, at the engine's sample rate (44.1 kHz) |
+| `--seconds N` | Length, above 0 and at most 3600 (default: 60); the last bar is trimmed to the exact length |
+| `--seed S` | Seed for the piece, a non-negative integer (default: random; the line printed at the end shows it) |
+| `--genre NAME` | Genre, overriding the mood file's; an unknown name lists the valid ones |
+| `--mood-file STYLE.json` | A style as JSON (the fields of `Style`, e.g. `{"genre": "jazz", "bpm": 120, "energy": 0.9}`); missing or invalid fields fall back to the defaults |
+| `--procedural` | Use the procedural instruments even when the soundfont is installed |
+
+A file or path that cannot be read or written prints one `gentle-stream: ...` line and exits with `1`; invalid flags exit with `2`. A minute of audio is about 10 MB.
 
 <div align="right"><a href="#top">Back to top</a></div>
 
@@ -309,7 +334,7 @@ All music is generated: the composer builds every melody, counter-melody, bass l
 
 | Path | What it holds |
 | :--- | :--- |
-| [`src/gentle_stream/__init__.py`](src/gentle_stream/__init__.py) | CLI: flags, `setup-samples`, `ctl`, attaching to or starting the background player |
+| [`src/gentle_stream/__init__.py`](src/gentle_stream/__init__.py) | CLI: flags, `setup-samples`, `ctl`, `render`, attaching to or starting the background player |
 | [`src/gentle_stream/daemon.py`](src/gentle_stream/daemon.py) | The background player process: audio output, private socket, single instance |
 | [`src/gentle_stream/client.py`](src/gentle_stream/client.py) | Attach to, start and control the background player (same interface as the in-process player) |
 | [`src/gentle_stream/app.py`](src/gentle_stream/app.py) | Textual TUI, theme, spectrum, model picker, save and saved-prompt dialogs |

@@ -27,6 +27,10 @@ background playback:
   lead_density or bpm in place, without restarting the piece (a new mood or next cancels glides)
   (status prints one JSON line; the others exit 1 when nothing is playing).
 
+render to a file:
+  gentle-stream render [--seconds N] [--seed S] [--genre NAME] [--mood-file STYLE.json] [--procedural] OUT.wav
+  writes N seconds (default: 60) as 16-bit stereo WAV, without a player or an audio device.
+
 saved prompts live in $XDG_CONFIG_HOME/gentle-stream/presets.json (default ~/.config/gentle-stream/).
 
 sampled instruments (optional):
@@ -106,6 +110,74 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
     return 0
 
 
+RENDER_SECONDS = 60.0       # default length of `render`
+MAX_RENDER_SECONDS = 3600.0
+
+
+def _render_seconds(text: str) -> float:
+    value = _number(text)
+    if value is None or not 0 < value <= MAX_RENDER_SECONDS:
+        raise argparse.ArgumentTypeError(f"must be a number above 0 and at most {MAX_RENDER_SECONDS:g}, "
+                                         f"got {text!r}")
+    return value
+
+
+def _seed(text: str) -> int:
+    try:
+        value = int(text)
+    except ValueError:
+        value = -1
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"must be a non-negative integer, got {text!r}")
+    return value
+
+
+def render(out: str, seconds: float, seed: int | None, genre: str | None, mood_file: str | None,
+           procedural: bool) -> int:
+    """Render `seconds` of music with the engine alone into a 16-bit stereo WAV at `out`."""
+    import secrets
+    from dataclasses import replace
+
+    import numpy as np
+    from scipy.io import wavfile
+
+    from .engine import Engine
+    from .style import Style
+
+    style = Style()
+    if mood_file is not None:
+        try:
+            with open(mood_file, encoding="utf-8") as f:
+                data = json.load(f)
+        except OSError as e:
+            print(f"gentle-stream: cannot read {mood_file}: {e.strerror}", file=sys.stderr)
+            return 1
+        except ValueError:   # not JSON, or not UTF-8 text
+            data = None
+        if not isinstance(data, dict):
+            print(f"gentle-stream: {mood_file}: not a JSON style object", file=sys.stderr)
+            return 1
+        style = Style.from_dict(data)
+    if genre is not None:
+        style = replace(style, genre=genre)
+    seed = secrets.randbelow(2 ** 31) if seed is None else seed   # printed, so any render can be repeated
+    engine = Engine(style, seed=seed, samples=not procedural)
+    frames = max(1, int(round(seconds * engine.sr)))   # any length above 0 writes at least one frame
+    try:
+        with open(out, "wb") as f:   # opened first: a long render must not end in a path error
+            bars, done = [], 0
+            while done < frames:
+                bars.append(engine.render_bar())
+                done += len(bars[-1])
+            audio = np.clip(np.concatenate(bars)[:frames], -1, 1)   # the last bar trimmed to the exact length
+            wavfile.write(f, engine.sr, np.round(audio * 32767).astype(np.int16))
+    except OSError as e:
+        print(f"gentle-stream: cannot write {out}: {e.strerror}", file=sys.stderr)
+        return 1
+    print(f"wrote {out}: {seconds:g} s, {style.genre}, seed {seed}")
+    return 0
+
+
 def _number(text: str) -> float | None:
     try:
         value = float(text)
@@ -165,9 +237,27 @@ def main(argv: list[str] | None = None) -> int:
     ctl_parser.add_argument("args", nargs="*", metavar="ARG", help="tempo: BPM; glide: FIELD=VALUE...")
     ctl_parser.add_argument("--over", type=float, default=60.0, metavar="SECONDS",
                             help="tempo and glide: seconds to reach the target, 0-3600 (default: 60)")
+    render_parser = sub.add_parser("render", help="render music into a 16-bit stereo WAV file (no audio device)",
+                                   description="Render music offline with the engine alone into a WAV file.")
+    render_parser.add_argument("out", metavar="OUT.wav", help="the WAV file to write")
+    render_parser.add_argument("--seconds", type=_render_seconds, default=RENDER_SECONDS, metavar="N",
+                               help=f"length, above 0 and at most {MAX_RENDER_SECONDS:g} (default: "
+                                    f"{RENDER_SECONDS:g})")
+    render_parser.add_argument("--seed", type=_seed, help="seed for the piece (default: random, printed)")
+    render_parser.add_argument("--genre", metavar="NAME", help="genre, overriding the mood file's")
+    render_parser.add_argument("--mood-file", metavar="STYLE.json",
+                               help="a style as JSON (the fields of a saved prompt's style)")
+    render_parser.add_argument("--procedural", action="store_true",
+                               help="use the procedural instruments even if the soundfont is installed")
     args = ap.parse_args(argv)
     if args.command == "ctl":
         return ctl(args.action, *_ctl_args(ctl_parser, args))
+    if args.command == "render":
+        from .style import genre_names
+
+        if args.genre is not None and args.genre not in genre_names():
+            render_parser.error(f"invalid genre {args.genre!r} (choose from {', '.join(genre_names())})")
+        return render(args.out, args.seconds, args.seed, args.genre, args.mood_file, args.procedural)
     if args.command == "setup-samples":
         from . import samples
 

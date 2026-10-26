@@ -117,6 +117,13 @@ def test_help_lists_the_setup_samples_command(capsys):
     assert "setup-samples" in capsys.readouterr().out
 
 
+def test_help_lists_the_render_command(capsys):
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    out = capsys.readouterr().out
+    assert "render" in out and "OUT.wav" in out
+
+
 def test_setup_samples_installs_once_and_reports_it(tmp_path, monkeypatch, capsys):
     from gentle_stream import samples
     from tests.test_samples import make_deb
