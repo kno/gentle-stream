@@ -13,6 +13,10 @@ key kept in a 0600 file. Messages are JSON (never pickle), one request and one r
     {"cmd": "glide", "fields": {"energy": 0.9, "brightness": 0.8}, "seconds": 120}
                                      (continuous fields only, see engine.GLIDE_FIELDS; one bad field rejects all)
     {"cmd": "tempo", "bpm": 110, "seconds": 60}   (a bpm glide)
+    {"cmd": "journey_start", "name": "warm-up"}   (a built-in journey, see journey.BUILTIN, from the next bar; it
+                                     replaces a running one; an unknown name answers {"ok": false, "error":
+                                     "no journey called ..."} listing the built-ins)
+    {"cmd": "journey_stop"}          (leaves the music as it is; fine when no journey runs)
     {"cmd": "stop"}                  -> {"ok": true}, then the process exits and every connection sees EOF
     anything else                    -> {"ok": false, "error": "..."}
 
@@ -173,6 +177,17 @@ def handle(player, request) -> dict:
         elif cmd == "glide":
             fields = _glide_fields(request["fields"])
             player.engine.queue_glide(fields, _seconds(request))
+        elif cmd == "journey_start":
+            from .journey import BUILTIN, unknown_journey
+
+            name = request["name"]
+            if not isinstance(name, str):
+                raise TypeError("name must be a string")
+            if name not in BUILTIN:
+                return {"ok": False, "error": unknown_journey(name)}
+            player.engine.queue_journey(BUILTIN[name])
+        elif cmd == "journey_stop":
+            player.engine.stop_journey()
         elif cmd == "set_style":
             if not isinstance(request["style"], dict):
                 raise TypeError("style must be an object")

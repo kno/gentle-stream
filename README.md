@@ -177,6 +177,7 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 | `setup-samples` | Subcommand: download the FluidR3_GM soundfont once (see below) |
 | `ctl ACTION` | Subcommand: control the music playing in the background (see below) |
 | `render OUT.wav` | Subcommand: render music into a WAV file, without a player or an audio device (see below) |
+| `journey ACTION` | Subcommand: run a built-in journey in the background player (see below) |
 
 <div align="right"><a href="#top">Back to top</a></div>
 
@@ -200,10 +201,34 @@ gentle-stream ctl stop     # ends the background player
 | `ctl play`, `pause`, `toggle`, `next`, `stop` | Nothing, or `gentle-stream: nothing is playing` on stderr | `0`, or `1` when nothing plays |
 | `ctl tempo BPM [--over SECONDS]` | Glide tempo in place (default 60 seconds) | `0`, or `1` when nothing plays |
 | `ctl glide FIELD=VALUE... [--over SECONDS]` | Glide `energy`, `brightness`, `space`, `swing`, `vinyl`, `lead_density` or `bpm` in place (default 60 seconds) | `0`; `1` when nothing plays or the player refuses; `2` for a malformed or discrete field |
+| `journey play NAME` | Run a built-in journey (see [Journeys](#journeys)); nothing on stdout | `0`; `1` when nothing plays or the name is unknown |
+| `journey stop` | End the journey, leaving the music as it is | `0`, or `1` when nothing plays |
+| `journey list` | The built-in journeys, one per line with a short description | `0` |
 
 A glide changes the piece that is playing instead of starting a new one: the song form keeps going, and each bar takes the values at its start. Each field glides on its own (a second `glide` adds to or replaces per field), values are clamped like a mood's, and a new mood or `next` cancels every glide. Discrete fields (genre, key, mode, instruments, drums) only change with a new piece. Genres that pick something once per piece from the tempo (chiptune's arpeggio speed) keep the value the piece started with. If the background player is older than the command, `ctl` says so: run `gentle-stream ctl stop` and start again.
 
 The player listens on a Unix socket in a private directory (`$XDG_RUNTIME_DIR/gentle-stream`, default `~/.cache/gentle-stream/run`, mode `0700`), authenticated with a random key in a `0600` file. A player that crashed is detected and replaced on the next start. If the audio output cannot be opened, `gentle-stream` prints the error and exits with `1`.
+
+<div align="right"><a href="#top">Back to top</a></div>
+
+<div align="center"><img src="https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/rose.png" width="28" alt="" /></div>
+
+## Journeys
+
+A journey moves the music on its own, stage by stage: tempo, energy and colour glide from where the music is to each stage's values, then the last stage holds forever (`sustain`) or hands the music back as it is (`release`). It runs inside the background player, so it keeps going after you leave the app, and it pauses when the music pauses.
+
+```bash
+gentle-stream journey list             # warm-up    60 to 100 bpm and energy 0.2 to 0.9 over 10 minutes, then holds
+gentle-stream journey play warm-up
+gentle-stream journey stop             # the music stays where the journey left it
+```
+
+| Journey | Stages | End |
+| :--- | :--- | :--- |
+| `warm-up` | Settle (1 min, 60 bpm, energy 0.2), Wake (3 min, 72 bpm), Rise (4 min, 88 bpm), Glow (2 min, 100 bpm, energy 0.9) | sustain |
+| `wind-down` | Ease (2 min, 84 bpm), Soften (4 min, 68 bpm), Drift (4 min, 58 bpm, energy 0.15) | release |
+
+A journey owns the fields it moves: a new mood or `next` keeps it running, and the new piece takes the journey's tempo, energy and colour from its first bar (the rest of the mood applies as usual). Starting a journey cancels the glides of those fields and replaces a running journey. Journeys stay in the genre that is playing. `gentle-stream render --journey warm-up` renders one offline.
 
 <div align="right"><a href="#top">Back to top</a></div>
 
@@ -225,6 +250,7 @@ gentle-stream render --seed 1234567 --genre synthwave /tmp/again.wav # the same 
 | `--seed S` | Seed for the piece, a non-negative integer (default: random; the line printed at the end shows it) |
 | `--genre NAME` | Genre, overriding the mood file's; an unknown name lists the valid ones |
 | `--mood-file STYLE.json` | A style as JSON (the fields of `Style`, e.g. `{"genre": "jazz", "bpm": 120, "energy": 0.9}`); missing or invalid fields fall back to the defaults |
+| `--journey NAME` | Run a built-in journey from the first bar (see [Journeys](#journeys)); an unknown name lists the valid ones |
 | `--procedural` | Use the procedural instruments even when the soundfont is installed |
 
 A file or path that cannot be read or written prints one `gentle-stream: ...` line and exits with `1`; invalid flags exit with `2`. A minute of audio is about 10 MB.

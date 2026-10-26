@@ -149,3 +149,85 @@ def test_setup_samples_reports_a_checksum_mismatch(tmp_path, monkeypatch, capsys
     monkeypatch.setattr(samples, "DEB_SHA256", "0" * 64)
     assert main(["setup-samples"]) == 1
     assert "checksum" in capsys.readouterr().err.lower()
+
+
+# ------------------------------------------------------------ journeys
+def test_journey_list_prints_the_built_ins_one_per_line_with_a_description(capsys):
+    from gentle_stream.journey import BUILTIN
+
+    assert main(["journey", "list"]) == 0
+    out, err = capsys.readouterr()
+    lines = out.splitlines()
+    assert err == "" and len(lines) == len(BUILTIN)
+    for line, journey in zip(lines, BUILTIN.values(), strict=True):
+        assert line.startswith(journey.name + " ") and line.endswith(journey.description)
+
+
+def test_journey_play_an_unknown_name_lists_the_built_ins_and_exits_1(monkeypatch, capsys):
+    from gentle_stream import client
+    from gentle_stream.journey import BUILTIN
+
+    monkeypatch.setattr(client, "connect", lambda: pytest.fail("checked before contacting the player"))
+    assert main(["journey", "play", "unknown"]) == 1
+    assert capsys.readouterr() == ("", (f'gentle-stream: no journey called "unknown" (choose from '
+                                        f'{", ".join(BUILTIN)})\n'))
+
+
+@pytest.mark.parametrize("argv", [["journey", "play", "warm-up"], ["journey", "stop"]], ids=["play", "stop"])
+def test_journey_without_a_player_says_nothing_is_playing(runtime, capsys, argv):
+    assert main(argv) == 1
+    assert capsys.readouterr() == ("", "gentle-stream: nothing is playing\n")
+
+
+@pytest.mark.parametrize("argv", [["journey"], ["journey", "play"], ["journey", "jump"], ["journey", "stop", "x"],
+                                  ["journey", "list", "x"]],
+                         ids=["no-action", "play-no-name", "unknown-action", "stop-with-name", "list-with-name"])
+def test_journey_rejects_malformed_arguments(argv, capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        main(argv)
+    assert exit_info.value.code == 2 and capsys.readouterr().err.startswith("usage: ")
+
+
+@pytest.mark.parametrize("argv, method", [(["journey", "play", "warm-up"], "journey_start"),
+                                          (["journey", "stop"], "journey_stop")], ids=["play", "stop"])
+def test_journey_tells_how_to_restart_an_older_player(monkeypatch, capsys, argv, method):
+    from gentle_stream import client
+
+    class OldPlayer:
+        def detach(self):
+            pass
+
+    def refuse(*args):
+        raise client.PlayerError(f"bad request: unknown command {method!r}")
+
+    setattr(OldPlayer, method, refuse)
+    monkeypatch.setattr(client, "connect", lambda: OldPlayer())
+    assert main(argv) == 1
+    assert capsys.readouterr() == ("", ("gentle-stream: the running player is older than this gentle-stream; "
+                                        "run `gentle-stream ctl stop` and start again\n"))
+
+
+def test_journey_play_and_stop_reach_a_running_player(runtime, capsys):
+    import json
+
+    from gentle_stream import client
+    from tests.test_daemon import wait_for
+
+    client.ensure()
+    assert main(["journey", "play", "warm-up"]) == 0
+    assert capsys.readouterr() == ("", "")
+
+    def bpm():
+        main(["ctl", "status"])
+        return json.loads(capsys.readouterr().out)["bpm"]
+
+    wait_for(lambda: bpm() < 72.0)                 # warm-up's first stage settles towards 60 bpm
+    assert main(["journey", "stop"]) == 0
+    assert capsys.readouterr() == ("", "")
+
+
+def test_help_lists_the_journey_command(capsys):
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    out = capsys.readouterr().out
+    assert "journey play NAME" in out and "journey list" in out and "journey stop" in out and "--journey" in out

@@ -16,6 +16,12 @@ place, one linear glide per field over the rendered seconds of the piece: no new
 bar takes the values at its start, so tempo is constant within a bar. A new style or "next" cancels every glide.
 Genres that derive something from these fields once per piece in `start` keep the start value (e.g. chiptune's
 arpeggio division follows the bpm the piece started with).
+
+A journey (`queue_journey`, see `journey.py`) moves the same fields through the same in-place path: before each bar
+the engine evaluates it at its rendered seconds since the journey started (so pausing playback pauses it) and sets
+the fields it owns, after any glide. A new style or "next" keeps it running: the new piece starts with the
+journey's values. Queueing a journey cancels the glides of the fields it owns; `stop_journey` leaves the music as it
+is.
 """
 from __future__ import annotations
 
@@ -23,6 +29,7 @@ import threading
 from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -34,6 +41,9 @@ from .genres.lofi import Instruments  # noqa: F401  (re-exported: the procedural
 from .mastering import Compressor, ConvolutionReverb, procedural_ir, soft_clip
 from .style import DEFAULT, KEYS, Style
 from .synth import SR, StatefulFilter, _sos, bp, hp, lp, mtof  # noqa: F401  (re-exported)
+
+if TYPE_CHECKING:
+    from .journey import Journey
 
 IR_SEED = 1
 RAMP = 0.05   # seconds over which a changed master gain glides to its new value
@@ -57,6 +67,14 @@ class _Glide:
         if self.duration == 0:
             return self.target
         return self.source + (self.target - self.source) * min(1.0, max(0.0, (seconds - self.start) / self.duration))
+
+
+@dataclass(frozen=True)
+class _Running:
+    """The journey playing: where on the rendered timeline it started, and from which values."""
+    journey: Journey
+    start_sample: int
+    start: dict[str, float]
 
 
 def _bounded(name: str, value: float) -> float:
@@ -86,6 +104,9 @@ class Engine:
         self._pending_style: Style | None = None
         self._pending_next = False
         self._glides: dict[str, _Glide] = {}   # live glides by field; replaced, never mutated, under _lock
+        self._journey_queued = False            # a journey command waits for the next bar (under _lock)
+        self._pending_journey: Journey | None = None   # what it starts, or None to stop
+        self._running: _Running | None = None   # the journey playing; render thread only
         self.piece_seconds = 0.0
         self._last_bar_start = 0.0   # piece seconds at the start of the bar rendered last
         self._root_rng = np.random.default_rng(seed)
@@ -130,6 +151,30 @@ class Engine:
     def queue_tempo(self, bpm: float, seconds: float) -> None:
         """Glide tempo in place: `queue_glide({"bpm": bpm}, seconds)`."""
         self.queue_glide({"bpm": bpm}, seconds)
+
+    def queue_journey(self, journey: Journey) -> None:
+        """Run `journey` from the next bar on, starting from the values playing then; it replaces a running one
+        and cancels the glides of the fields it owns."""
+        with self._lock:
+            self._journey_queued, self._pending_journey = True, journey
+            self._glides = {name: g for name, g in self._glides.items() if name not in journey.fields}
+
+    def stop_journey(self) -> None:
+        """Drop the running journey (or a queued one) at the next bar, leaving the music as it is."""
+        with self._lock:
+            self._journey_queued, self._pending_journey = True, None
+
+    @property
+    def journey(self) -> Journey | None:
+        """The journey playing at the bar rendered last."""
+        running = self._running
+        return running.journey if running is not None else None
+
+    @property
+    def journey_seconds(self) -> float | None:
+        """Rendered seconds since the journey playing started, up to the end of the bar rendered last."""
+        running = self._running
+        return (self.samples_out - running.start_sample) / self.sr if running is not None else None
 
     @property
     def targets(self) -> dict[str, float]:
@@ -178,12 +223,21 @@ class Engine:
         """Render the next bar as float32 stereo samples of shape (n, 2)."""
         with self._lock:
             style, nxt = self._pending_style, self._pending_next
+            queued, journey = self._journey_queued, self._pending_journey
             self._pending_style, self._pending_next = None, False
+            self._journey_queued, self._pending_journey = False, None
+        if queued and journey is None:
+            self._running = None
+        values = self._journey_values()   # owned by the running journey: a new piece starts with them
         if style is not None:
-            self._start_piece(style)
+            self._start_piece(replace(style, **values))
         elif nxt:
-            self._start_piece(self.style.variation(self._root_rng))
+            self._start_piece(replace(self.style.variation(self._root_rng), **values))
         self._apply_glides()
+        if journey is not None:
+            self._running = _Running(journey, self.samples_out, {f: getattr(self.style, f) for f in journey.fields})
+        elif values:
+            self._evolve(values)
         bar_start = self.piece_seconds
         self._schedule_bar()
         n = int(round(self.bar_seconds * self.sr))
@@ -214,9 +268,7 @@ class Engine:
                 g = replace(g, start=now, source=getattr(self.style, name), started=True)
             values[name] = _bounded(name, g.at(now))
             running[name] = g
-        self.style = replace(self.style, **values)
-        self._piece.style = replace(self._piece.style, **values)
-        self.composer.style = replace(self.composer.style, **values)
+        self._evolve(values)
         with self._lock:   # a glide queued or cancelled meanwhile by another thread wins over this bookkeeping
             current = dict(self._glides)
             for name, g in glides.items():
@@ -227,6 +279,24 @@ class Engine:
                 else:
                     current[name] = running[name]
             self._glides = current
+
+    def _evolve(self, values: dict[str, float]) -> None:
+        """Set continuous fields in place on the playing style, the piece and the composer: no new piece."""
+        self.style = replace(self.style, **values)
+        self._piece.style = replace(self._piece.style, **values)
+        self.composer.style = replace(self.composer.style, **values)
+
+    def _journey_values(self) -> dict[str, float]:
+        """The running journey's values for the bar about to render (empty without one). A released journey gives
+        its final values once more at its end, then lets go."""
+        running = self._running
+        if running is None:
+            return {}
+        t = (self.samples_out - running.start_sample) / self.sr
+        _, _, values = running.journey.at(t, running.start)
+        if running.journey.end == "release" and t >= running.journey.seconds:
+            self._running = None
+        return {name: _bounded(name, value) for name, value in values.items()}
 
     def _schedule_bar(self) -> None:
         p = self.composer.plan(self.bar)

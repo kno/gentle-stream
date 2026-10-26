@@ -408,3 +408,54 @@ def test_the_client_attaches_to_a_player_older_than_the_timing_and_tempo_keys():
     player = PlayerClient(OldConnection())
     assert player.now.bar == 3 and player.bpm == 80.0 and player.target_bpm is None
     assert player.elapsed_seconds == 0.0 and player.cycle_remaining_seconds == 0.0
+
+
+# ------------------------------------------------------------ journeys (handle(), unit-level)
+def test_handle_journey_start_runs_a_built_in_journey_from_the_next_bar():
+    from gentle_stream import daemon
+    from gentle_stream.journey import BUILTIN
+
+    player = fake_player()
+    answer = daemon.handle(player, {"cmd": "journey_start", "name": "warm-up"})
+    assert answer["ok"] is True and "state" in answer
+    player.engine.render_bar()
+    assert player.engine.journey is BUILTIN["warm-up"]
+    answer = daemon.handle(player, {"cmd": "journey_stop"})
+    assert answer["ok"] is True
+    player.engine.render_bar()
+    assert player.engine.journey is None
+
+
+def test_handle_journey_stop_without_a_journey_is_fine():
+    from gentle_stream import daemon
+
+    player = fake_player()
+    assert daemon.handle(player, {"cmd": "journey_stop"})["ok"] is True
+    player.engine.render_bar()
+    assert player.engine.journey is None
+
+
+def test_handle_journey_start_refuses_an_unknown_name_and_lists_the_built_ins():
+    from gentle_stream import daemon
+    from gentle_stream.journey import BUILTIN
+
+    player = fake_player()
+    answer = daemon.handle(player, {"cmd": "journey_start", "name": "nope"})
+    assert answer == {"ok": False, "error": f'no journey called "nope" (choose from {", ".join(BUILTIN)})'}
+    player.engine.render_bar()
+    assert player.engine.journey is None
+
+
+@pytest.mark.parametrize("request_", [
+    {"cmd": "journey_start"},
+    {"cmd": "journey_start", "name": 3},
+    {"cmd": "journey_start", "name": None},
+], ids=["missing-name", "number-name", "null-name"])
+def test_handle_journey_start_rejects_bad_requests(request_):
+    from gentle_stream import daemon
+
+    player = fake_player()
+    answer = daemon.handle(player, request_)
+    assert answer["ok"] is False and answer["error"].startswith("bad request: ")
+    player.engine.render_bar()
+    assert player.engine.journey is None

@@ -27,8 +27,14 @@ background playback:
   lead_density or bpm in place, without restarting the piece (a new mood or next cancels glides)
   (status prints one JSON line; the others exit 1 when nothing is playing).
 
+journeys:
+  gentle-stream journey play NAME runs a built-in journey in the background player: it moves tempo, energy and
+  colour stage by stage on its own, then holds the last stage (or lets go). It owns the fields it moves: a new
+  mood or next keeps it running. gentle-stream journey stop ends it; gentle-stream journey list shows them.
+
 render to a file:
-  gentle-stream render [--seconds N] [--seed S] [--genre NAME] [--mood-file STYLE.json] [--procedural] OUT.wav
+  gentle-stream render [--seconds N] [--seed S] [--genre NAME] [--mood-file STYLE.json] [--journey NAME]
+                       [--procedural] OUT.wav
   writes N seconds (default: 60) as 16-bit stereo WAV, without a player or an audio device.
 
 saved prompts live in $XDG_CONFIG_HOME/gentle-stream/presets.json (default ~/.config/gentle-stream/).
@@ -110,6 +116,43 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
     return 0
 
 
+def journey_command(action: str, name: str | None = None) -> int:
+    """`journey play NAME`, `journey stop` and `journey list` (named so: the `journey` module is a package attribute)."""
+    from .journey import BUILTIN, unknown_journey
+
+    if action == "list":
+        width = max(map(len, BUILTIN))
+        for j in BUILTIN.values():
+            print(f"{j.name:<{width}}  {j.description}")
+        return 0
+    if action == "play" and name not in BUILTIN:
+        print(f"gentle-stream: {unknown_journey(str(name))}", file=sys.stderr)
+        return 1
+    from .client import NoPlayer, PlayerError, PlayerGone, connect
+
+    try:
+        player = connect()
+    except NoPlayer:
+        print("gentle-stream: nothing is playing", file=sys.stderr)
+        return 1
+    except PlayerError as e:
+        print(f"gentle-stream: {e}", file=sys.stderr)
+        return 1
+    try:
+        if action == "play" and name is not None:
+            player.journey_start(name)
+        else:
+            player.journey_stop()
+    except PlayerGone:
+        print("gentle-stream: nothing is playing", file=sys.stderr)
+        return 1
+    except PlayerError as e:
+        print(f"gentle-stream: {OLDER_PLAYER if 'unknown command' in str(e) else e}", file=sys.stderr)
+        return 1
+    player.detach()
+    return 0
+
+
 RENDER_SECONDS = 60.0       # default length of `render`
 MAX_RENDER_SECONDS = 3600.0
 
@@ -133,8 +176,9 @@ def _seed(text: str) -> int:
 
 
 def render(out: str, seconds: float, seed: int | None, genre: str | None, mood_file: str | None,
-           procedural: bool) -> int:
-    """Render `seconds` of music with the engine alone into a 16-bit stereo WAV at `out`."""
+           procedural: bool, journey: str | None = None) -> int:
+    """Render `seconds` of music with the engine alone into a 16-bit stereo WAV at `out`, running the built-in
+    `journey` from the first bar when given."""
     import secrets
     from dataclasses import replace
 
@@ -142,6 +186,7 @@ def render(out: str, seconds: float, seed: int | None, genre: str | None, mood_f
     from scipy.io import wavfile
 
     from .engine import Engine
+    from .journey import BUILTIN
     from .style import Style
 
     style = Style()
@@ -162,6 +207,8 @@ def render(out: str, seconds: float, seed: int | None, genre: str | None, mood_f
         style = replace(style, genre=genre)
     seed = secrets.randbelow(2 ** 31) if seed is None else seed   # printed, so any render can be repeated
     engine = Engine(style, seed=seed, samples=not procedural)
+    if journey is not None:
+        engine.queue_journey(BUILTIN[journey])
     frames = max(1, int(round(seconds * engine.sr)))   # any length above 0 writes at least one frame
     try:
         with open(out, "wb") as f:   # opened first: a long render must not end in a path error
@@ -174,7 +221,7 @@ def render(out: str, seconds: float, seed: int | None, genre: str | None, mood_f
     except OSError as e:
         print(f"gentle-stream: cannot write {out}: {e.strerror}", file=sys.stderr)
         return 1
-    print(f"wrote {out}: {seconds:g} s, {style.genre}, seed {seed}")
+    print(f"wrote {out}: {seconds:g} s, {style.genre}, seed {seed}" + (f", journey {journey}" if journey else ""))
     return 0
 
 
@@ -247,17 +294,33 @@ def main(argv: list[str] | None = None) -> int:
     render_parser.add_argument("--genre", metavar="NAME", help="genre, overriding the mood file's")
     render_parser.add_argument("--mood-file", metavar="STYLE.json",
                                help="a style as JSON (the fields of a saved prompt's style)")
+    render_parser.add_argument("--journey", metavar="NAME", help="run a built-in journey from the start "
+                                                                 "(see `journey list`)")
     render_parser.add_argument("--procedural", action="store_true",
                                help="use the procedural instruments even if the soundfont is installed")
+    journey_parser = sub.add_parser("journey", help="run a built-in journey in the background player",
+                                    description="Run a built-in journey: tempo, energy and colour move stage by "
+                                                "stage on their own, then hold.")
+    journey_sub = journey_parser.add_subparsers(dest="journey_action", metavar="action", required=True)
+    journey_sub.add_parser("play", help="start a journey (it replaces a running one)").add_argument(
+        "name", metavar="NAME", help="a built-in journey (see `journey list`)")
+    journey_sub.add_parser("stop", help="end the journey, leaving the music as it is")
+    journey_sub.add_parser("list", help="list the built-in journeys")
     args = ap.parse_args(argv)
     if args.command == "ctl":
         return ctl(args.action, *_ctl_args(ctl_parser, args))
+    if args.command == "journey":
+        return journey_command(args.journey_action, getattr(args, "name", None))
     if args.command == "render":
         from .style import genre_names
 
         if args.genre is not None and args.genre not in genre_names():
             render_parser.error(f"invalid genre {args.genre!r} (choose from {', '.join(genre_names())})")
-        return render(args.out, args.seconds, args.seed, args.genre, args.mood_file, args.procedural)
+        from .journey import BUILTIN
+
+        if args.journey is not None and args.journey not in BUILTIN:
+            render_parser.error(f"invalid journey {args.journey!r} (choose from {', '.join(BUILTIN)})")
+        return render(args.out, args.seconds, args.seed, args.genre, args.mood_file, args.procedural, args.journey)
     if args.command == "setup-samples":
         from . import samples
 

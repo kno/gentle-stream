@@ -178,3 +178,41 @@ def test_a_length_shorter_than_one_sample_still_writes_one_frame(tmp_path, capsy
     assert (code, err) == (0, "")
     rate, data = wavfile.read(out)
     assert rate == SR and data.shape == (1, 2)
+
+
+# ------------------------------------------------------------ journeys
+def test_a_journey_is_rendered_offline_deterministically(tmp_path, capsys):
+    from gentle_stream.journey import BUILTIN
+
+    a, b, plain = tmp_path / "a.wav", tmp_path / "b.wav", tmp_path / "plain.wav"
+    code, stdout, err = render(capsys, "--seconds", 6, "--seed", 9, "--journey", "warm-up", a)
+    assert (code, err) == (0, "")
+    assert stdout == f"wrote {a}: 6 s, lofi, seed 9, journey warm-up\n"
+    render(capsys, "--seconds", 6, "--seed", 9, "--journey", "warm-up", b)
+    render(capsys, "--seconds", 6, "--seed", 9, plain)
+    assert a.read_bytes() == b.read_bytes()
+    assert a.read_bytes() != plain.read_bytes()
+    e = Engine(Style(), seed=9, samples=False)
+    e.queue_journey(BUILTIN["warm-up"])
+    n, bars = 6 * SR, []
+    while sum(map(len, bars)) < n:
+        bars.append(e.render_bar())
+    want = np.round(np.clip(np.concatenate(bars)[:n], -1, 1) * 32767).astype(np.int16)
+    assert np.array_equal(wavfile.read(a)[1], want)
+
+
+def test_an_unknown_journey_is_a_usage_error_listing_the_journeys(tmp_path, capsys):
+    from gentle_stream.journey import BUILTIN
+
+    with pytest.raises(SystemExit) as exit_info:
+        main(["render", "--journey", "nope", str(tmp_path / "x.wav")])
+    err = capsys.readouterr().err
+    assert exit_info.value.code == 2 and err.startswith("usage: ")
+    assert "invalid journey 'nope'" in err and all(name in err for name in BUILTIN)
+    assert not (tmp_path / "x.wav").exists()
+
+
+def test_render_help_documents_the_journey_flag(capsys):
+    with pytest.raises(SystemExit):
+        main(["render", "--help"])
+    assert "--journey" in capsys.readouterr().out

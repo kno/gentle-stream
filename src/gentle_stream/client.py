@@ -1,7 +1,8 @@
 """Talk to the background player (`daemon.py`): attach to it, start it when needed, and control it.
 
 `PlayerClient` has the interface the TUI uses from an in-process `Player` (now, playing, volume, level, style,
-spectrum, play/pause/toggle/next, set_style, set_volume, start, close), so the app does not know which one it has.
+spectrum, play/pause/toggle/next, set_style, set_volume, start, close), so the app does not know which one it has;
+`ctl` and `journey` add tempo, glide and journey_start/journey_stop.
 `close()` stops the music (the `q` key), `detach()` only hangs up (the `b` key).
 
 State is cached: `spectrum()` polls it (the TUI calls it on every frame) and every control refreshes it, so `now`,
@@ -194,6 +195,13 @@ class PlayerClient:
     def glide(self, fields: dict[str, float], seconds: float) -> None:
         """Glide continuous style fields in place; PlayerError when the player refuses (or predates glides)."""
         self._control("glide", fields={k: float(v) for k, v in fields.items()}, seconds=float(seconds))
+
+    def journey_start(self, name: str) -> None:
+        """Run a built-in journey; PlayerError when the player refuses the name (or predates journeys)."""
+        self._control("journey_start", name=name)
+
+    def journey_stop(self) -> None:
+        self._control("journey_stop")
 
     def set_volume(self, volume: float) -> None:
         self._control("set_volume", volume=float(volume))
