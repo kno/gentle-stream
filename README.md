@@ -186,7 +186,8 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 The music plays in a background player, one per user, that `gentle-stream` starts on its own. Press `b` to leave the app with the music still playing; run `gentle-stream` again and it attaches to the same music (with `--mood`, the new mood is sent to it). `q` stops the music and the player.
 
 ```bash
-gentle-stream ctl status   # {"running": true, "playing": true, "name": "Midnight Rain", "genre": "lofi", "mood": ""}
+gentle-stream ctl status   # ... includes audible "bpm" and "target_bpm"
+gentle-stream ctl tempo 110 --over 60
 gentle-stream ctl pause    # also: play, toggle, next
 gentle-stream ctl stop     # ends the background player
 ```
@@ -195,6 +196,7 @@ gentle-stream ctl stop     # ends the background player
 | :--- | :--- | :--- |
 | `ctl status` | One JSON line; just `{"running": false}` when nothing plays | `0` |
 | `ctl play`, `pause`, `toggle`, `next`, `stop` | Nothing, or `gentle-stream: nothing is playing` on stderr | `0`, or `1` when nothing plays |
+| `ctl tempo BPM [--over SECONDS]` | Glide tempo in place (default 60 seconds) | `0`, or `1` when nothing plays |
 
 The player listens on a Unix socket in a private directory (`$XDG_RUNTIME_DIR/gentle-stream`, default `~/.cache/gentle-stream/run`, mode `0700`), authenticated with a random key in a `0600` file. A player that crashed is detected and replaced on the next start. If the audio output cannot be opened, `gentle-stream` prints the error and exits with `1`.
 

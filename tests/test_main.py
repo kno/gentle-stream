@@ -40,6 +40,28 @@ def test_ctl_rejects_an_unknown_action(capsys):
     assert exit_info.value.code == 2
 
 
+def test_ctl_tempo_without_a_player_says_nothing_is_playing(runtime, capsys):
+    assert main(["ctl", "tempo", "110"]) == 1
+    out, err = capsys.readouterr()
+    assert out == "" and err == "gentle-stream: nothing is playing\n"
+
+
+def test_ctl_status_includes_bpm_and_target_bpm(runtime, capsys):
+    import json
+
+    from gentle_stream import client
+
+    client.ensure()
+    assert main(["ctl", "status"]) == 0
+    state = json.loads(capsys.readouterr().out)
+    assert state["bpm"] == pytest.approx(72.0) and state["target_bpm"] is None
+    assert main(["ctl", "tempo", "110", "--over", "30"]) == 0
+    capsys.readouterr()
+    assert main(["ctl", "status"]) == 0
+    state = json.loads(capsys.readouterr().out)
+    assert state["target_bpm"] == pytest.approx(110.0)
+
+
 def test_help_lists_the_setup_samples_command(capsys):
     with pytest.raises(SystemExit):
         main(["--help"])

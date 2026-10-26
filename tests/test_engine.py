@@ -112,3 +112,72 @@ def test_reverb_tail_rings_on_after_the_music_stops():
     rms = lambda a: float(np.sqrt(np.mean(a ** 2)))
     late = quiet[int(0.5 * SR):int(0.8 * SR)]      # after the 0.35 s early-reflection room has died out
     assert rms(late) > 1e-3 and rms(quiet[-SR // 4:]) < rms(late)
+
+
+def test_queued_tempo_glides_bar_lengths_and_lands_on_the_target():
+    e = Engine(Style(bpm=72), seed=12)
+    e.queue_tempo(120, 10.0)
+    lengths = [len(e.render_bar()) for _ in range(40)]   # 40 bars at ~0.5-1s each comfortably exceeds 10s
+    # bar lengths strictly decrease while the glide runs, then settle at the target bar length
+    glide_lengths = [n for n in lengths if n != lengths[-1]]
+    assert all(a >= b for a, b in zip(glide_lengths, glide_lengths[1:])) and len(set(glide_lengths)) > 1
+    assert lengths[-1] == int(round(2.0 * SR))          # 240 / 120 bpm = 2.0 s/bar
+
+
+def test_queued_tempo_does_not_start_a_new_piece():
+    e = Engine(Style(bpm=72), seed=13)
+    e.render_bar()
+    piece, bar = e.piece, e.bar
+    e.queue_tempo(120, 5.0)
+    for _ in range(20):
+        e.render_bar()
+        assert e.piece == piece
+    assert e.bar == bar + 20
+
+
+def test_bar_boundaries_during_a_tempo_glide_pass_the_no_click_check():
+    e = Engine(Style(bpm=72, drums="soft"), seed=14)
+    e.queue_tempo(120, 2.0)
+    bars = render(e, 8)
+    inner = np.concatenate([np.abs(np.diff(b, axis=0)) for b in bars])
+    limit = np.max(inner)
+    for a, b in zip(bars, bars[1:]):
+        assert np.all(np.abs(b[0] - a[-1]) <= limit)
+
+
+def test_same_seed_and_tempo_command_render_identical_audio():
+    def run():
+        e = Engine(Style(bpm=72), seed=15)
+        e.render_bar()
+        e.queue_tempo(118, 3.0)
+        return np.concatenate(render(e, 6))
+
+    assert np.array_equal(run(), run())
+
+
+def test_queue_style_cancels_an_active_glide():
+    e = Engine(Style(name="A", bpm=72), seed=16)
+    e.queue_tempo(120, 5.0)
+    e.render_bar()   # elapsed == 0 at this boundary: bpm has not moved yet, only the glide is now active
+    e.render_bar()
+    assert e.style.bpm != 72.0
+    e.queue_style(Style(name="B", bpm=90))
+    e.render_bar()
+    assert e.target_bpm is None and e.style.bpm == 90.0
+
+
+def test_zero_second_tempo_glide_applies_at_the_next_bar():
+    e = Engine(Style(bpm=72), seed=17)
+    e.queue_tempo(100, 0)
+    e.render_bar()
+    assert e.style.bpm == 100.0 and e.target_bpm is None
+
+
+def test_queued_tempo_is_clamped_to_the_valid_range():
+    e = Engine(Style(bpm=72), seed=18)
+    e.queue_tempo(300, 0)
+    e.render_bar()
+    assert e.style.bpm == 140.0
+    e.queue_tempo(-10, 0)
+    e.render_bar()
+    assert e.style.bpm == 50.0

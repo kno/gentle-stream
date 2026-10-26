@@ -14,6 +14,7 @@ and applied at the next bar boundary.
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -30,6 +31,14 @@ from .synth import SR, StatefulFilter, _sos, bp, hp, lp, mtof  # noqa: F401  (re
 
 IR_SEED = 1
 RAMP = 0.05   # seconds over which a changed master gain glides to its new value
+
+
+@dataclass(frozen=True)
+class _Glide:
+    start: float
+    source: float
+    target: float
+    duration: float
 
 
 @lru_cache(maxsize=16)
@@ -52,6 +61,8 @@ class Engine:
         self._lock = threading.Lock()
         self._pending_style: Style | None = None
         self._pending_next = False
+        self._tempo_glide: _Glide | None = None
+        self.piece_seconds = 0.0
         self._root_rng = np.random.default_rng(seed)
         self._acc = np.zeros((int(self.HEADROOM * sr), 2))
         self.samples_out = 0
@@ -77,12 +88,26 @@ class Engine:
         """Play `style` from the next bar on (a new piece)."""
         with self._lock:
             self._pending_style, self._pending_next = style, False
+            self._tempo_glide = None
+
+    def queue_tempo(self, bpm: float, seconds: float) -> None:
+        """Glide tempo in place, applying the first step at the next bar boundary."""
+        with self._lock:
+            bpm = float(np.clip(round(float(bpm), 1), 50, 140))
+            seconds = float(np.clip(seconds, 0, 3600))
+            self._tempo_glide = _Glide(self.piece_seconds, self.style.bpm, bpm, seconds)
+
+    @property
+    def target_bpm(self) -> float | None:
+        with self._lock:
+            return None if self._tempo_glide is None else self._tempo_glide.target
 
     def queue_next(self) -> None:
         """Start a new piece with the same mood from the next bar on."""
         with self._lock:
             if self._pending_style is None:
                 self._pending_next = True
+            self._tempo_glide = None
 
     @property
     def backend(self) -> str:
@@ -95,6 +120,8 @@ class Engine:
     # ------------------------------------------------------------ piece setup
     def _start_piece(self, style: Style) -> None:
         self.style = style
+        self._tempo_glide = None
+        self.piece_seconds = 0.0
         self.genre = genres.get(style.genre)
         self.seed = int(self._root_rng.integers(2 ** 31))
         self.rng = np.random.default_rng(self.seed)
@@ -118,6 +145,8 @@ class Engine:
             self._start_piece(style)
         elif nxt:
             self._start_piece(self.style.variation(self._root_rng))
+        self._apply_tempo()
+        bar_start = self.piece_seconds
         self._schedule_bar()
         n = int(round(self.bar_seconds * self.sr))
         out = self._acc[:n].copy()
@@ -126,7 +155,31 @@ class Engine:
         out = self._master(out)
         self.bar += 1
         self.samples_out += n
+        self.piece_seconds += n / self.sr
+        self._last_bar_start = bar_start
         return out.astype(np.float32)
+
+    @property
+    def bar_start_seconds(self) -> float:
+        return getattr(self, "_last_bar_start", 0.0)
+
+    def _apply_tempo(self) -> None:
+        with self._lock:
+            g = self._tempo_glide
+        if g is None:
+            return
+        if g.duration == 0:
+            value = g.target
+        else:
+            value = g.source + (g.target - g.source) * min(1.0, max(0.0, (self.piece_seconds - g.start) / g.duration))
+        value = float(np.clip(round(value, 1), 50, 140))
+        self.style = replace(self.style, bpm=value)
+        self._piece.style = replace(self._piece.style, bpm=value)
+        self.composer.style = replace(self.composer.style, bpm=value)
+        if self.piece_seconds - g.start >= g.duration:
+            with self._lock:   # a glide queued meanwhile by another thread must survive
+                if self._tempo_glide is g:
+                    self._tempo_glide = None
 
     def _schedule_bar(self) -> None:
         p = self.composer.plan(self.bar)
@@ -153,6 +206,7 @@ class Engine:
             else:
                 self._reverb.set_ir(_ir(space, sr))
             self._ir_space = space
+        assert self._reverb is not None   # created on the first bar
         verb = self._reverb(self._send_hp(x)) * self._glide("reverb", m.reverb, n, span)
         # vinyl crackle and hiss
         if m.vinyl > 0:
@@ -191,16 +245,18 @@ class Engine:
                 new.zi = self._tone_lp.zi.copy()
                 old = self._tone_lp
             self._tone_lp, self._tone_cut = new, cut
+        tone_lp = self._tone_lp
+        assert tone_lp is not None        # created on the first bar
         if old is None:
-            y = self._tone_lp(y)
+            y = tone_lp(y)
         else:
             k = min(n, span)
             fade = np.linspace(0, 1, k, endpoint=False)[:, None]
             faded = old(y[:k])
-            y = self._tone_lp(y)
+            y = tone_lp(y)
             y[:k] = faded + (y[:k] - faded) * fade
         if self.samples_out < 0.6 * sr:  # fade in at the very start of the stream
             y *= np.clip((self.samples_out + np.arange(n)) / (0.6 * sr), 0, 1)[:, None]
         self._comp.threshold, self._comp.ratio = m.threshold, m.ratio
-        drive = self._glide("drive", m.drive, n, span)
+        drive = self._glide("drive", m.drive, n, span)   # a number, or an (n, 1) ramp after a change
         return soft_clip(self._comp(y), drive, 0.9)

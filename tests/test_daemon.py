@@ -20,7 +20,10 @@ import numpy as np
 import pytest
 
 from gentle_stream import main
+from gentle_stream.engine import Engine
+from gentle_stream.player import Player
 from gentle_stream.style import Style
+from tests.test_player import FakeStream
 
 REPO = str(Path(__file__).resolve().parents[1])
 
@@ -106,10 +109,17 @@ def runtime(monkeypatch):
             shutil.rmtree(root, ignore_errors=True)
 
 
-def run_ctl(capsys, action):
-    code = main(["ctl", action])
+def run_ctl(capsys, *args):
+    code = main(["ctl", *args])
     out, err = capsys.readouterr()
     return code, out, err
+
+
+def fake_player():
+    """A `Player` with a fake stream, never started: enough for `daemon.handle` without real audio or threads."""
+    streams = []
+    p = Player(Engine(Style(bpm=72), seed=1), stream_factory=lambda **kw: streams.append(FakeStream(**kw)) or streams[-1])
+    return p
 
 
 # ------------------------------------------------------------ lifecycle
@@ -216,6 +226,37 @@ def test_an_audio_device_error_is_reported_to_the_client_and_no_player_stays(run
         client.connect()
 
 
+# ------------------------------------------------------------ tempo glide (handle(), unit-level)
+def test_handle_tempo_applies_a_valid_glide():
+    from gentle_stream import daemon
+
+    player = fake_player()
+    answer = daemon.handle(player, {"cmd": "tempo", "bpm": 110, "seconds": 30})
+    assert answer["ok"] is True
+    assert player.engine.target_bpm == 110.0
+
+
+@pytest.mark.parametrize("request_", [
+    {"cmd": "tempo", "bpm": "fast", "seconds": 30},
+    {"cmd": "tempo", "bpm": float("nan"), "seconds": 30},
+    {"cmd": "tempo", "bpm": float("inf"), "seconds": 30},
+    {"cmd": "tempo", "seconds": 30},
+    {"cmd": "tempo", "bpm": 110},
+    {"cmd": "tempo", "bpm": 110, "seconds": -1},
+    {"cmd": "tempo", "bpm": 110, "seconds": 3601},
+    {"cmd": "tempo", "bpm": 110, "seconds": "a while"},
+], ids=["bpm-string", "bpm-nan", "bpm-inf", "missing-bpm", "missing-seconds", "seconds-negative",
+        "seconds-too-large", "seconds-string"])
+def test_handle_tempo_rejects_bad_requests_and_leaves_the_style_unchanged(request_):
+    from gentle_stream import daemon
+
+    player = fake_player()
+    before = player.engine.style.bpm
+    answer = daemon.handle(player, request_)
+    assert answer["ok"] is False and answer["error"].startswith("bad request: ")
+    assert player.engine.style.bpm == before and player.engine.target_bpm is None
+
+
 # ------------------------------------------------------------ controls and state
 def test_controls_reach_the_player(runtime):
     from gentle_stream import client
@@ -291,8 +332,8 @@ def test_ctl_controls_a_running_player(runtime, capsys):
     code, out, err = run_ctl(capsys, "status")
     assert (code, err) == (0, "") and out.endswith("\n") and out.count("\n") == 1
     assert json.loads(out) == {"running": True, "playing": True, "name": "Café Night", "genre": "jazz",
-                               "mood": "late café"}
-    assert list(json.loads(out)) == ["running", "playing", "name", "genre", "mood"]
+                               "mood": "late café", "bpm": player.bpm, "target_bpm": player.target_bpm}
+    assert list(json.loads(out)) == ["running", "playing", "name", "genre", "mood", "bpm", "target_bpm"]
     assert run_ctl(capsys, "pause") == (0, "", "")
     assert json.loads(run_ctl(capsys, "status")[1])["playing"] is False
     assert run_ctl(capsys, "toggle") == (0, "", "")

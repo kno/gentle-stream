@@ -10,6 +10,7 @@ key kept in a 0600 file. Messages are JSON (never pickle), one request and one r
     {"cmd": "play" | "pause" | "toggle" | "next"}
     {"cmd": "set_volume", "volume": 0.5}
     {"cmd": "set_style", "style": {...Style.to_dict()...}}
+    {"cmd": "tempo", "bpm": 110, "seconds": 60}
     {"cmd": "stop"}                  -> {"ok": true}, then the process exits and every connection sees EOF
     anything else                    -> {"ok": false, "error": "..."}
 
@@ -113,10 +114,13 @@ def state(player, bands: int = 0) -> dict:
         "volume": float(player.volume),
         "level": float(player.level),
         "backend": player.engine.backend,
-        "now": {"style": now.style.to_dict(), "piece": now.piece, "bar": now.bar},
+        "now": {"style": now.style.to_dict(), "piece": now.piece, "bar": now.bar,
+                 "start_seconds": now.start_seconds},
         "style": player.style.to_dict(),
         "elapsed_seconds": player.elapsed_seconds,
         "cycle_remaining_seconds": player.cycle_remaining_seconds,
+        "bpm": now.style.bpm,
+        "target_bpm": player.engine.target_bpm,
     }
     if bands > 0:
         out["spectrum"] = [round(float(v), 4) for v in player.spectrum_levels(min(bands, MAX_BANDS))]
@@ -135,6 +139,16 @@ def handle(player, request) -> dict:
             getattr(player, cmd)()
         elif cmd == "set_volume":
             player.set_volume(float(request["volume"]))
+        elif cmd == "tempo":
+            import math
+            bpm, seconds = request["bpm"], request["seconds"]
+            if isinstance(bpm, bool) or not isinstance(bpm, (int, float)) or not math.isfinite(bpm):
+                raise ValueError("bpm must be a finite number")
+            if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds):
+                raise ValueError("seconds must be a finite number")
+            if not 0 <= seconds <= 3600:
+                raise ValueError("seconds must be between 0 and 3600")
+            player.engine.queue_tempo(bpm, seconds)
         elif cmd == "set_style":
             if not isinstance(request["style"], dict):
                 raise TypeError("style must be an object")

@@ -25,8 +25,8 @@ def procedural_ir(space: float, sr: int, seed: int = 0) -> np.ndarray:
     high_sos = butter(2, 1500, "highpass", fs=sr, output="sos")
     out = np.empty((n, 2))
     for c in (0, 1):
-        low = sosfilt(low_sos, rng.standard_normal(n)) * np.exp(-6.91 * t / rt60)
-        high = sosfilt(high_sos, rng.standard_normal(n)) * np.exp(-6.91 * t / (0.4 * rt60)) * 0.6
+        low = np.asarray(sosfilt(low_sos, rng.standard_normal(n))) * np.exp(-6.91 * t / rt60)
+        high = np.asarray(sosfilt(high_sos, rng.standard_normal(n))) * np.exp(-6.91 * t / (0.4 * rt60)) * 0.6
         out[:, c] = low + high
     pre = int(0.012 * sr)                         # pre-delay, then a short fade-in
     out = np.concatenate([np.zeros((pre, 2)), out[:n - pre]])
@@ -106,6 +106,6 @@ class Compressor:
         return x * (10 ** (gain_db / 20))[:, None]
 
 
-def soft_clip(x: np.ndarray, drive: float, ceiling: float) -> np.ndarray:
-    """Tape-style saturation that never exceeds `ceiling`."""
+def soft_clip(x: np.ndarray, drive: float | np.ndarray, ceiling: float) -> np.ndarray:
+    """Tape-style saturation that never exceeds `ceiling`; `drive` may be an (n, 1) ramp."""
     return np.tanh(x * drive) * ceiling

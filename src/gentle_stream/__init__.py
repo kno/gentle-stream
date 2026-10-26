@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from typing import Any, cast
 
 CONTROLS = """controls:
   space    play / pause
@@ -20,6 +21,7 @@ CONTROLS = """controls:
 background playback:
   the music plays in a background player; gentle-stream attaches to it when it is already playing.
   gentle-stream ctl play|pause|toggle|next|stop|status controls it from any terminal
+  gentle-stream ctl tempo BPM [--over SECONDS] glides the live tempo (default: 60 seconds)
   (status prints one JSON line; the others exit 1 when nothing is playing).
 
 saved prompts live in $XDG_CONFIG_HOME/gentle-stream/presets.json (default ~/.config/gentle-stream/).
@@ -53,7 +55,7 @@ def setup_samples() -> int:
     return 0
 
 
-def ctl(action: str) -> int:
+def ctl(action: str, bpm: float | None = None, seconds: float = 60.0) -> int:
     from .client import NoPlayer, PlayerError, PlayerGone, connect
 
     try:
@@ -70,7 +72,14 @@ def ctl(action: str) -> int:
     if action == "status":
         style = player.now.style
         print(json.dumps({"running": True, "playing": player.playing, "name": style.name, "genre": style.genre,
-                          "mood": style.mood}, ensure_ascii=False))
+                          "mood": style.mood, "bpm": player.bpm, "target_bpm": player.target_bpm}, ensure_ascii=False))
+    elif action == "tempo":
+        try:
+            assert bpm is not None
+            player.tempo(bpm, seconds)
+        except PlayerGone:
+            print("gentle-stream: nothing is playing", file=sys.stderr)
+            return 1
     elif action == "stop":
         player.close()
         return 0
@@ -100,10 +109,14 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="command", metavar="command")
     sub.add_parser("setup-samples", help="download the FluidR3_GM soundfont (MIT) for sampled instruments, once")
     ctl_parser = sub.add_parser("ctl", help="control the music playing in the background")
-    ctl_parser.add_argument("action", choices=("play", "pause", "toggle", "next", "stop", "status"))
+    ctl_parser.add_argument("action", choices=("play", "pause", "toggle", "next", "stop", "status", "tempo"))
+    ctl_parser.add_argument("bpm", nargs="?", type=float)
+    ctl_parser.add_argument("--over", type=float, default=60.0)
     args = ap.parse_args(argv)
     if args.command == "ctl":
-        return ctl(args.action)
+        if args.action == "tempo" and args.bpm is None:
+            ctl_parser.error("tempo requires BPM")
+        return ctl(args.action, args.bpm if args.bpm is not None else 0.0, args.over)
     if args.command == "setup-samples":
         from . import samples
 
@@ -124,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     except PlayerError as e:
         print(f"gentle-stream: {e}", file=sys.stderr)
         return 1
-    StreamApp(player, GentleShell(binary=args.gentle_shell, model=args.model), initial_mood=args.mood).run()
+    StreamApp(cast(Any, player), GentleShell(binary=args.gentle_shell, model=args.model), initial_mood=args.mood).run()
     return 0
 
 

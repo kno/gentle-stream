@@ -17,7 +17,8 @@ import subprocess
 import sys
 import threading
 import time
-from multiprocessing.connection import AuthenticationError, Client
+from multiprocessing import AuthenticationError
+from multiprocessing.connection import Client
 
 import numpy as np
 
@@ -121,7 +122,7 @@ class PlayerClient:
         self._update(self.request("state"))
 
     # ------------------------------------------------------------ transport
-    def request(self, cmd: str, **args) -> dict | None:
+    def request(self, cmd: str, **args) -> dict:
         """One round trip; raises PlayerGone when the player is no longer there."""
         with self._lock:
             if self._conn is None:
@@ -134,7 +135,7 @@ class PlayerClient:
                 raise PlayerGone("the player stopped") from e
         if not answer.get("ok"):
             raise PlayerError(answer.get("error", "the player refused the request"))
-        return answer.get("state")
+        return answer.get("state") or {}
 
     def _hang_up(self) -> None:
         if self._conn is not None:
@@ -146,7 +147,10 @@ class PlayerClient:
         self.pid = state["pid"]
         self.playing, self.volume, self.level = state["playing"], state["volume"], state["level"]
         self.backend = state["backend"]
-        self.now = NowPlaying(Style.from_dict(now["style"]), now["piece"], now["bar"])
+        self.now = NowPlaying(Style.from_dict(now["style"]), now["piece"], now["bar"],
+                               float(now.get("start_seconds", 0.0)))
+        self.bpm = float(state.get("bpm", self.now.style.bpm))
+        self.target_bpm = state.get("target_bpm")
         self.style = Style.from_dict(state["style"])   # rendered, maybe not audible yet: the base for a mood
         self.elapsed_seconds = float(state["elapsed_seconds"])
         self.cycle_remaining_seconds = float(state["cycle_remaining_seconds"])
@@ -182,6 +186,9 @@ class PlayerClient:
 
     def next(self) -> None:
         self._control("next")
+
+    def tempo(self, bpm: float, seconds: float) -> None:
+        self._control("tempo", bpm=float(bpm), seconds=float(seconds))
 
     def set_volume(self, volume: float) -> None:
         self._control("set_volume", volume=float(volume))

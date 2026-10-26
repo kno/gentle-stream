@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .composer import cycle_position
-from .engine import SR, Engine
+from .engine import Engine
 from .style import Style
 
 RAMP_SECONDS = 0.03
@@ -32,6 +32,7 @@ class NowPlaying:
     style: Style
     piece: int
     bar: int
+    start_seconds: float = 0.0
 
 
 @dataclass
@@ -76,7 +77,7 @@ class Player:
         self._tail = np.zeros(SPECTRUM_SIZE, dtype=np.float32)
         self._window = np.hanning(SPECTRUM_SIZE).astype(np.float32)
         self._shown = np.zeros(0)        # last spectrum() result, for the gentle fall
-        self.now = NowPlaying(engine.style, engine.piece, 0)
+        self.now = NowPlaying(engine.style, engine.piece, 0, 0.0)
 
     # ------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -123,7 +124,7 @@ class Player:
         with self._render_lock:  # waits for a bar being rendered, so no old bar can be queued after this
             self.engine.queue_next()
             audio = self.engine.render_bar()
-            meta = NowPlaying(self.engine.style, self.engine.piece, self.engine.bar - 1)
+            meta = NowPlaying(self.engine.style, self.engine.piece, self.engine.bar - 1, self.engine.bar_start_seconds)
             fade = min(int(CROSSFADE_SECONDS * self.engine.sr), len(audio))
             ramp = np.linspace(0, 1, fade, dtype=np.float32)[:, None]
             audio[:fade] *= ramp
@@ -155,13 +156,13 @@ class Player:
     @property
     def elapsed_seconds(self) -> float:
         """Seconds into the current piece, following the bar that is audible now."""
-        return self.now.bar * self.engine.bar_seconds + self._offset / self.engine.sr
+        return self.now.start_seconds + self._offset / self.engine.sr
 
     @property
     def cycle_remaining_seconds(self) -> float:
         """Seconds left in the song-form cycle playing now, before it loops with fresh variation."""
         cycle_bar, cycle_len = cycle_position(self.now.bar)
-        return (cycle_len - cycle_bar) * self.engine.bar_seconds - self._offset / self.engine.sr
+        return (cycle_len - cycle_bar) * (240.0 / self.now.style.bpm) - self._offset / self.engine.sr
 
     @property
     def style(self) -> Style:
@@ -205,7 +206,7 @@ class Player:
             if self._buffered < self._prebuffer:
                 with self._render_lock:
                     audio = self.engine.render_bar()
-                    meta = NowPlaying(self.engine.style, self.engine.piece, self.engine.bar - 1)
+                    meta = NowPlaying(self.engine.style, self.engine.piece, self.engine.bar - 1, self.engine.bar_start_seconds)
                     with self._lock:
                         self._chunks.append(_Chunk(audio, meta))
                         self._buffered += len(audio)

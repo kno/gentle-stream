@@ -148,9 +148,39 @@ def test_volume_is_clamped_and_scales_the_output(player):
 
 def test_elapsed_seconds_follows_the_bar_and_the_offset_within_it(player):
     p, _ = player
-    p.now = NowPlaying(p.now.style, p.now.piece, 3)
+    p.now = NowPlaying(p.now.style, p.now.piece, 3, 3 * p.engine.bar_seconds)
     p._offset = int(0.5 * SR)
     assert p.elapsed_seconds == pytest.approx(3 * p.engine.bar_seconds + 0.5)
+
+
+def test_elapsed_seconds_sums_the_audible_bars_actual_durations_under_variable_tempo():
+    """Under a tempo glide, bars have different durations: elapsed_seconds must sum what was actually rendered,
+    not an approximation from the bar count times a single (constant) bar length. The expected value is computed
+    independently here, from the lengths `render_bar` actually returns, not from the engine's own bookkeeping."""
+    engine = Engine(Style(name="First", bpm=72), seed=1)
+    engine.queue_tempo(120, 2.0)
+    lengths: list[int] = []
+    original = engine.render_bar
+
+    def recording_render_bar():
+        audio = original()
+        lengths.append(len(audio))
+        return audio
+
+    engine.render_bar = recording_render_bar
+    streams = []
+    p = Player(engine, stream_factory=lambda **kw: streams.append(FakeStream(**kw)) or streams[-1], prebuffer=0.5)
+    p.start()
+    stream = streams[0]
+    try:
+        while len(lengths) < 6:
+            pull_seconds(stream, 0.6)
+        wait_for(lambda: p.now.bar > 0)
+        expected = sum(lengths[:p.now.bar]) / p.engine.sr + p._offset / p.engine.sr
+        assert p.elapsed_seconds == pytest.approx(expected)
+        assert len(set(lengths)) > 1   # the tempo glide did change bar lengths during this run
+    finally:
+        p.close()
 
 
 def test_cycle_remaining_seconds_counts_down_to_the_end_of_the_cycle(player):
