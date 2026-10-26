@@ -186,7 +186,7 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 The music plays in a background player, one per user, that `gentle-stream` starts on its own. Press `b` to leave the app with the music still playing; run `gentle-stream` again and it attaches to the same music (with `--mood`, the new mood is sent to it). `q` stops the music and the player.
 
 ```bash
-gentle-stream ctl status   # ... includes audible "bpm" and "target_bpm"
+gentle-stream ctl status   # {"running": true, "playing": true, "name": "Midnight Rain", "genre": "lofi", "mood": "", "bpm": 72.0, "target_bpm": null}
 gentle-stream ctl tempo 110 --over 60
 gentle-stream ctl glide energy=0.9 brightness=0.8 lead_density=0.9 --over 120
 gentle-stream ctl pause    # also: play, toggle, next

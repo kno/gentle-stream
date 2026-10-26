@@ -152,8 +152,9 @@ class PlayerClient:
         self.bpm = float(state.get("bpm", self.now.style.bpm))
         self.target_bpm = state.get("target_bpm")
         self.style = Style.from_dict(state["style"])   # rendered, maybe not audible yet: the base for a mood
-        self.elapsed_seconds = float(state["elapsed_seconds"])
-        self.cycle_remaining_seconds = float(state["cycle_remaining_seconds"])
+        # an older background player (still running after an upgrade) does not report these: show zero
+        self.elapsed_seconds = float(state.get("elapsed_seconds", 0.0))
+        self.cycle_remaining_seconds = float(state.get("cycle_remaining_seconds", 0.0))
 
     def _control(self, cmd: str, **args) -> None:
         try:

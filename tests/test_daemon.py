@@ -149,7 +149,8 @@ def test_the_runtime_dir_and_the_authkey_are_private(runtime):
 
 
 def test_a_wrong_authkey_is_refused(runtime):
-    from multiprocessing.connection import AuthenticationError, Client
+    from multiprocessing import AuthenticationError
+    from multiprocessing.connection import Client
 
     from gentle_stream import client
 
@@ -384,3 +385,26 @@ def test_ctl_controls_a_running_player(runtime, capsys):
     assert run_ctl(capsys, "stop") == (0, "", "")
     assert not alive(pid) or wait_for(lambda: not alive(pid)) is None
     assert run_ctl(capsys, "status") == (0, '{"running": false}\n', "")
+
+
+def test_the_client_attaches_to_a_player_older_than_the_timing_and_tempo_keys():
+    """A background player started before an upgrade keeps running: its state lacks elapsed_seconds,
+    cycle_remaining_seconds, start_seconds, bpm and target_bpm, and the new client must still attach to it."""
+    from gentle_stream.client import PlayerClient
+
+    old_state = {"pid": 1, "playing": True, "volume": 0.8, "level": 0.0, "backend": "procedural",
+                 "now": {"style": Style(bpm=80).to_dict(), "piece": 1, "bar": 3}, "style": Style(bpm=80).to_dict()}
+
+    class OldConnection:
+        def send_bytes(self, data):
+            pass
+
+        def recv_bytes(self):
+            return json.dumps({"ok": True, "state": old_state}).encode()
+
+        def close(self):
+            pass
+
+    player = PlayerClient(OldConnection())
+    assert player.now.bar == 3 and player.bpm == 80.0 and player.target_bpm is None
+    assert player.elapsed_seconds == 0.0 and player.cycle_remaining_seconds == 0.0

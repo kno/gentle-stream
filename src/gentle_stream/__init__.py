@@ -83,11 +83,9 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
                           "mood": style.mood, "bpm": player.bpm, "target_bpm": player.target_bpm}, ensure_ascii=False))
     elif action in ("tempo", "glide"):
         try:
-            if action == "tempo":
-                assert bpm is not None
+            if action == "tempo" and bpm is not None:   # main() has already required BPM for tempo
                 player.tempo(bpm, seconds)
-            else:
-                assert fields
+            elif action == "glide" and fields:          # and at least one FIELD=VALUE for glide
                 player.glide(fields, seconds)
         except PlayerGone:
             print("gentle-stream: nothing is playing", file=sys.stderr)

@@ -87,6 +87,7 @@ class Engine:
         self._pending_next = False
         self._glides: dict[str, _Glide] = {}   # live glides by field; replaced, never mutated, under _lock
         self.piece_seconds = 0.0
+        self._last_bar_start = 0.0   # piece seconds at the start of the bar rendered last
         self._root_rng = np.random.default_rng(seed)
         self._acc = np.zeros((int(self.HEADROOM * sr), 2))
         self.samples_out = 0
@@ -198,7 +199,7 @@ class Engine:
 
     @property
     def bar_start_seconds(self) -> float:
-        return getattr(self, "_last_bar_start", 0.0)
+        return self._last_bar_start
 
     def _apply_glides(self) -> None:
         """At a bar boundary: start newly queued glides here, set every gliding field to its value at this bar on
