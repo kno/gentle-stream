@@ -228,7 +228,7 @@ gentle-stream journey stop             # the music stays where the journey left 
 | `warm-up` | Settle (1 min, 60 bpm, energy 0.2), Wake (3 min, 72 bpm), Rise (4 min, 88 bpm), Glow (2 min, 100 bpm, energy 0.9) | sustain |
 | `wind-down` | Ease (2 min, 84 bpm), Soften (4 min, 68 bpm), Drift (4 min, 58 bpm, energy 0.15) | release |
 
-A journey owns the fields it moves: a new mood or `next` keeps it running, and the new piece takes the journey's tempo, energy and colour from its first bar (the rest of the mood applies as usual). Starting a journey cancels the glides of those fields and replaces a running journey. Journeys stay in the genre that is playing. `gentle-stream render --journey warm-up` renders one offline.
+A journey owns the fields it moves: a new mood or `next` keeps it running, and the new piece takes the journey's tempo, energy and colour from its first bar (the rest of the mood applies as usual). Starting a journey cancels glides of those fields and replaces a running journey; while it runs, trying to glide one of those fields is rejected until you stop the journey. Journey time is rendered time, so `next` advances it by the buffered audio it drops (up to about one second). Journeys stay in the genre that is playing. `gentle-stream render --journey warm-up` renders one offline.
 
 While a journey runs, the app shows its progress under the mood, following what you hear (not what is rendered ahead), and hides the line otherwise:
 

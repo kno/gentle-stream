@@ -505,3 +505,17 @@ def test_the_client_reads_the_journey_snapshot_from_the_state():
             pass
 
     assert PlayerClient(Connection()).now.journey == snap
+
+
+def test_handle_glide_refuses_a_field_driven_by_the_journey_with_a_plain_error():
+    from gentle_stream import daemon
+
+    player = fake_player()
+    daemon.handle(player, {"cmd": "journey_start", "name": "warm-up"})
+    driven = ('is driven by the journey "warm-up"; stop it first (gentle-stream journey stop)')
+    assert daemon.handle(player, {"cmd": "tempo", "bpm": 110, "seconds": 30}) == {"ok": False,
+                                                                                  "error": f"bpm {driven}"}
+    answer = daemon.handle(player, {"cmd": "glide", "fields": {"space": 0.9, "energy": 0.9}, "seconds": 30})
+    assert answer == {"ok": False, "error": f"energy {driven}"}
+    assert player.engine.targets == {}
+    assert daemon.handle(player, {"cmd": "glide", "fields": {"space": 0.9}, "seconds": 30})["ok"] is True

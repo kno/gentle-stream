@@ -19,9 +19,12 @@ arpeggio division follows the bpm the piece started with).
 
 A journey (`queue_journey`, see `journey.py`) moves the same fields through the same in-place path: before each bar
 the engine evaluates it at its rendered seconds since the journey started (so pausing playback pauses it) and sets
-the fields it owns, after any glide. A new style or "next" keeps it running: the new piece starts with the
-journey's values. Queueing a journey cancels the glides of the fields it owns; `stop_journey` leaves the music as it
-is. Each bar rendered during a journey leaves a `journey_snapshot` of its progress for the player to pass along.
+the fields it owns. A new style or "next" keeps it running: the new piece starts with the journey's values. Journey
+time is rendered time, so "next" also moves it on by the audio that was buffered and dropped (up to about a
+second). The journey drives the fields it owns: when it starts it cancels their glides, and while it runs (or is
+queued) a glide of any of them is refused (`JourneyDriven`), so when it stops or releases nothing takes over and the
+music stays where it left it. Each bar rendered during a journey leaves a `journey_snapshot` of its progress for the
+player to pass along.
 """
 from __future__ import annotations
 
@@ -77,6 +80,10 @@ class _Running:
     start: dict[str, float]
 
 
+class JourneyDriven(ValueError):
+    """A glide of a field the running or queued journey drives; the message is meant for the terminal."""
+
+
 def _bounded(name: str, value: float) -> float:
     lo, hi = GLIDE_FIELDS[name]
     value = float(np.clip(float(value), lo, hi))
@@ -106,8 +113,10 @@ class Engine:
         self._glides: dict[str, _Glide] = {}   # live glides by field; replaced, never mutated, under _lock
         self._journey_queued = False            # a journey command waits for the next bar (under _lock)
         self._pending_journey: Journey | None = None   # what it starts, or None to stop
+        self._driving: Journey | None = None    # the journey playing, as other threads may see it (under _lock)
         self._running: _Running | None = None   # the journey playing; render thread only
         self._snapshot: JourneySnapshot | None = None   # its progress at the bar rendered last
+        self._rendered: tuple[Journey, float] | None = None   # its journey and seconds at the end of that bar
         self.piece_seconds = 0.0
         self._last_bar_start = 0.0   # piece seconds at the start of the bar rendered last
         self._root_rng = np.random.default_rng(seed)
@@ -140,13 +149,19 @@ class Engine:
     def queue_glide(self, fields: dict[str, float], seconds: float) -> None:
         """Glide each named field of the playing style to its value over `seconds`, in place (no new piece), from
         the next bar boundary on. Values and `seconds` are clamped; a field already gliding gets the new glide,
-        the others keep theirs. Raises ValueError, applying nothing, if any field is not in GLIDE_FIELDS."""
+        the others keep theirs. Raises ValueError, applying nothing, if any field is not in GLIDE_FIELDS, and
+        JourneyDriven (a ValueError) if the journey that drives the next bar owns any of them."""
         unknown = sorted(set(fields) - set(GLIDE_FIELDS))
         if unknown or not fields:
             raise ValueError(f"cannot glide {', '.join(map(repr, unknown))}" if unknown else "no fields to glide")
         seconds = float(np.clip(float(seconds), 0, MAX_GLIDE_SECONDS))
         new = {name: _Glide(_bounded(name, value), seconds) for name, value in fields.items()}
         with self._lock:
+            driver = self._pending_journey if self._journey_queued else self._driving
+            driven = [name for name in fields if driver is not None and name in driver.fields]
+            if driver is not None and driven:
+                raise JourneyDriven(f'{driven[0]} is driven by the journey "{driver.name}"; stop it first '
+                                    f"(gentle-stream journey stop)")
             self._glides = {**self._glides, **new}
 
     def queue_tempo(self, bpm: float, seconds: float) -> None:
@@ -155,10 +170,9 @@ class Engine:
 
     def queue_journey(self, journey: Journey) -> None:
         """Run `journey` from the next bar on, starting from the values playing then; it replaces a running one
-        and cancels the glides of the fields it owns."""
+        and, when it starts, cancels the glides of the fields it owns."""
         with self._lock:
             self._journey_queued, self._pending_journey = True, journey
-            self._glides = {name: g for name, g in self._glides.items() if name not in journey.fields}
 
     def stop_journey(self) -> None:
         """Drop the running journey (or a queued one) at the next bar, leaving the music as it is."""
@@ -167,15 +181,15 @@ class Engine:
 
     @property
     def journey(self) -> Journey | None:
-        """The journey playing at the bar rendered last."""
-        running = self._running
-        return running.journey if running is not None else None
+        """The journey of the bar rendered last (None while its first bar renders)."""
+        rendered = self._rendered
+        return rendered[0] if rendered is not None else None
 
     @property
     def journey_seconds(self) -> float | None:
-        """Rendered seconds since the journey playing started, up to the end of the bar rendered last."""
-        running = self._running
-        return (self.samples_out - running.start_sample) / self.sr if running is not None else None
+        """Rendered seconds of the journey up to the end of the bar rendered last."""
+        rendered = self._rendered
+        return rendered[1] if rendered is not None else None
 
     @property
     def journey_snapshot(self) -> JourneySnapshot | None:
@@ -234,11 +248,20 @@ class Engine:
             queued, journey = self._journey_queued, self._pending_journey
             self._pending_style, self._pending_next = None, False
             self._journey_queued, self._pending_journey = False, None
+            if queued:   # a journey starts or stops here; one that starts takes over its fields from any glide
+                self._driving = journey
+                if journey is not None:
+                    self._glides = {name: g for name, g in self._glides.items() if name not in journey.fields}
         if queued and journey is None:
             self._running = None
         running = self._running
         t = (self.samples_out - running.start_sample) / self.sr if running is not None else 0.0
         values = self._journey_values(running, t)   # owned by the journey: a new piece starts with them
+        if running is not None and journey is None and running.journey.end == "release" \
+                and t >= running.journey.seconds:   # its final values once more, then it lets go
+            self._running = None
+            with self._lock:
+                self._driving = None
         if style is not None:
             self._start_piece(replace(style, **values))
         elif nxt:
@@ -262,6 +285,8 @@ class Engine:
         self.samples_out += n
         self.piece_seconds += n / self.sr
         self._last_bar_start = bar_start
+        self._rendered = (running.journey, (self.samples_out - running.start_sample) / self.sr) \
+            if running is not None and self._running is running else None
         return out.astype(np.float32)
 
     @property
@@ -301,12 +326,10 @@ class Engine:
 
     def _journey_values(self, running: _Running | None, t: float) -> dict[str, float]:
         """The values of `running` (the journey playing) for the bar about to render, `t` seconds into it; empty
-        without a journey. A released journey gives its final values once more at its end, then lets go."""
+        without a journey."""
         if running is None:
             return {}
         _, _, values = running.journey.at(t, running.start)
-        if running.journey.end == "release" and t >= running.journey.seconds:
-            self._running = None
         return {name: _bounded(name, value) for name, value in values.items()}
 
     def _schedule_bar(self) -> None:

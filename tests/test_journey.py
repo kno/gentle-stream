@@ -194,11 +194,102 @@ def test_stop_journey_leaves_the_music_as_it_is():
     assert (e.style.bpm, e.style.energy) == held
 
 
-def test_a_journey_cancels_glides_of_the_fields_it_owns_and_keeps_the_others():
+DRIVEN = 'is driven by the journey "three"; stop it first (gentle-stream journey stop)'
+
+
+def test_a_journey_cancels_glides_of_the_fields_it_owns_when_it_starts_and_keeps_the_others():
     e = Engine(Style(bpm=72), seed=27, samples=False)
     e.queue_glide({"bpm": 120, "space": 0.9}, 60)
     e.queue_journey(THREE)
+    assert e.targets == {"bpm": 120.0, "space": 0.9}             # cancelled when it starts, not when queued
+    e.render_bar()
     assert e.targets == {"space": 0.9}
+
+
+# ------------------------------------------------------------ J1: a journey's fields cannot be glided
+@pytest.mark.parametrize("when", ["queued", "running"])
+def test_a_field_driven_by_the_journey_cannot_be_glided_and_nothing_is_applied(when):
+    e = Engine(Style(bpm=72, energy=0.2), seed=33, samples=False)
+    e.queue_journey(THREE)
+    if when == "running":
+        e.render_bar()
+    with pytest.raises(ValueError) as error:
+        e.queue_glide({"space": 0.9, "energy": 0.9}, 30)
+    assert str(error.value) == f"energy {DRIVEN}"
+    with pytest.raises(ValueError, match=r'^bpm is driven by the journey "three"'):
+        e.queue_tempo(120, 30)
+    assert e.targets == {}                                        # atomic: space was not queued either
+    e.queue_glide({"space": 0.9, "swing": 0.1}, 30)             # fields the journey leaves alone still glide
+    assert e.targets == {"space": 0.9, "swing": 0.1}
+
+
+def test_after_a_queued_stop_or_replacement_only_the_next_journey_drives_its_fields():
+    e = Engine(Style(bpm=72), seed=34, samples=False)
+    e.queue_journey(THREE)
+    e.render_bar()
+    e.stop_journey()
+    e.queue_glide({"bpm": 100}, 30)                               # from the next bar on, no journey drives bpm
+    calm = Journey("calm", (Stage("Soft", 30, {"energy": 0.5}),))
+    e.queue_journey(calm)
+    e.queue_glide({"brightness": 0.9}, 30)
+    with pytest.raises(ValueError, match='^energy is driven by the journey "calm"'):
+        e.queue_glide({"energy": 0.9}, 30)
+
+
+@pytest.mark.parametrize("end", ["stop", "release"])
+def test_when_a_journey_ends_the_music_stays_exactly_where_it_left_it(end):
+    journey = Journey("three", THREE.stages, end="release" if end == "release" else "sustain")
+    e = Engine(Style(bpm=72, energy=0.2), seed=35, samples=False)
+    e.queue_journey(journey)
+    for _ in range(4):
+        e.render_bar()
+    with pytest.raises(ValueError):
+        e.queue_tempo(140, 1)                                     # what used to take over when the journey ended
+    if end == "stop":
+        e.stop_journey()
+        e.render_bar()
+    else:
+        while e.journey is not None:
+            e.render_bar()
+    held = (e.style.bpm, e.style.energy, len(e.render_bar()))
+    assert e.journey is None and e.targets == {}
+    for _ in range(5):
+        assert (e.style.bpm, e.style.energy, len(e.render_bar())) == held
+
+
+# ------------------------------------------------------------ J2: a stopped queued journey cancels nothing
+def test_a_journey_queued_and_stopped_before_the_next_bar_leaves_earlier_glides_running():
+    e = Engine(Style(bpm=72), seed=36, samples=False)
+    e.queue_glide({"bpm": 120}, 20)
+    e.render_bar()
+    e.queue_journey(THREE)
+    e.stop_journey()
+    e.render_bar()
+    assert e.journey is None and e.targets == {"bpm": 120.0}
+    before = e.style.bpm
+    e.render_bar()
+    assert 72.0 < before < e.style.bpm < 120.0                    # still gliding
+
+
+# ------------------------------------------------------------ J3: journey state follows the rendered bars
+def test_journey_and_journey_seconds_describe_the_last_rendered_bar_even_mid_render():
+    e = Engine(Style(bpm=72), seed=37, samples=False)
+    seen = []
+    schedule = e._schedule_bar
+
+    def watching():                                               # what another thread sees while a bar renders
+        seen.append((e.journey, e.journey_seconds))
+        schedule()
+
+    e._schedule_bar = watching
+    e.render_bar()
+    e.queue_journey(THREE)
+    first = len(e.render_bar()) / SR                              # the journey's first bar
+    second = first + len(e.render_bar()) / SR
+    e.stop_journey()
+    e.render_bar()
+    assert seen == [(None, None), (None, None), (THREE, pytest.approx(first)), (THREE, pytest.approx(second))]
+    assert (e.journey, e.journey_seconds) == (None, None)
 
 
 def test_a_journey_renders_deterministically_and_joins_bars_without_clicks():
@@ -257,6 +348,19 @@ def test_stopping_a_journey_clears_the_snapshot_from_the_next_bar():
     assert e.journey_snapshot is not None
     e.render_bar()
     assert e.journey_snapshot is None
+
+
+def test_built_in_stages_are_immutable_and_journeys_compare_and_hash_by_value():
+    stage = BUILTIN["warm-up"].stages[0]
+    with pytest.raises(TypeError):
+        stage.to["bpm"] = 140.0                                   # type: ignore[index]
+    assert stage.to["bpm"] == 60.0
+    source = {"bpm": 90.0}
+    copy = Stage("Rise", 10, source)
+    source["bpm"] = 140.0                                         # the stage keeps what it was given
+    assert copy.to == {"bpm": 90.0} and copy == Stage("Rise", 10, {"bpm": 90.0})
+    twin = Journey("three", tuple(Stage(s.name, s.seconds, dict(s.to)) for s in THREE.stages))
+    assert twin == THREE and hash(twin) == hash(THREE)
 
 
 def test_a_journey_title_defaults_to_its_capitalised_name():

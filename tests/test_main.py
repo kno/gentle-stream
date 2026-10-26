@@ -254,3 +254,21 @@ def test_ctl_status_reports_the_running_journey(runtime, capsys):
     assert (journey["name"], journey["title"], journey["stage"], journey["stages"], journey["stage_name"]) == (
         "warm-up", "Warm-up", 1, 4, "Settle")
     assert journey["target_bpm"] == 60.0 and 0 < journey["seconds_left"] <= 600
+
+
+def test_ctl_glide_and_tempo_refuse_the_fields_a_journey_drives(runtime, capsys):
+    from gentle_stream import client
+
+    client.ensure()
+    assert main(["journey", "play", "warm-up"]) == 0
+    capsys.readouterr()
+    assert main(["ctl", "tempo", "110"]) == 1
+    assert capsys.readouterr() == ("", ('gentle-stream: bpm is driven by the journey "warm-up"; stop it first '
+                                        "(gentle-stream journey stop)\n"))
+    assert main(["ctl", "glide", "energy=0.9", "space=0.8"]) == 1
+    assert capsys.readouterr() == ("", ('gentle-stream: energy is driven by the journey "warm-up"; stop it first '
+                                        "(gentle-stream journey stop)\n"))
+    assert main(["ctl", "glide", "space=0.8"]) == 0
+    assert main(["journey", "stop"]) == 0
+    assert main(["ctl", "tempo", "110"]) == 0
+    assert capsys.readouterr() == ("", "")

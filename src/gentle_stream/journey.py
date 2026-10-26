@@ -18,6 +18,7 @@ from bisect import bisect_right
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from itertools import accumulate
+from types import MappingProxyType
 
 from .engine import GLIDE_FIELDS
 
@@ -28,7 +29,7 @@ ENDS = ("sustain", "release")
 class Stage:
     name: str
     seconds: float
-    to: dict[str, float]   # the value each named field reaches at the end of the stage
+    to: Mapping[str, float]   # the immutable values each named field reaches at the end of the stage
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.seconds) or self.seconds <= 0:
@@ -39,6 +40,10 @@ class Stage:
                              f"{', '.join(GLIDE_FIELDS)}")
         if not all(math.isfinite(value) for value in self.to.values()):
             raise ValueError(f"stage {self.name!r}: every value must be a finite number")
+        object.__setattr__(self, "to", MappingProxyType(dict(self.to)))
+
+    def __hash__(self) -> int:
+        return hash((self.name, self.seconds, frozenset(self.to.items())))
 
 
 @dataclass(frozen=True)

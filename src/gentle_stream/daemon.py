@@ -199,7 +199,13 @@ def handle(player, request) -> dict:
             return {"ok": True}
         else:
             raise ValueError(f"unknown command {cmd!r}")
-    except (KeyError, TypeError, ValueError) as e:
+    except ValueError as e:
+        from .engine import JourneyDriven
+
+        if isinstance(e, JourneyDriven):
+            return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": f"bad request: {e}"}
+    except (KeyError, TypeError) as e:
         return {"ok": False, "error": f"bad request: {e}"}
     return {"ok": True, "state": state(player)}
 
