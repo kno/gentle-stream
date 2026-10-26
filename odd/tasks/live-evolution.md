@@ -14,11 +14,13 @@ Branch: `feat/live-evolution`. Delivery: local work-unit commits; push/PR are th
 
 | ID | Specs | Route | Status | Commit |
 |----|-------|-------|--------|--------|
-| T1 PM-001 | S1, S4 | gentle-ai-worker (user asked for a subagent), background | in progress | |
-| T2 PM-002 | S2, S4 | same worker, continued after T1 commit | pending | |
+| T1 PM-001 | S1, S4 | gentle-ai-worker (user asked for a subagent), background; independent verify (Risk 4 concurrency, 3 additive status keys) | done (verify pending) | a89e64a |
+| T2 PM-002 | S2, S4 | same worker, continued after T1 commit | in progress | |
 | T3 PM-003 | S3, S4 | same worker, continued after T2 commit | pending | |
 
 ## Log
 
 - L1 (2026-10-26, user): "lanza un subagente con la primera fase" — interpreted as milestone M1 (PM-001..PM-003); one writer, sequential, because PM-001/002/003 share `__init__.py` and `tests/test_main.py`.
 - L2: roadmap committed on this branch as the spec source.
+- L3 (T1): first worker pass shipped no tests and skipped the differential check; sent back. Second pass: 19 new tests (404 passed), differential check of ctl play/pause/toggle/next/stop/status vs f4ffaea identical except additive bpm/target_bpm. Parent fixed a race in Engine._apply_tempo (a glide queued while the previous one finished was cleared) and pre-existing type errors in engine._master and mastering (behaviour-neutral). A4 (gentle-pi status parser) unavailable on this machine.
+- L4: pre-existing flaky teardown `ProcessLookupError` in tests/test_daemon.py:108 (also 2-5 errors per run on f4ffaea); pre-existing Pyright errors in samples.py and genres/*. Out of scope; follow-up.
