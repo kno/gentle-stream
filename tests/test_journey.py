@@ -7,7 +7,13 @@ import numpy as np
 import pytest
 
 from gentle_stream.engine import GLIDE_FIELDS, SR, Engine
-from gentle_stream.journey import BUILTIN, Journey, Stage, unknown_journey
+from gentle_stream.journey import (
+    BUILTIN,
+    Journey,
+    JourneySnapshot,
+    Stage,
+    unknown_journey,
+)
 from gentle_stream.player import Player
 from gentle_stream.style import Style
 from tests.test_player import FakeStream, pull_seconds, wait_for
@@ -207,6 +213,74 @@ def test_a_journey_renders_deterministically_and_joins_bars_without_clicks():
     for x, y in pairwise(a):
         assert np.all(np.abs(y[0] - x[-1]) <= np.max(inner))
     assert max(np.max(np.abs(x)) for x in a) < 1.0
+
+
+# ------------------------------------------------------------ progress snapshots
+def test_the_engine_snapshots_the_journey_progress_of_each_bar_it_renders():
+    e = Engine(Style(bpm=72, energy=0.2), seed=30, samples=False)
+    e.render_bar()
+    assert e.journey_snapshot is None                           # no journey, no snapshot
+    e.queue_journey(THREE)
+    t, snaps = 0.0, []
+    while t < THREE.seconds + 4:
+        bar = e.render_bar()
+        snaps.append((t, e.journey_snapshot, e.style.bpm))
+        t += len(bar) / SR
+    assert snaps[0][1] == JourneySnapshot("three", "Three", 1, 3, "Rise", 0.0, 72.0, 90.0, 30.0)
+    for t, snap, bpm in snaps:
+        index, progress, _ = THREE.at(t, START)
+        assert snap is not None
+        assert (snap.name, snap.title, snap.stage, snap.stages) == ("three", "Three", index + 1, 3)
+        assert snap.stage_name == THREE.stages[index].name and snap.progress == pytest.approx(progress)
+        assert snap.bpm == bpm and snap.target_bpm == (90.0, 90.0, 120.0)[index]   # "Hold" keeps 90 bpm
+        assert snap.seconds_left == (None if t >= THREE.seconds else pytest.approx(THREE.seconds - t))
+    assert snap is not None and snap.progress == 1.0 and snap.seconds_left is None   # sustaining at the end
+
+
+def test_a_released_journey_leaves_no_snapshot_and_a_journey_without_tempo_targets_the_current_bpm():
+    calm = Journey("calm", (Stage("Soft", 3, {"energy": 0.5}),), end="release")
+    e = Engine(Style(bpm=80), seed=31, samples=False)
+    e.queue_journey(calm)
+    e.render_bar()
+    snap = e.journey_snapshot
+    assert snap is not None and snap.target_bpm == snap.bpm == 80.0
+    for _ in range(3):
+        e.render_bar()
+    assert e.journey is None and e.journey_snapshot is None
+
+
+def test_stopping_a_journey_clears_the_snapshot_from_the_next_bar():
+    e = Engine(Style(bpm=72), seed=32, samples=False)
+    e.queue_journey(THREE)
+    e.render_bar()
+    e.stop_journey()
+    assert e.journey_snapshot is not None
+    e.render_bar()
+    assert e.journey_snapshot is None
+
+
+def test_a_journey_title_defaults_to_its_capitalised_name():
+    assert BUILTIN["warm-up"].title == "Warm-up"
+    assert Journey("x", THREE.stages, title="Morning Climb").title == "Morning Climb"
+
+
+def test_a_snapshot_round_trips_through_json_in_a_fixed_key_order():
+    import json
+
+    snap = JourneySnapshot("warm-up", "Warm-up", 2, 4, "Wake", 0.625, 66.5, 72.0, 412.25)
+    data = snap.to_dict()
+    assert list(data) == ["name", "title", "stage", "stages", "stage_name", "progress", "bpm", "target_bpm",
+                          "seconds_left"]
+    assert JourneySnapshot.from_dict(json.loads(json.dumps(data))) == snap
+    sustaining = JourneySnapshot("warm-up", "Warm-up", 4, 4, "Glow", 1.0, 100.0, 100.0, None)
+    assert JourneySnapshot.from_dict(sustaining.to_dict()) == sustaining
+
+
+@pytest.mark.parametrize("data", [None, {}, {"name": "x"}, [1], {**JourneySnapshot(
+    "a", "A", 1, 1, "s", 0.0, 60.0, 60.0, 1.0).to_dict(), "stage": "one"}], ids=["null", "empty", "partial", "list",
+                                                                             "bad-type"])
+def test_a_missing_or_malformed_snapshot_reads_as_none(data):
+    assert JourneySnapshot.from_dict(data) is None
 
 
 # ------------------------------------------------------------ the player pauses it

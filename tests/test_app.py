@@ -5,7 +5,8 @@ import pytest
 from gentle_stream.app import ModelPicker, PresetPicker, SaveDialog, StreamApp, format_time
 from gentle_stream.bridge import InterpretError, Usage
 from gentle_stream.engine import Engine
-from gentle_stream.player import Player
+from gentle_stream.journey import JourneySnapshot
+from gentle_stream.player import NowPlaying, Player
 from gentle_stream.presets import PresetStore
 from gentle_stream.style import Style
 from tests.test_daemon import runtime, wait_for  # noqa: F401  (fixture: private runtime dir, fake audio, cleanup)
@@ -541,3 +542,48 @@ async def test_the_spectrum_fills_the_free_height_and_the_info_sits_by_the_input
         status, mood = app.query_one("#status"), app.query_one("#mood")
         gap = mood.region.y - (status.region.y + status.region.height)
         assert 0 <= gap <= 3                      # no empty band between the info and the input
+
+
+# ------------------------------------------------------------ journey progress
+def show_journey(player, snapshot):
+    """Make `snapshot` the journey of the audible bar (nothing pulls the fake stream, so it stays)."""
+    player.now = NowPlaying(player.now.style, player.now.piece, 5, 0.0, snapshot)
+
+
+@pytest.mark.asyncio
+async def test_no_journey_leaves_the_journey_line_empty_and_hidden():
+    app, _ = make_app(FakeShell())
+    async with app.run_test() as pilot:
+        await pilot.pause(0.2)
+        assert text(app, "#journey") == "" and not app.query_one("#journey").display
+
+
+@pytest.mark.asyncio
+async def test_the_journey_line_shows_stage_progress_tempo_and_time_left():
+    app, player = make_app(FakeShell())
+    async with app.run_test() as pilot:
+        show_journey(player, JourneySnapshot("warm-up", "Warm-up", 2, 3, "Rise", 0.62, 84.0, 100.0, 400.0))
+        await pilot.pause(0.2)
+        assert text(app, "#journey") == 'Journey: Warm-up · stage 2/3 "Rise" · 62% · 84 → 100 bpm · 6:40 left'
+        assert app.query_one("#journey").display
+
+
+@pytest.mark.asyncio
+async def test_a_sustaining_journey_says_so_instead_of_the_time_left():
+    app, player = make_app(FakeShell())
+    async with app.run_test() as pilot:
+        show_journey(player, JourneySnapshot("warm-up", "Warm-up", 4, 4, "Glow", 1.0, 100.0, 100.0, None))
+        await pilot.pause(0.2)
+        assert text(app, "#journey") == 'Journey: Warm-up · stage 4/4 "Glow" · 100% · 100 bpm · sustaining'
+
+
+@pytest.mark.asyncio
+async def test_a_journey_line_shows_markup_in_names_literally_and_hides_again_when_it_ends():
+    app, player = make_app(FakeShell())
+    async with app.run_test() as pilot:
+        show_journey(player, JourneySnapshot("x", "[b]Bold", 1, 1, "[i]Lean", 0.5, 70.0, 70.0, 61.0))
+        await pilot.pause(0.2)
+        assert text(app, "#journey") == 'Journey: [b]Bold · stage 1/1 "[i]Lean" · 50% · 70 bpm · 1:01 left'
+        show_journey(player, None)
+        await pilot.pause(0.2)
+        assert text(app, "#journey") == "" and not app.query_one("#journey").display

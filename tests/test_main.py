@@ -231,3 +231,26 @@ def test_help_lists_the_journey_command(capsys):
         main(["--help"])
     out = capsys.readouterr().out
     assert "journey play NAME" in out and "journey list" in out and "journey stop" in out and "--journey" in out
+
+
+def test_ctl_status_reports_the_running_journey(runtime, capsys):
+    import json
+
+    from gentle_stream import client
+    from tests.test_daemon import wait_for
+
+    client.ensure()
+
+    def status():
+        main(["ctl", "status"])
+        return json.loads(capsys.readouterr().out)
+
+    assert status()["journey"] is None
+    assert main(["journey", "play", "warm-up"]) == 0
+    wait_for(lambda: status()["journey"] is not None)
+    state = status()
+    assert list(state) == ["running", "playing", "name", "genre", "mood", "bpm", "target_bpm", "journey"]
+    journey = state["journey"]
+    assert (journey["name"], journey["title"], journey["stage"], journey["stages"], journey["stage_name"]) == (
+        "warm-up", "Warm-up", 1, 4, "Settle")
+    assert journey["target_bpm"] == 60.0 and 0 < journey["seconds_left"] <= 600

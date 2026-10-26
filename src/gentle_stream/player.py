@@ -2,7 +2,7 @@
 
 The callback never synthesizes. It pulls from a short queue of rendered bars, applies a smoothed gain (so play,
 pause and volume never click) and records level/spectrum data for the TUI. "Now playing" follows the bar that is
-actually audible, not the one being rendered.
+actually audible, not the one being rendered: its style and its journey progress travel with its audio.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import numpy as np
 
 from .composer import cycle_position
 from .engine import Engine
+from .journey import JourneySnapshot
 from .style import Style
 
 RAMP_SECONDS = 0.03
@@ -33,6 +34,7 @@ class NowPlaying:
     piece: int
     bar: int
     start_seconds: float = 0.0
+    journey: JourneySnapshot | None = None   # the journey's progress at this bar
 
 
 @dataclass
@@ -124,7 +126,7 @@ class Player:
         with self._render_lock:  # waits for a bar being rendered, so no old bar can be queued after this
             self.engine.queue_next()
             audio = self.engine.render_bar()
-            meta = NowPlaying(self.engine.style, self.engine.piece, self.engine.bar - 1, self.engine.bar_start_seconds)
+            meta = self._meta()
             fade = min(int(CROSSFADE_SECONDS * self.engine.sr), len(audio))
             ramp = np.linspace(0, 1, fade, dtype=np.float32)[:, None]
             audio[:fade] *= ramp
@@ -136,6 +138,11 @@ class Player:
                 self._offset = 0
                 self._buffered = len(audio)
         self._wake.set()
+
+    def _meta(self) -> NowPlaying:
+        """What the bar rendered last is, for when it becomes audible. Caller holds _render_lock."""
+        e = self.engine
+        return NowPlaying(e.style, e.piece, e.bar - 1, e.bar_start_seconds, e.journey_snapshot)
 
     def _pending(self, n: int) -> np.ndarray:
         """The next `n` queued samples (fewer if less is queued), without consuming them. Caller holds _lock."""
@@ -206,7 +213,7 @@ class Player:
             if self._buffered < self._prebuffer:
                 with self._render_lock:
                     audio = self.engine.render_bar()
-                    meta = NowPlaying(self.engine.style, self.engine.piece, self.engine.bar - 1, self.engine.bar_start_seconds)
+                    meta = self._meta()
                     with self._lock:
                         self._chunks.append(_Chunk(audio, meta))
                         self._buffered += len(audio)

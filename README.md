@@ -188,7 +188,7 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 The music plays in a background player, one per user, that `gentle-stream` starts on its own. Press `b` to leave the app with the music still playing; run `gentle-stream` again and it attaches to the same music (with `--mood`, the new mood is sent to it). `q` stops the music and the player.
 
 ```bash
-gentle-stream ctl status   # {"running": true, "playing": true, "name": "Midnight Rain", "genre": "lofi", "mood": "", "bpm": 72.0, "target_bpm": null}
+gentle-stream ctl status   # {"running": true, "playing": true, "name": "Midnight Rain", "genre": "lofi", "mood": "", "bpm": 72.0, "target_bpm": null, "journey": null}
 gentle-stream ctl tempo 110 --over 60
 gentle-stream ctl glide energy=0.9 brightness=0.8 lead_density=0.9 --over 120
 gentle-stream ctl pause    # also: play, toggle, next
@@ -197,7 +197,7 @@ gentle-stream ctl stop     # ends the background player
 
 | Command | Output | Exit code |
 | :--- | :--- | :--- |
-| `ctl status` | One JSON line; just `{"running": false}` when nothing plays | `0` |
+| `ctl status` | One JSON line (`journey` is the running journey's progress, or `null`); just `{"running": false}` when nothing plays | `0` |
 | `ctl play`, `pause`, `toggle`, `next`, `stop` | Nothing, or `gentle-stream: nothing is playing` on stderr | `0`, or `1` when nothing plays |
 | `ctl tempo BPM [--over SECONDS]` | Glide tempo in place (default 60 seconds) | `0`, or `1` when nothing plays |
 | `ctl glide FIELD=VALUE... [--over SECONDS]` | Glide `energy`, `brightness`, `space`, `swing`, `vinyl`, `lead_density` or `bpm` in place (default 60 seconds) | `0`; `1` when nothing plays or the player refuses; `2` for a malformed or discrete field |
@@ -229,6 +229,21 @@ gentle-stream journey stop             # the music stays where the journey left 
 | `wind-down` | Ease (2 min, 84 bpm), Soften (4 min, 68 bpm), Drift (4 min, 58 bpm, energy 0.15) | release |
 
 A journey owns the fields it moves: a new mood or `next` keeps it running, and the new piece takes the journey's tempo, energy and colour from its first bar (the rest of the mood applies as usual). Starting a journey cancels the glides of those fields and replaces a running journey. Journeys stay in the genre that is playing. `gentle-stream render --journey warm-up` renders one offline.
+
+While a journey runs, the app shows its progress under the mood, following what you hear (not what is rendered ahead), and hides the line otherwise:
+
+```text
+Journey: Warm-up · stage 2/4 "Wake" · 62% · 67 → 72 bpm · 7:08 left
+Journey: Warm-up · stage 4/4 "Glow" · 100% · 100 bpm · sustaining
+```
+
+The tempo shows one value when the stage ends at the tempo it has (`100 bpm`), and `sustaining` replaces the time left once a sustaining journey holds its last stage. `ctl status` reports the same as JSON:
+
+```json
+"journey": {"name": "warm-up", "title": "Warm-up", "stage": 2, "stages": 4, "stage_name": "Wake", "progress": 0.62, "bpm": 67.4, "target_bpm": 72.0, "seconds_left": 428.4}
+```
+
+`stage` counts from 1, `progress` is through the stage (0 to 1), `target_bpm` is the tempo at the end of the stage and `seconds_left` is `null` while sustaining.
 
 <div align="right"><a href="#top">Back to top</a></div>
 

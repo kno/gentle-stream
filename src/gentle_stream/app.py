@@ -5,7 +5,8 @@ The player is usually the background player (`client.PlayerClient`), so `b` leav
 
 The mood is interpreted by Gentle Shell in a thread worker while the music keeps playing; the new style starts at
 the next bar. Everything shown comes from `player.now`, i.e. the bar that is audible right now. What is audible can
-be saved under a name and applied later, instantly, without asking Gentle Shell again.
+be saved under a name and applied later, instantly, without asking Gentle Shell again. While a journey runs, a line
+shows its progress (`journey_line`), hidden otherwise.
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ from textual.widgets.option_list import Option
 from textual.worker import get_current_worker
 
 from .bridge import GentleShell, InterpretError, Usage
+from .journey import JourneySnapshot
 from .player import Player
 from .presets import NAME_MAX, Preset, PresetError, PresetStore, normalize_name
 from .style import Style
@@ -75,6 +77,19 @@ def format_time(seconds: float) -> str:
     """`m:ss`, clamped to zero: rounding or a cycle boundary can otherwise show a stray negative second."""
     total = max(0, round(seconds))
     return f"{total // 60}:{total % 60:02d}"
+
+
+def journey_line(snap: JourneySnapshot | None, into_bar: float = 0.0) -> str:
+    """`Journey: Warm-up · stage 2/3 "Rise" · 62% · 84 → 100 bpm · 6:40 left`, or "" without a journey. The tempo
+    shows one value when the stage ends where it is; `sustaining` replaces the time left once a sustaining journey
+    holds its final values. `into_bar` seconds of the audible bar have played (the snapshot is of its start)."""
+    if snap is None:
+        return ""
+    bpm, target = round(snap.bpm), round(snap.target_bpm)
+    tempo = f"{bpm} bpm" if bpm == target else f"{bpm} → {target} bpm"
+    left = "sustaining" if snap.seconds_left is None else f"{format_time(snap.seconds_left - into_bar)} left"
+    return (f"Journey: {snap.title} · stage {snap.stage}/{snap.stages} \"{snap.stage_name}\" · "
+            f"{round(snap.progress * 100)}% · {tempo} · {left}")
 
 
 class Spectrum(Static):
@@ -267,6 +282,7 @@ class StreamApp(App):
     #title { text-style: bold; color: $primary; }
     #details, #model { color: $text-muted; }
     #mood-line { color: $accent; text-style: italic; }
+    #journey { color: $secondary; }
     #spectrum { height: 1fr; min-height: 5; margin: 1 0; }
     #state { color: $text-muted; }
     #status { margin-top: 1; }
@@ -305,6 +321,7 @@ class StreamApp(App):
             yield Static(id="title")
             yield Static(id="details")
             yield Static(id="mood-line")
+            yield Static(id="journey", markup=False)
             yield Spectrum(self.player, id="spectrum")
             yield Static(id="state")
             yield Static(id="model")
@@ -315,8 +332,8 @@ class StreamApp(App):
     def on_mount(self) -> None:
         # keep references: the timer also fires while a modal is on top or the app is shutting down,
         # when queries would search another screen
-        self._w = {name: self.query_one(f"#{name}") for name in ("title", "details", "mood-line", "spectrum",
-                                                                 "state", "model", "status")}
+        self._w = {name: self.query_one(f"#{name}") for name in ("title", "details", "mood-line", "journey",
+                                                                 "spectrum", "state", "model", "status")}
         self.player.start()
         self._show_model()
         self._tick()
@@ -343,6 +360,9 @@ class StreamApp(App):
         w["title"].update(f"♪ {now.style.name}")
         w["details"].update(now.style.summary())
         w["mood-line"].update(f"“{now.style.mood}”" if now.style.mood else "")
+        journey = journey_line(now.journey, max(0.0, p.elapsed_seconds - now.start_seconds))
+        w["journey"].update(journey)
+        w["journey"].display = bool(journey)
         state = "[b $success]▶ Playing[/]" if p.playing else "[b $warning]⏸ Paused[/]"
         elapsed, remaining = format_time(p.elapsed_seconds), format_time(p.cycle_remaining_seconds)
         w["state"].update(f"{state} · piece {now.piece} · bar {now.bar + 1} · "

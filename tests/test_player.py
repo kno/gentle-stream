@@ -261,3 +261,52 @@ def test_spectrum_bands_are_balanced_from_left_to_right():
     left, right = bands[:24].mean(), bands[24:].mean()
     assert abs(left - right) < 0.08, (left, right)    # pink noise is the reference for music: an even bar
     assert np.abs(np.diff(bands)).mean() < 0.05       # neighbouring columns are similar, no holes or spikes
+
+
+# ------------------------------------------------------------ journey progress follows the audible bar
+@pytest.fixture
+def journey_player():
+    """A player running a short journey; `rendered` maps (piece, bar) to the snapshot the engine made for it."""
+    from gentle_stream.journey import Journey, Stage
+
+    engine = Engine(Style(name="First", bpm=80), seed=1)
+    engine.queue_journey(Journey("short", (Stage("Up", 8, {"bpm": 100.0}), Stage("Top", 8, {"energy": 0.9}))))
+    rendered = {}
+    original = engine.render_bar
+
+    def recording_render_bar():
+        audio = original()
+        rendered[(engine.piece, engine.bar - 1)] = engine.journey_snapshot
+        return audio
+
+    engine.render_bar = recording_render_bar
+    streams = []
+    p = Player(engine, stream_factory=lambda **kw: streams.append(FakeStream(**kw)) or streams[-1], prebuffer=0.5)
+    p.start()
+    yield p, streams[0], rendered
+    p.close()
+
+
+def test_now_playing_carries_the_journey_snapshot_of_the_audible_bar(journey_player):
+    p, stream, rendered = journey_player
+    assert p.now.journey is None                  # nothing audible yet
+    stages, ahead, sustaining = set(), False, False
+    for _ in range(50):                           # 25 s of audio: both stages, then the sustain
+        pull_seconds(stream, 0.5)
+        wait_for(lambda: p.buffered_seconds >= 0.5)
+        now = p.now
+        assert now.journey is not None and now.journey == rendered[(now.piece, now.bar)]
+        stages.add(now.journey.stage)
+        ahead |= p.engine.journey_snapshot != now.journey   # the engine renders ahead of what is heard
+        sustaining |= now.journey.seconds_left is None
+    assert stages == {1, 2} and ahead and sustaining
+    assert p.now.journey is not None and p.now.journey.bpm == p.now.style.bpm == 100.0
+
+
+def test_next_keeps_the_journey_snapshot_with_the_new_piece(journey_player):
+    p, stream, rendered = journey_player
+    pull_seconds(stream, 1.0)
+    p.next()
+    stream.pull()
+    assert p.now.piece == 2 and p.now.bar == 0
+    assert p.now.journey is not None and p.now.journey == rendered[(2, 0)]

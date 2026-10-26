@@ -25,12 +25,15 @@ background playback:
   gentle-stream ctl tempo BPM [--over SECONDS] glides the live tempo (default: 60 seconds)
   gentle-stream ctl glide FIELD=VALUE... [--over SECONDS] glides energy, brightness, space, swing, vinyl,
   lead_density or bpm in place, without restarting the piece (a new mood or next cancels glides)
-  (status prints one JSON line; the others exit 1 when nothing is playing).
+  (status prints one JSON line, with "journey": the running journey's progress or null; the others exit 1 when
+  nothing is playing).
 
 journeys:
   gentle-stream journey play NAME runs a built-in journey in the background player: it moves tempo, energy and
   colour stage by stage on its own, then holds the last stage (or lets go). It owns the fields it moves: a new
   mood or next keeps it running. gentle-stream journey stop ends it; gentle-stream journey list shows them.
+  While it runs the app shows: Journey: Warm-up · stage 2/4 "Wake" · 62% · 67 → 72 bpm · 7:08 left
+  ("sustaining" instead of the time left once a journey holds its last stage).
 
 render to a file:
   gentle-stream render [--seconds N] [--seed S] [--genre NAME] [--mood-file STYLE.json] [--journey NAME]
@@ -88,9 +91,10 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
         print(f"gentle-stream: {e}", file=sys.stderr)
         return 1
     if action == "status":
-        style = player.now.style
+        style, journey = player.now.style, player.now.journey
         print(json.dumps({"running": True, "playing": player.playing, "name": style.name, "genre": style.genre,
-                          "mood": style.mood, "bpm": player.bpm, "target_bpm": player.target_bpm}, ensure_ascii=False))
+                          "mood": style.mood, "bpm": player.bpm, "target_bpm": player.target_bpm,
+                          "journey": journey.to_dict() if journey is not None else None}, ensure_ascii=False))
     elif action in ("tempo", "glide"):
         try:
             if action == "tempo" and bpm is not None:   # main() has already required BPM for tempo
@@ -176,9 +180,9 @@ def _seed(text: str) -> int:
 
 
 def render(out: str, seconds: float, seed: int | None, genre: str | None, mood_file: str | None,
-           procedural: bool, journey: str | None = None) -> int:
+           procedural: bool, journey_name: str | None = None) -> int:
     """Render `seconds` of music with the engine alone into a 16-bit stereo WAV at `out`, running the built-in
-    `journey` from the first bar when given."""
+    journey `journey_name` from the first bar when given."""
     import secrets
     from dataclasses import replace
 
@@ -207,8 +211,8 @@ def render(out: str, seconds: float, seed: int | None, genre: str | None, mood_f
         style = replace(style, genre=genre)
     seed = secrets.randbelow(2 ** 31) if seed is None else seed   # printed, so any render can be repeated
     engine = Engine(style, seed=seed, samples=not procedural)
-    if journey is not None:
-        engine.queue_journey(BUILTIN[journey])
+    if journey_name is not None:
+        engine.queue_journey(BUILTIN[journey_name])
     frames = max(1, int(round(seconds * engine.sr)))   # any length above 0 writes at least one frame
     try:
         with open(out, "wb") as f:   # opened first: a long render must not end in a path error
@@ -221,7 +225,8 @@ def render(out: str, seconds: float, seed: int | None, genre: str | None, mood_f
     except OSError as e:
         print(f"gentle-stream: cannot write {out}: {e.strerror}", file=sys.stderr)
         return 1
-    print(f"wrote {out}: {seconds:g} s, {style.genre}, seed {seed}" + (f", journey {journey}" if journey else ""))
+    suffix = f", journey {journey_name}" if journey_name else ""
+    print(f"wrote {out}: {seconds:g} s, {style.genre}, seed {seed}{suffix}")
     return 0
 
 

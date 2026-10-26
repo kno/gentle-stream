@@ -24,6 +24,7 @@ from multiprocessing.connection import Client
 import numpy as np
 
 from . import daemon
+from .journey import JourneySnapshot
 from .player import NowPlaying, settle
 from .style import Style
 
@@ -149,7 +150,7 @@ class PlayerClient:
         self.playing, self.volume, self.level = state["playing"], state["volume"], state["level"]
         self.backend = state["backend"]
         self.now = NowPlaying(Style.from_dict(now["style"]), now["piece"], now["bar"],
-                               float(now.get("start_seconds", 0.0)))
+                               float(now.get("start_seconds", 0.0)), JourneySnapshot.from_dict(state.get("journey")))
         self.bpm = float(state.get("bpm", self.now.style.bpm))
         self.target_bpm = state.get("target_bpm")
         self.style = Style.from_dict(state["style"])   # rendered, maybe not audible yet: the base for a mood

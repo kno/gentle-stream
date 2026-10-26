@@ -21,7 +21,7 @@ A journey (`queue_journey`, see `journey.py`) moves the same fields through the 
 the engine evaluates it at its rendered seconds since the journey started (so pausing playback pauses it) and sets
 the fields it owns, after any glide. A new style or "next" keeps it running: the new piece starts with the
 journey's values. Queueing a journey cancels the glides of the fields it owns; `stop_journey` leaves the music as it
-is.
+is. Each bar rendered during a journey leaves a `journey_snapshot` of its progress for the player to pass along.
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ from .style import DEFAULT, KEYS, Style
 from .synth import SR, StatefulFilter, _sos, bp, hp, lp, mtof  # noqa: F401  (re-exported)
 
 if TYPE_CHECKING:
-    from .journey import Journey
+    from .journey import Journey, JourneySnapshot
 
 IR_SEED = 1
 RAMP = 0.05   # seconds over which a changed master gain glides to its new value
@@ -107,6 +107,7 @@ class Engine:
         self._journey_queued = False            # a journey command waits for the next bar (under _lock)
         self._pending_journey: Journey | None = None   # what it starts, or None to stop
         self._running: _Running | None = None   # the journey playing; render thread only
+        self._snapshot: JourneySnapshot | None = None   # its progress at the bar rendered last
         self.piece_seconds = 0.0
         self._last_bar_start = 0.0   # piece seconds at the start of the bar rendered last
         self._root_rng = np.random.default_rng(seed)
@@ -177,6 +178,13 @@ class Engine:
         return (self.samples_out - running.start_sample) / self.sr if running is not None else None
 
     @property
+    def journey_snapshot(self) -> JourneySnapshot | None:
+        """The journey's progress at the start of the bar rendered last (None without a journey). Made by
+        `render_bar` from the same journey and time as that bar's values; read it on the rendering thread right
+        after `render_bar`, as the player does under its render lock."""
+        return self._snapshot
+
+    @property
     def targets(self) -> dict[str, float]:
         """The target of every glide still running (or queued), by field."""
         with self._lock:
@@ -228,16 +236,21 @@ class Engine:
             self._journey_queued, self._pending_journey = False, None
         if queued and journey is None:
             self._running = None
-        values = self._journey_values()   # owned by the running journey: a new piece starts with them
+        running = self._running
+        t = (self.samples_out - running.start_sample) / self.sr if running is not None else 0.0
+        values = self._journey_values(running, t)   # owned by the journey: a new piece starts with them
         if style is not None:
             self._start_piece(replace(style, **values))
         elif nxt:
             self._start_piece(replace(self.style.variation(self._root_rng), **values))
         self._apply_glides()
-        if journey is not None:
-            self._running = _Running(journey, self.samples_out, {f: getattr(self.style, f) for f in journey.fields})
+        if journey is not None:   # starts here, at t = 0, from the values this bar already has
+            running, t = _Running(journey, self.samples_out, {f: getattr(self.style, f) for f in journey.fields}), 0.0
+            self._running = running
         elif values:
             self._evolve(values)
+        running = self._running   # None once a released journey has given its final values
+        self._snapshot = running.journey.snapshot(t, running.start, self.style.bpm) if running is not None else None
         bar_start = self.piece_seconds
         self._schedule_bar()
         n = int(round(self.bar_seconds * self.sr))
@@ -286,13 +299,11 @@ class Engine:
         self._piece.style = replace(self._piece.style, **values)
         self.composer.style = replace(self.composer.style, **values)
 
-    def _journey_values(self) -> dict[str, float]:
-        """The running journey's values for the bar about to render (empty without one). A released journey gives
-        its final values once more at its end, then lets go."""
-        running = self._running
+    def _journey_values(self, running: _Running | None, t: float) -> dict[str, float]:
+        """The values of `running` (the journey playing) for the bar about to render, `t` seconds into it; empty
+        without a journey. A released journey gives its final values once more at its end, then lets go."""
         if running is None:
             return {}
-        t = (self.samples_out - running.start_sample) / self.sr
         _, _, values = running.journey.at(t, running.start)
         if running.journey.end == "release" and t >= running.journey.seconds:
             self._running = None

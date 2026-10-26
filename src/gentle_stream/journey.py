@@ -6,6 +6,9 @@ stage does not name holds its value. `Journey.at` is pure: the engine evaluates 
 seconds since the journey started, and applies the values in place. After the last stage, `end="sustain"` holds the
 final values forever and `end="release"` hands the fields back to the music as they are.
 
+`Journey.snapshot` describes one bar's place in the journey (`JourneySnapshot`): the engine makes one per rendered
+bar and it travels with that bar's audio, so the progress shown is the progress heard.
+
 The built-in journeys (`BUILTIN`) stay in the genre that is playing; genre steps come later.
 """
 from __future__ import annotations
@@ -13,7 +16,7 @@ from __future__ import annotations
 import math
 from bisect import bisect_right
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from itertools import accumulate
 
 from .engine import GLIDE_FIELDS
@@ -39,11 +42,43 @@ class Stage:
 
 
 @dataclass(frozen=True)
+class JourneySnapshot:
+    """Where one bar is in a journey. `stage` counts from 1; `progress` (0..1) is through that stage; `bpm` is the
+    bar's tempo and `target_bpm` the tempo at the end of its stage (the bar's own when the journey leaves tempo
+    alone); `seconds_left` is to the end of the journey, None once a sustaining journey holds its final values."""
+    name: str
+    title: str
+    stage: int
+    stages: int
+    stage_name: str
+    progress: float
+    bpm: float
+    target_bpm: float
+    seconds_left: float | None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data) -> JourneySnapshot | None:
+        """The snapshot in `data` (a player's state), or None when it is missing or malformed."""
+        try:
+            snap = cls(str(data["name"]), str(data["title"]), int(data["stage"]), int(data["stages"]),
+                       str(data["stage_name"]), float(data["progress"]), float(data["bpm"]),
+                       float(data["target_bpm"]),
+                       None if data["seconds_left"] is None else float(data["seconds_left"]))
+        except (KeyError, TypeError, ValueError):
+            return None
+        return snap
+
+
+@dataclass(frozen=True)
 class Journey:
     name: str
     stages: tuple[Stage, ...]
     end: str = "sustain"
     description: str = ""
+    title: str = ""   # how it is shown; the name with a capital initial by default ("warm-up" -> "Warm-up")
     _ends: tuple[float, ...] = field(init=False, repr=False, compare=False)   # cumulative stage end times
 
     def __post_init__(self) -> None:
@@ -52,6 +87,8 @@ class Journey:
         if self.end not in ENDS:
             raise ValueError(f"journey {self.name!r}: end must be one of {', '.join(ENDS)}")
         object.__setattr__(self, "_ends", tuple(accumulate(s.seconds for s in self.stages)))
+        if not self.title:
+            object.__setattr__(self, "title", self.name[:1].upper() + self.name[1:])
 
     @property
     def seconds(self) -> float:
@@ -79,6 +116,18 @@ class Journey:
         for name, target in stage.to.items():   # (1 - p) a + p b: exactly a at p = 0 and exactly b at p = 1
             values[name] = (1 - progress) * values[name] + progress * target
         return index, progress, values
+
+    def snapshot(self, t: float, start: Mapping[str, float], bpm: float) -> JourneySnapshot:
+        """The snapshot of a bar starting `t` seconds into the journey and playing at `bpm`."""
+        index, progress, _ = self.at(t, start)
+        target = bpm
+        if "bpm" in self.fields:   # the stage's end tempo, clamped and rounded as the engine applies it
+            lo, hi = GLIDE_FIELDS["bpm"]
+            target = round(min(hi, max(lo, self.at(self._ends[index], start)[2]["bpm"])), 1)
+        t = max(0.0, float(t))
+        left = None if self.end == "sustain" and t >= self.seconds else max(0.0, self.seconds - t)
+        return JourneySnapshot(self.name, self.title, index + 1, len(self.stages), self.stages[index].name,
+                               progress, float(bpm), target, left)
 
 
 BUILTIN: dict[str, Journey] = {j.name: j for j in (

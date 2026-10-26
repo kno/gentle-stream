@@ -373,8 +373,9 @@ def test_ctl_controls_a_running_player(runtime, capsys):
     code, out, err = run_ctl(capsys, "status")
     assert (code, err) == (0, "") and out.endswith("\n") and out.count("\n") == 1
     assert json.loads(out) == {"running": True, "playing": True, "name": "Café Night", "genre": "jazz",
-                               "mood": "late café", "bpm": player.bpm, "target_bpm": player.target_bpm}
-    assert list(json.loads(out)) == ["running", "playing", "name", "genre", "mood", "bpm", "target_bpm"]
+                               "mood": "late café", "bpm": player.bpm, "target_bpm": player.target_bpm,
+                               "journey": None}
+    assert list(json.loads(out)) == ["running", "playing", "name", "genre", "mood", "bpm", "target_bpm", "journey"]
     assert run_ctl(capsys, "pause") == (0, "", "")
     assert json.loads(run_ctl(capsys, "status")[1])["playing"] is False
     assert run_ctl(capsys, "toggle") == (0, "", "")
@@ -407,6 +408,7 @@ def test_the_client_attaches_to_a_player_older_than_the_timing_and_tempo_keys():
 
     player = PlayerClient(OldConnection())
     assert player.now.bar == 3 and player.bpm == 80.0 and player.target_bpm is None
+    assert player.now.journey is None
     assert player.elapsed_seconds == 0.0 and player.cycle_remaining_seconds == 0.0
 
 
@@ -459,3 +461,47 @@ def test_handle_journey_start_rejects_bad_requests(request_):
     assert answer["ok"] is False and answer["error"].startswith("bad request: ")
     player.engine.render_bar()
     assert player.engine.journey is None
+
+
+# ------------------------------------------------------------ journey progress in the state
+def test_state_reports_no_journey_as_null_after_the_existing_keys():
+    from gentle_stream import daemon
+
+    state = daemon.state(fake_player())
+    assert state["journey"] is None
+    assert list(state)[-3:] == ["bpm", "target_bpm", "journey"]
+
+
+def test_state_reports_the_journey_snapshot_of_the_audible_bar():
+    from gentle_stream import daemon
+    from gentle_stream.journey import JourneySnapshot
+    from gentle_stream.player import NowPlaying
+
+    player = fake_player()
+    snap = JourneySnapshot("warm-up", "Warm-up", 2, 4, "Wake", 0.5, 66.0, 72.0, 450.0)
+    player.now = NowPlaying(player.now.style, 1, 7, 20.0, snap)
+    state = json.loads(json.dumps(daemon.state(player)))
+    assert state["journey"] == snap.to_dict()
+
+
+def test_the_client_reads_the_journey_snapshot_from_the_state():
+    from gentle_stream import daemon
+    from gentle_stream.client import PlayerClient
+    from gentle_stream.journey import JourneySnapshot
+    from gentle_stream.player import NowPlaying
+
+    player = fake_player()
+    snap = JourneySnapshot("warm-up", "Warm-up", 4, 4, "Glow", 1.0, 100.0, 100.0, None)
+    player.now = NowPlaying(player.now.style, 1, 7, 20.0, snap)
+
+    class Connection:
+        def send_bytes(self, data):
+            pass
+
+        def recv_bytes(self):
+            return json.dumps(daemon.handle(player, {"cmd": "state"})).encode()
+
+        def close(self):
+            pass
+
+    assert PlayerClient(Connection()).now.journey == snap

@@ -6,7 +6,9 @@ Unix domain socket in a private runtime dir (`$XDG_RUNTIME_DIR/gentle-stream`, d
 `$XDG_CACHE_HOME/gentle-stream/run`, mode 0700) through `multiprocessing.connection`, authenticated with a random
 key kept in a 0600 file. Messages are JSON (never pickle), one request and one response per call:
 
-    {"cmd": "state", "bands": 48}   -> {"ok": true, "state": {...}}   (spectrum included when bands > 0)
+    {"cmd": "state", "bands": 48}   -> {"ok": true, "state": {...}}   (spectrum included when bands > 0; "journey"
+                                     is the audible bar's journey progress, journey.JourneySnapshot.to_dict(), or
+                                     null without a journey)
     {"cmd": "play" | "pause" | "toggle" | "next"}
     {"cmd": "set_volume", "volume": 0.5}
     {"cmd": "set_style", "style": {...Style.to_dict()...}}
@@ -128,6 +130,7 @@ def state(player, bands: int = 0) -> dict:
         "cycle_remaining_seconds": player.cycle_remaining_seconds,
         "bpm": now.style.bpm,
         "target_bpm": player.engine.target_bpm,
+        "journey": now.journey.to_dict() if now.journey is not None else None,
     }
     if bands > 0:
         out["spectrum"] = [round(float(v), 4) for v in player.spectrum_levels(min(bands, MAX_BANDS))]
