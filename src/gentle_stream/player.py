@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .composer import cycle_position
 from .engine import SR, Engine
 from .style import Style
 
@@ -150,6 +151,17 @@ class Player:
     @property
     def buffered_seconds(self) -> float:
         return self._buffered / self.engine.sr
+
+    @property
+    def elapsed_seconds(self) -> float:
+        """Seconds into the current piece, following the bar that is audible now."""
+        return self.now.bar * self.engine.bar_seconds + self._offset / self.engine.sr
+
+    @property
+    def cycle_remaining_seconds(self) -> float:
+        """Seconds left in the song-form cycle playing now, before it loops with fresh variation."""
+        cycle_bar, cycle_len = cycle_position(self.now.bar)
+        return (cycle_len - cycle_bar) * self.engine.bar_seconds - self._offset / self.engine.sr
 
     @property
     def style(self) -> Style:

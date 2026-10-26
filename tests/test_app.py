@@ -2,7 +2,7 @@ import threading
 
 import pytest
 
-from gentle_stream.app import ModelPicker, PresetPicker, SaveDialog, StreamApp
+from gentle_stream.app import ModelPicker, PresetPicker, SaveDialog, StreamApp, format_time
 from gentle_stream.bridge import InterpretError, Usage
 from gentle_stream.engine import Engine
 from gentle_stream.player import Player
@@ -62,7 +62,13 @@ async def test_shows_what_is_playing_and_the_controls():
         assert "Midnight Rain" in text(app, "#title")
         assert "D minor" in text(app, "#details")
         assert "Playing" in text(app, "#state")
+        assert "0:00 · -" in text(app, "#state")      # elapsed · cycle remaining, right at the start
     assert not player._producer.is_alive()        # quitting closes the audio
+
+
+@pytest.mark.parametrize("seconds,expected", [(0, "0:00"), (59, "0:59"), (60, "1:00"), (125, "2:05"), (-1, "0:00")])
+def test_format_time_renders_minutes_and_seconds(seconds, expected):
+    assert format_time(seconds) == expected
 
 
 @pytest.mark.asyncio

@@ -3,8 +3,9 @@ import time
 import numpy as np
 import pytest
 
+from gentle_stream.composer import FIRST_FORM, FORM
 from gentle_stream.engine import SR, Engine
-from gentle_stream.player import Player
+from gentle_stream.player import NowPlaying, Player
 from gentle_stream.style import Style
 
 
@@ -143,6 +144,30 @@ def test_volume_is_clamped_and_scales_the_output(player):
     assert p.volume == 0.0
     pull_seconds(stream, 0.1)
     assert np.all(pull_seconds(stream, 0.3) == 0)
+
+
+def test_elapsed_seconds_follows_the_bar_and_the_offset_within_it(player):
+    p, _ = player
+    p.now = NowPlaying(p.now.style, p.now.piece, 3)
+    p._offset = int(0.5 * SR)
+    assert p.elapsed_seconds == pytest.approx(3 * p.engine.bar_seconds + 0.5)
+
+
+def test_cycle_remaining_seconds_counts_down_to_the_end_of_the_cycle(player):
+    p, _ = player
+    cycle1 = sum(n for _, n in FIRST_FORM)
+    p.now = NowPlaying(p.now.style, p.now.piece, cycle1 - 1)   # the cycle's last bar
+    p._offset = 0
+    assert p.cycle_remaining_seconds == pytest.approx(p.engine.bar_seconds)
+
+
+def test_cycle_remaining_seconds_resets_when_a_cycle_wraps(player):
+    p, _ = player
+    cycle1 = sum(n for _, n in FIRST_FORM)
+    cycle2 = sum(n for _, n in FORM)
+    p.now = NowPlaying(p.now.style, p.now.piece, cycle1)        # the first bar of the second (shorter) cycle
+    p._offset = 0
+    assert p.cycle_remaining_seconds == pytest.approx(cycle2 * p.engine.bar_seconds)
 
 
 def test_level_and_spectrum_follow_the_output(player):

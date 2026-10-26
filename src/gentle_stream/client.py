@@ -148,6 +148,8 @@ class PlayerClient:
         self.backend = state["backend"]
         self.now = NowPlaying(Style.from_dict(now["style"]), now["piece"], now["bar"])
         self.style = Style.from_dict(state["style"])   # rendered, maybe not audible yet: the base for a mood
+        self.elapsed_seconds = float(state["elapsed_seconds"])
+        self.cycle_remaining_seconds = float(state["cycle_remaining_seconds"])
 
     def _control(self, cmd: str, **args) -> None:
         try:

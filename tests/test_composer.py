@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from gentle_stream.composer import (COUNTER_ENERGY, FIRST_FORM, FORM, MAIN, Composer, augment, invert,
-                                    sequence)
+from gentle_stream.composer import (COUNTER_ENERGY, FIRST_FORM, FORM, MAIN, Composer, augment, cycle_position,
+                                    invert, sequence)
 from gentle_stream.style import MODES, Style
 
 TON = 50
@@ -187,3 +187,13 @@ def test_plans_are_deterministic_per_seed():
     assert plans(seed=11) != plans(seed=12)
     c = Composer(Style(), 11, TON)       # random access gives the same plan as sequential access
     assert c.plan(70) == plans(seed=11)[70]
+
+
+def test_cycle_position_tracks_bars_within_the_looping_song_form():
+    cycle1 = sum(n for _, n in FIRST_FORM)
+    cycle2 = sum(n for _, n in FORM)
+    assert cycle_position(0) == (0, cycle1)
+    assert cycle_position(cycle1 - 1) == (cycle1 - 1, cycle1)
+    assert cycle_position(cycle1) == (0, cycle2)                 # the first bar of the second (shorter) cycle
+    assert cycle_position(cycle1 + cycle2 - 1) == (cycle2 - 1, cycle2)
+    assert cycle_position(cycle1 + cycle2) == (0, cycle2)        # every later cycle has the same length

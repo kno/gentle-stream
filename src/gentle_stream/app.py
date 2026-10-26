@@ -71,6 +71,12 @@ def model_label(model: str | None) -> str:
     return model or DEFAULT_MODEL_LABEL
 
 
+def format_time(seconds: float) -> str:
+    """`m:ss`, clamped to zero: rounding or a cycle boundary can otherwise show a stray negative second."""
+    total = max(0, round(seconds))
+    return f"{total // 60}:{total % 60:02d}"
+
+
 class Spectrum(Static):
     """Block-character bars filling the widget, one column per log-spaced band, shaded from rose (top) to muted."""
 
@@ -338,7 +344,9 @@ class StreamApp(App):
         w["details"].update(now.style.summary())
         w["mood-line"].update(f"“{now.style.mood}”" if now.style.mood else "")
         state = "[b $success]▶ Playing[/]" if p.playing else "[b $warning]⏸ Paused[/]"
-        w["state"].update(f"{state} · piece {now.piece} · bar {now.bar + 1} · vol {round(p.volume * 100)}%")
+        elapsed, remaining = format_time(p.elapsed_seconds), format_time(p.cycle_remaining_seconds)
+        w["state"].update(f"{state} · piece {now.piece} · bar {now.bar + 1} · "
+                          f"{elapsed} · -{remaining} · vol {round(p.volume * 100)}%")
 
     def _show_model(self) -> None:
         session = f" · session: {self.session_usage.format()}" if self.session_usage else ""

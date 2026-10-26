@@ -246,6 +246,7 @@ def test_polling_returns_the_audible_style_and_the_spectrum(runtime):
     bands = player.spectrum(24)
     assert bands.shape == (24,) and np.all((bands >= 0) & (bands <= 1)) and bands.max() > 0
     assert player.level > 0 and player.backend == "procedural"
+    assert player.elapsed_seconds >= 0 and player.cycle_remaining_seconds > 0
 
 
 def test_a_state_round_trip_is_fast(runtime):

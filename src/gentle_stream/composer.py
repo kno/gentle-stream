@@ -21,6 +21,8 @@ RHYTHMS = (((0, 1.5), (1.5, .5), (2, 2)), ((0.5, 1), (1.5, 1), (2.5, 1.5)), ((0,
 # (section, bars); the intro opens a piece, then the form loops for as long as the piece plays
 FIRST_FORM = (("intro", 4), ("A", 8), ("B", 8), ("A'", 8), ("breakdown", 4), ("B'", 8), ("release", 4))
 FORM = FIRST_FORM[1:]
+FIRST_FORM_LEN = sum(n for _, n in FIRST_FORM)
+FORM_LEN = sum(n for _, n in FORM)
 ENERGY = {"intro": .3, "A": .55, "B": .8, "A'": .62, "breakdown": .25, "B'": .95, "release": .4}
 MAIN = ("A", "B", "A'", "B'", "release")   # sections that carry the melody and close on the tonic
 COUNTER_ENERGY = 0.7
@@ -29,6 +31,14 @@ LIFT_CHANCE = 0.5
 CADENCES = {"minor": (4, 5), "major": (4, 5), "dorian": (4, 5), "phrygian": (7, 2), "lydian": (5, 2),
             "mixolydian": (4, 7)}
 RAISED = ("minor", "dorian")   # these borrow the major dominant (raised leading tone) at cadences
+
+
+def cycle_position(bar: int) -> tuple[int, int]:
+    """`bar`'s position within its song-form cycle, and that cycle's length in bars (the stream is endless, so
+    the form loops: the first cycle carries the intro, every later one is shorter)."""
+    if bar < FIRST_FORM_LEN:
+        return bar, FIRST_FORM_LEN
+    return (bar - FIRST_FORM_LEN) % FORM_LEN, FORM_LEN
 
 
 @dataclass(frozen=True)
