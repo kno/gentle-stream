@@ -14,10 +14,11 @@ Branch: `feat/autonomous-journey`, stacked on `feat/live-evolution` (M1, pushed 
 
 | ID | Specs | Route | Status | Commit |
 |----|-------|-------|--------|--------|
-| T1 PM-004 | S1, S4 | gentle-ai-worker, background; independent verify (Risk 4: journey commands from daemon threads applied on the render thread) | in progress | |
-| T2 PM-005 | S2, S4 | same worker, continued after T1 commit | pending | |
+| T1 PM-004 | S1, S4 | gentle-ai-worker, background; independent verify (Risk 4: journey commands from daemon threads applied on the render thread) | done (verify pending) | fb03b31 |
+| T2 PM-005 | S2, S4 | same worker, continued after T1 commit | in progress | |
 | T3 PM-006 | S3, S4 | same worker, continued after T2 commit | pending | |
 
 ## Log
 
 - L1 (2026-10-26, user): "siguimos con lo siguiente, pero con su propia rama. haz push" — `feat/live-evolution` pushed to `fork` (kno/gentle-stream) at a44779f; M2 on its own branch stacked on it.
+- L2: T1 done fb03b31 (545 passed, known flake only; golden hashes unchanged; ctl/render differential identical vs a44779f). Independent verify mvp97xla-7-ueyr runs on a worktree of fb03b31 while T2 proceeds.
