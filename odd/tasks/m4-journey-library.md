@@ -39,7 +39,7 @@ run"`."
 | T1 | S5, S6, S7 | worker + inline rewrite: `storage.py`, `presets.py`, `journey.py` store, `app.py`; tests | done (T1 commit) |
 | T2 | S4, S5, S8 | worker + inline review: `__init__.py` save/list/delete/play/show by name, daemon `journey_last`, client | done (T2+T3 commit) |
 | T3 | S1, S2, S3 | worker + inline tests: `bridge.py` prompt, `__init__.py` create (`--dry-run`, usage, errors, flags) | done (T2+T3 commit) |
-| T4 | all | README/help; independent verify (Risk items 1, 3) | pending |
+| T4 | all | README/help; independent verify (Risk items 1, 3) | done (README commit 49e33c7) |
 
 ## Log
 
@@ -57,3 +57,8 @@ run"`."
   `source`/`last` instead of overloading `prompt`). CLI create/demo tests written inline. Mutations (dry-run ignored,
   usage not printed, daemon forgets the last journey, saved names not resolved) each turned tests RED; restored ->
   green. Full suite 683 passed, 27 skipped, 2 known daemon teardown errors; no production diagnostics.
+- L5: T4 evidence: gentle-ai-verify S1-S7 PASS (static + focused tests), S8 PARTIAL (timed out before its shell demo
+  and differential). Completed inline with isolated XDG dirs: differential of 8 existing journey commands base fe61f6a
+  vs HEAD -> identical stdout/stderr/exit; S8 demo in a shell against a fake player and fake gentle-shell -> create,
+  save --last, play "Morning run", list, built-in name refused, delete all as specified. Full suite 683 passed,
+  27 skipped, 5 known daemon teardown errors. Not exercised: a real model run and a real older player.
