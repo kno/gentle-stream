@@ -113,7 +113,8 @@ class Journey:
         """
         if not isinstance(data, Mapping):
             raise ValueError("journey must be a JSON object")
-        if data.get("version") != 1:
+        version = data.get("version")
+        if isinstance(version, bool) or version != 1:
             raise ValueError('"version" must be 1')
         raw_stages = data.get("stages")
         if not isinstance(raw_stages, list):
@@ -141,7 +142,7 @@ class Journey:
             normalized = {}
             for key, value in to.items():
                 if key not in GLIDE_FIELDS:
-                    raise ValueError(f'stage {number}: unknown "to" field {key!r}')
+                    continue
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                     raise ValueError(f'stage {number}: "to.{key}" must be a number')
                 lo, hi = GLIDE_FIELDS[key]
@@ -161,7 +162,7 @@ class Journey:
         if not isinstance(journey_name, str) or not journey_name:
             raise ValueError('"name" must be a non-empty string')
         end = data.get("end", "sustain")
-        if end not in ENDS:
+        if not isinstance(end, str) or end not in ENDS:
             raise ValueError(f'"end" must be one of {", ".join(ENDS)}')
         for key in ("title", "description"):
             if key in data and not isinstance(data[key], str):

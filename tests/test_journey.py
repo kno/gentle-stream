@@ -80,16 +80,19 @@ def test_pm007_seconds_exact_error(value):
 def test_pm007_round_trip_and_unknown_keys_and_clamping_warnings():
     warnings = []
     journey = Journey.from_dict({"version": 1, "name": "x", "ignored": 1, "stages": [
-        {"name": "s", "seconds": 10, "to": {field: 999}, "ignored": True} for field in GLIDE_FIELDS]}, warnings)
+        {"name": "s", "seconds": 10, "to": {field: 999, "ignored": 1}, "ignored": True}
+        for field in GLIDE_FIELDS]}, warnings)
     assert len(warnings) == len(GLIDE_FIELDS)
+    assert "ignored" not in journey.stages[0].to
     assert Journey.from_dict(journey.to_dict()) == journey
     assert journey.to_dict()["version"] == 1
 
 
 @pytest.mark.parametrize("data", [
-    {"version": 1, "stages": [{"seconds": 10, "to": {"nope": 1}}]},
     {"version": 1, "stages": [{"seconds": 10, "to": {}, "genre": "nope"}]},
     {"version": 1, "stages": [{"seconds": 10, "to": {}}], "end": "nope"},
+    {"version": True, "stages": [{"seconds": 10, "to": {}}]},
+    {"version": 1, "stages": [{"seconds": 10, "to": {}}], "end": []},
 ])
 def test_pm007_rejects_invalid_categories(data):
     with pytest.raises(ValueError):
