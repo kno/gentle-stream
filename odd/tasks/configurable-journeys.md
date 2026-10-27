@@ -19,7 +19,7 @@ Objective: deliver PM-007 Journey files and PM-008 Journey controls on `feat/con
 | T1 PM-007 journey file schema and CLI | S1-S4 | explore, implementation, focused verification | done | 8716405, 7fad3b9 |
 | T2 PM-007 independent verification | S1-S4 | verifier after T1 commit and correction | done | mvqfalnv-8-5fu2 |
 | T3 PM-008 journey controls | S5-S7 | exploration, test-first implementation, focused verification | done | 79a8b02 |
-| T4 PM-008 independent verification | S5-S7 | verifier after T3 commit | in progress | mvqixu7b-c-ajds |
+| T4 PM-008 independent verification | S5-S7 | verifier after T3 commit | done (PASS) | mvqixu7b-c-ajds |
 
 ## Log
 
@@ -33,3 +33,11 @@ Objective: deliver PM-007 Journey files and PM-008 Journey controls on `feat/con
 - L8 (user): "sigue con el siguiente punto"
 - L9 (user): Selected "Rechazar claramente" for skip at the final stage: exit 1 with `already at the final journey stage`; no journey change.
 - L10: T3 complete (commit 79a8b02): engine controls, daemon protocol, CLI restart/skip subcommands, TUI `j` menu, docs updated. 629 PASS, 27 skipped, 0 assertion failures (3 teardown flakes). Independent verification in progress (mvqixu7b-c-ajds).
+- L11: T4 PASS (mvqixu7b-c-ajds): S5-S7 all verified. PM-008 ready. RDD lens-budget constraint noted for future chained reviews.
+
+## Milestone M3 Completion
+
+**Delivered:** PM-007 (JSON journeys with schema/CLI) + PM-008 (restart/skip controls).
+**Feature branch:** feat/configurable-journeys, stacked on M2, commits 8716405/7fad3b9 (PM-007), 79a8b02/56b252a (PM-008).
+**Status:** Local only; no push requested. Feature ready for integration once M2 moves to main.
+**Next:** M4 (PM-009 interpolation curves) or continue on the same branch.
