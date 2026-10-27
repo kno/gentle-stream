@@ -16,15 +16,17 @@ from __future__ import annotations
 import json
 import math
 import os
-import tempfile
 from bisect import bisect_right
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from itertools import accumulate
 from pathlib import Path
 from types import MappingProxyType
 
 from .engine import GLIDE_FIELDS
+from .presets import PresetError, normalize_name
+from .storage import write_json_atomic
 
 ENDS = ("sustain", "release")
 CURVES = ("linear", "ease-in", "ease-out", "ease-in-out", "exp", "step")
@@ -281,65 +283,125 @@ def unknown_journey(name: str) -> str:
     return f'no journey called "{name}" (choose from {", ".join(BUILTIN)})'
 
 
-class JourneyStore:
-    """Saved custom journeys: individual JSON files in ~/.config/gentle-stream/journeys/."""
+class JourneyStoreError(Exception):
+    """A journey cannot be saved or deleted; the message is meant for the person."""
 
-    def __init__(self):
-        self.base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "gentle-stream" / "journeys"
-        self.base.mkdir(parents=True, exist_ok=True)
+
+STORE_VERSION = 1
+
+
+def default_store_path() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"
+    return Path(base) / "gentle-stream" / "journeys.json"
+
+
+def _store_key(name: str) -> str:
+    return " ".join(str(name).split()).casefold()
+
+
+@dataclass(frozen=True)
+class _Saved:
+    journey: Journey   # named and titled after the saved name
+    saved_at: str      # ISO 8601, UTC
+
+
+class JourneyStore:
+    """Saved journeys in `journeys.json`, next to `presets.json`, with the same guarantees as `PresetStore`.
+
+    Names follow the preset rules (trimmed, at most NAME_MAX characters, matched ignoring case) and cannot be a
+    built-in journey's. Every call reads the file. It is rewritten atomically; a corrupt file is never overwritten;
+    invalid entries are skipped. `error` describes the problem found by the last read, or is None.
+    """
+
+    def __init__(self, path: Path | str | None = None):
+        self.path = Path(path) if path is not None else default_store_path()
         self.error: str | None = None
 
+    def _load(self) -> tuple[dict[str, _Saved], bool]:
+        """Saved journeys by lowercase name, and whether the file is readable (False: leave it untouched)."""
+        self.error = None
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return {}, True
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+            self.error = f"Cannot read {self.path}: {e}"
+            return {}, False
+        entries = data.get("journeys") if isinstance(data, dict) and data.get("version") == STORE_VERSION else None
+        if not isinstance(entries, list):
+            self.error = f"Cannot read {self.path}: unexpected format"
+            return {}, False
+        saved, skipped = {}, 0
+        for entry in entries:
+            if (item := self._parse(entry)) is None:
+                skipped += 1
+            else:
+                saved[_store_key(item.journey.name)] = item
+        if skipped:
+            self.error = f"Skipped {skipped} invalid saved journey(s) in {self.path}"
+        return saved, True
+
+    @staticmethod
+    def _parse(entry) -> _Saved | None:
+        if not isinstance(entry, dict):
+            return None
+        try:
+            name = normalize_name(entry.get("name", ""))
+            journey = Journey.from_dict(entry.get("journey"))
+        except (PresetError, ValueError):
+            return None
+        saved_at = entry.get("saved_at")
+        return _Saved(_renamed(journey, name), saved_at if isinstance(saved_at, str) else "")
+
+    def _writable(self) -> dict[str, _Saved]:
+        saved, ok = self._load()
+        if not ok:
+            raise JourneyStoreError(f"{self.error}; fix or move the file to save journeys again.")
+        return saved
+
+    def _write(self, saved: dict[str, _Saved]) -> None:
+        data = {"version": STORE_VERSION, "journeys": [
+            {"name": item.journey.name, "journey": item.journey.to_dict(), "saved_at": item.saved_at}
+            for item in sorted(saved.values(), key=lambda item: _store_key(item.journey.name))
+        ]}
+        try:
+            write_json_atomic(self.path, data, prefix=".journeys-")
+        except OSError as e:
+            raise JourneyStoreError(f"Cannot write {self.path}: {e}") from e
+
     def list(self) -> list[tuple[str, Journey]]:
-        """Return list of (name, journey) tuples, sorted alphabetically."""
-        result = []
-        if not self.base.exists():
-            return result
-        for path in sorted(self.base.glob("*.json")):
-            try:
-                with open(path) as f:
-                    data = json.load(f)
-                journey = Journey.from_dict(data, name=path.stem)
-                result.append((path.stem, journey))
-            except (json.JSONDecodeError, ValueError):
-                pass
-        return result
+        """(name, journey) of every saved journey, sorted by name ignoring case."""
+        saved = sorted(self._load()[0].values(), key=lambda item: _store_key(item.journey.name))
+        return [(item.journey.name, item.journey) for item in saved]
 
     def get(self, name: str) -> Journey | None:
-        """Load a saved journey by name."""
-        path = self.base / f"{name}.json"
-        if not path.exists():
-            self.error = f'"{name}" not found'
-            return None
-        try:
-            with open(path) as f:
-                data = json.load(f)
-            return Journey.from_dict(data, name=name)
-        except (json.JSONDecodeError, ValueError) as e:
-            self.error = str(e)
-            return None
+        item = self._load()[0].get(_store_key(name))
+        return item.journey if item is not None else None
 
-    def save(self, name: str, journey: Journey) -> bool:
-        """Save a journey. Returns True on success."""
-        path = self.base / f"{name}.json"
+    def save(self, name: str, journey: Journey) -> tuple[str, bool]:
+        """Save `journey` under `name`; returns the stored name and whether it replaced a saved journey."""
         try:
-            data = journey.to_dict()
-            with tempfile.NamedTemporaryFile(mode="w", dir=self.base, delete=False, suffix=".json") as tmp:
-                json.dump(data, tmp, ensure_ascii=False)
-                tmp_path = Path(tmp.name)
-            tmp_path.replace(path)
-            self.error = None
-            return True
-        except Exception as e:
-            self.error = str(e)
-            return False
+            name = normalize_name(name)
+        except PresetError as e:
+            raise JourneyStoreError(str(e)) from None
+        if _store_key(name) in {_store_key(n) for n in BUILTIN}:
+            raise JourneyStoreError(f'"{name}" is a built-in journey; choose another name.')
+        saved = self._writable()
+        replaced = saved.pop(_store_key(name), None) is not None
+        saved[_store_key(name)] = _Saved(_renamed(journey, name),
+                                         datetime.now(UTC).isoformat(timespec="seconds"))
+        self._write(saved)
+        return name, replaced
 
     def delete(self, name: str) -> bool:
-        """Delete a saved journey."""
-        path = self.base / f"{name}.json"
-        try:
-            path.unlink()
-            self.error = None
-            return True
-        except Exception as e:
-            self.error = str(e)
+        """Remove the saved journey called `name` (ignoring case); False if there was none."""
+        saved = self._writable()
+        if saved.pop(_store_key(name), None) is None:
             return False
+        self._write(saved)
+        return True
+
+
+def _renamed(journey: Journey, name: str) -> Journey:
+    """`journey` named and titled after its saved name, so it shows as the person called it."""
+    return Journey(name, journey.stages, journey.end, journey.description, name)

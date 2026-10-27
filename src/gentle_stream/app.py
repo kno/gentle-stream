@@ -11,8 +11,6 @@ play (built-in or saved) or creates one from a description with Gentle Shell.
 """
 from __future__ import annotations
 
-import re
-
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
@@ -26,7 +24,7 @@ from textual.widgets.option_list import Option
 from textual.worker import get_current_worker
 
 from .bridge import GentleShell, InterpretError, Usage
-from .journey import BUILTIN, Journey, JourneySnapshot, JourneyStore
+from .journey import BUILTIN, Journey, JourneySnapshot, JourneyStore, JourneyStoreError
 from .player import Player
 from .presets import NAME_MAX, Preset, PresetError, PresetStore, normalize_name
 from .style import Style
@@ -317,13 +315,6 @@ class JourneyMenu(ModalScreen[str | None]):
 
 
 
-
-def journey_file_name(name: str) -> str:
-    """A safe store name: lowercase letters, digits and dashes, so a generated name can never leave the store."""
-    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return slug[:NAME_MAX] or "journey"
-
-
 class JourneyPromptModal(ModalScreen[str | None]):
     """Create a journey from a natural-language description; dismisses with the saved name.
 
@@ -392,12 +383,14 @@ class JourneyPromptModal(ModalScreen[str | None]):
             return
         if worker.is_cancelled:
             return
-        file_name = journey_file_name(name or str(data.get("name") or prompt))
-        if not self.store.save(file_name, journey):
-            self.app.call_from_thread(self._show, f"Could not save the journey: {self.store.error}")
+        chosen_name = name or str(data.get("name") or prompt)
+        try:
+            stored_name, _ = self.store.save(chosen_name, journey)
+        except JourneyStoreError as e:
+            self.app.call_from_thread(self._show, f"Could not save the journey: {e}")
             return
         self.usage = usage
-        self.app.call_from_thread(self.dismiss, file_name)
+        self.app.call_from_thread(self.dismiss, stored_name)
 
     def action_cancel(self) -> None:
         self.workers.cancel_group(self, "journey-create")
@@ -434,7 +427,7 @@ class JourneyPickerModal(ModalScreen[str | None]):
         for name, journey in BUILTIN.items():
             options.add_option(Option(f"[built-in] {escape(name)}: {escape(journey.description)}",
                                       id=f"builtin:{name}"))
-        for saved_name, _ in sorted(self.store.list(), key=lambda item: item[0]):
+        for saved_name, _ in self.store.list():
             options.add_option(Option(f"[saved] {escape(saved_name)}", id=f"saved:{saved_name}"))
         ids = [options.get_option_at_index(i).id for i in range(options.option_count)]
         options.highlighted = ids.index(self.highlight) if self.highlight in ids else 0

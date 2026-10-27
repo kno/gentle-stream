@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .storage import write_json_atomic
 from .style import Style
 
 NAME_MAX = 40
@@ -105,18 +105,7 @@ class PresetStore:
             for p in sorted(presets.values(), key=lambda p: p.name.casefold())
         ]}
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".presets-", suffix=".tmp")
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                    f.write("\n")
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp, self.path)
-            except BaseException:
-                Path(tmp).unlink(missing_ok=True)
-                raise
+            write_json_atomic(self.path, data, prefix=".presets-")
         except OSError as e:
             raise PresetError(f"Cannot write {self.path}: {e}") from e
 

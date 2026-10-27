@@ -680,7 +680,7 @@ async def test_pm012_picking_a_builtin_or_saved_journey_starts_it_immediately():
         await pilot.pause(0.1)
         await pilot.press("J", *["down"] * (len(BUILTIN) + 1), "enter")   # first saved
         await pilot.pause(0.1)
-        assert "Journey Night drive (alpha) starts at the next bar" in text(app, "#status")
+        assert "Journey alpha" in text(app, "#status")
     first = next(iter(BUILTIN.values()))
     assert started == [first.to_dict(), JourneyStore().get("alpha").to_dict()]
 
@@ -705,29 +705,33 @@ async def test_pm012_create_saves_the_generated_journey_and_reopens_the_picker_o
         await pilot.press("enter")
         await pilot.pause(0.1)
     saved = JourneyStore().get("night-drive")
-    assert saved == Journey.from_dict(valid_journey("night-drive"), name="night-drive")
+    expected = Journey.from_dict({**valid_journey("night-drive"), "title": "night-drive"}, name="night-drive")
+    assert saved == expected
     assert started == [saved.to_dict()]
 
 
 @pytest.mark.asyncio
-async def test_pm012_the_optional_name_wins_and_unsafe_names_are_normalized():
+async def test_pm012_typed_name_wins_and_builtin_generated_name_stays_open():
+    from gentle_stream.app import JourneyPickerModal, JourneyPromptModal
     from gentle_stream.journey import JourneyStore
 
-    shell = JourneyShell(journey=valid_journey("../../evil"))
+    shell = JourneyShell(journey=valid_journey("warm-up"))
     app, _ = make_app(shell)
     async with app.run_test() as pilot:
         await pilot.press("J", "enter")
         await pilot.pause(0.1)
         await pilot.press(*"first", "tab", *"My Drive!", "enter")
         await pilot.pause(0.3)
-        await pilot.press("escape")
-        await pilot.press("J", "enter")
+        assert isinstance(app.screen, JourneyPickerModal)
+        assert JourneyStore().get("My Drive!") is not None
+        await pilot.press("escape", "J", "enter")
         await pilot.pause(0.1)
-        await pilot.press(*"second", "enter")             # no name: the generated one, made safe
+        await pilot.press(*"second", "enter")
         await pilot.pause(0.3)
-    store = JourneyStore()
-    assert sorted(name for name, _ in store.list()) == ["evil", "my-drive"]
-    assert sorted(p.name for p in store.base.iterdir()) == ["evil.json", "my-drive.json"]
+        assert isinstance(app.screen, JourneyPromptModal)
+        assert app.screen.query_one("#prompt").value == "second"
+        assert "built-in" in str(app.screen.query_one("#journey-error").render())
+    assert JourneyStore().get("warm-up") is None
 
 
 @pytest.mark.asyncio
