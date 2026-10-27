@@ -506,3 +506,38 @@ def test_pausing_the_player_stops_journey_time_bounded_by_the_prebuffer():
         wait_for(lambda: engine.journey_seconds is not None and engine.journey_seconds > paused_at)
     finally:
         p.close()
+
+
+# ------------------------------------------------------------ PM-008 journey controls
+def test_pm008_restart_and_skip_apply_on_the_next_rendered_bar():
+    e = Engine(Style(bpm=120, energy=0.2), seed=41, samples=False)
+    e.queue_journey(THREE)
+    e.render_bar()
+    e.render_bar()
+    assert e.journey_snapshot is not None and e.journey_snapshot.stage == 1
+
+    e.skip_journey()
+    assert e.journey_snapshot.stage == 1
+    e.render_bar()
+    assert e.journey_snapshot is not None and e.journey_snapshot.stage == 2
+
+    e.restart_journey()
+    assert e.journey_snapshot.stage == 2
+    e.render_bar()
+    assert e.journey_snapshot is not None and e.journey_snapshot.stage == 1
+
+
+def test_pm008_controls_reject_missing_or_final_journey():
+    e = Engine(seed=42, samples=False)
+    with pytest.raises(ValueError, match="^no journey is running$"):
+        e.restart_journey()
+    with pytest.raises(ValueError, match="^no journey is running$"):
+        e.skip_journey()
+    e.queue_journey(THREE)
+    e.render_bar()
+    e.skip_journey()
+    e.render_bar()
+    e.skip_journey()
+    e.render_bar()
+    with pytest.raises(ValueError, match="^already at the final journey stage$"):
+        e.skip_journey()

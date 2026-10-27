@@ -140,7 +140,7 @@ def _journey_source(source: str):
 
 
 def journey_command(action: str, name: str | None = None) -> int:
-    """`journey play NAME`, `journey stop` and `journey list` (named so: the `journey` module is a package attribute)."""
+    """`journey play NAME|FILE`, `journey validate|show FILE`, `journey restart|skip|stop|list` (named so: the `journey` module is a package attribute)."""
     from .journey import BUILTIN
 
     if action in ("validate", "show"):
@@ -179,13 +179,23 @@ def journey_command(action: str, name: str | None = None) -> int:
     try:
         if action == "play" and parsed_journey is not None:
             player.journey_start(parsed_journey.to_dict())
+        elif action == "restart":
+            player.journey_restart()
+        elif action == "skip":
+            player.journey_skip()
         else:
             player.journey_stop()
     except PlayerGone:
         print("gentle-stream: nothing is playing", file=sys.stderr)
         return 1
     except PlayerError as e:
-        print(f"gentle-stream: {OLDER_PLAYER if 'unknown command' in str(e) else e}", file=sys.stderr)
+        if 'unknown command' in str(e):
+            print(f"gentle-stream: {OLDER_PLAYER}", file=sys.stderr)
+        else:
+            print(f"gentle-stream: {e}", file=sys.stderr)
+        return 1
+    except ValueError as e:
+        print(f"gentle-stream: {e}", file=sys.stderr)
         return 1
     player.detach()
     return 0
@@ -346,6 +356,8 @@ def main(argv: list[str] | None = None) -> int:
     journey_sub.add_parser("validate", help="validate and normalize a JSON journey file").add_argument("name", metavar="FILE")
     journey_sub.add_parser("show", help="show a normalized journey or JSON file").add_argument("name", metavar="NAME|FILE")
     journey_sub.add_parser("stop", help="end the journey, leaving the music as it is")
+    journey_sub.add_parser("restart", help="restart the journey from its first stage")
+    journey_sub.add_parser("skip", help="advance the journey to its next stage")
     journey_sub.add_parser("list", help="list the built-in journeys")
     args = ap.parse_args(argv)
     if args.command == "ctl":

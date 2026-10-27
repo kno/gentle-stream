@@ -84,6 +84,10 @@ class JourneyDriven(ValueError):
     """A glide of a field the running or queued journey drives; the message is meant for the terminal."""
 
 
+class JourneyControlError(ValueError):
+    """A control error on a journey; the message is meant for the terminal."""
+
+
 def _bounded(name: str, value: float) -> float:
     lo, hi = GLIDE_FIELDS[name]
     value = float(np.clip(float(value), lo, hi))
@@ -113,6 +117,7 @@ class Engine:
         self._glides: dict[str, _Glide] = {}   # live glides by field; replaced, never mutated, under _lock
         self._journey_queued = False            # a journey command waits for the next bar (under _lock)
         self._pending_journey: Journey | None = None   # what it starts, or None to stop
+        self._journey_control: str | None = None  # restart or skip, applied at the next rendered bar
         self._driving: Journey | None = None    # the journey playing, as other threads may see it (under _lock)
         self._running: _Running | None = None   # the journey playing; render thread only
         self._snapshot: JourneySnapshot | None = None   # its progress at the bar rendered last
@@ -178,6 +183,23 @@ class Engine:
         """Drop the running journey (or a queued one) at the next bar, leaving the music as it is."""
         with self._lock:
             self._journey_queued, self._pending_journey = True, None
+            self._journey_control = None
+
+    def restart_journey(self) -> None:
+        """Restart the running journey at the next bar."""
+        self._queue_journey_control("restart")
+
+    def skip_journey(self) -> None:
+        """Advance the running journey to its next stage at the next bar."""
+        self._queue_journey_control("skip")
+
+    def _queue_journey_control(self, action: str) -> None:
+        with self._lock:
+            if self._driving is None:
+                raise JourneyControlError("no journey is running")
+            if action == "skip" and self._snapshot is not None and self._snapshot.stage == self._snapshot.stages:
+                raise JourneyControlError("already at the final journey stage")
+            self._journey_control = action
 
     @property
     def journey(self) -> Journey | None:
@@ -245,9 +267,9 @@ class Engine:
         """Render the next bar as float32 stereo samples of shape (n, 2)."""
         with self._lock:
             style, nxt = self._pending_style, self._pending_next
-            queued, journey = self._journey_queued, self._pending_journey
+            queued, journey, control = self._journey_queued, self._pending_journey, self._journey_control
             self._pending_style, self._pending_next = None, False
-            self._journey_queued, self._pending_journey = False, None
+            self._journey_queued, self._pending_journey, self._journey_control = False, None, None
             if queued:   # a journey starts or stops here; one that starts takes over its fields from any glide
                 self._driving = journey
                 if journey is not None:
@@ -255,6 +277,14 @@ class Engine:
         if queued and journey is None:
             self._running = None
         running = self._running
+        if running is not None and control == "restart":
+            running = replace(running, start_sample=self.samples_out)
+            self._running = running
+        elif running is not None and control == "skip":
+            index, _, _ = running.journey.at((self.samples_out - running.start_sample) / self.sr, running.start)
+            next_start = running.journey._ends[index]
+            running = replace(running, start_sample=self.samples_out - round(next_start * self.sr))
+            self._running = running
         t = (self.samples_out - running.start_sample) / self.sr if running is not None else 0.0
         values = self._journey_values(running, t)   # owned by the journey: a new piece starts with them
         stage_index = running.journey.at(t, running.start)[0] if running is not None else None

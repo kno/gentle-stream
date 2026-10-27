@@ -162,6 +162,7 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 | `m` | Choose the model Gentle Shell uses (listed from `gentle-shell -- --list-models`); `Enter` picks, `Esc` keeps the current one |
 | `s` | Save what is playing under a name; `Enter` saves (an existing name is replaced), `Esc` cancels |
 | `p` | Saved prompts: `Enter` applies one instantly, `d` or `Delete` removes it, `Esc` closes |
+| `j` | Journey menu: restart, skip or stop the running journey; `Enter` sends the command, `Esc` closes |
 | `+` / `-` | Volume up / down by 5% |
 | `↑` / `↓` | Volume up / down by 1% |
 | `b` | Back: leave the app and keep the music playing in the background |
@@ -202,6 +203,8 @@ gentle-stream ctl stop     # ends the background player
 | `ctl tempo BPM [--over SECONDS]` | Glide tempo in place (default 60 seconds) | `0`, or `1` when nothing plays |
 | `ctl glide FIELD=VALUE... [--over SECONDS]` | Glide `energy`, `brightness`, `space`, `swing`, `vinyl`, `lead_density` or `bpm` in place (default 60 seconds) | `0`; `1` when nothing plays or the player refuses; `2` for a malformed or discrete field |
 | `journey play NAME` | Run a built-in journey (see [Journeys](#journeys)); nothing on stdout | `0`; `1` when nothing plays or the name is unknown |
+| `journey restart` | Restart the running journey at its first stage on the next bar | `0`; `1` when nothing plays or no journey is running |
+| `journey skip` | Advance the running journey to its next stage on the next bar | `0`; `1` when nothing plays, no journey is running, or the journey has reached its final stage |
 | `journey stop` | End the journey, leaving the music as it is | `0`, or `1` when nothing plays |
 | `journey list` | The built-in journeys, one per line with a short description | `0` |
 
@@ -235,7 +238,7 @@ gentle-stream journey stop             # the music stays where the journey left 
 
 Genre steps start a new piece at the first following four-bar boundary of the old piece, skip its quiet intro, and preserve the key, mode, progression and journey fields; shared tails continue ringing. A journey owns the fields it moves: a new mood or `next` keeps it running, and the new piece takes the journey's tempo, energy and colour from its first bar (the rest of the mood applies as usual). Starting a journey cancels glides of those fields and replaces a running journey; while it runs, trying to glide one of those fields is rejected until you stop the journey. Journey time is rendered time, so `next` advances it by the buffered audio it drops (up to about one second). Genre stages switch at phrase boundaries. `gentle-stream render --journey warm-up` renders one offline.
 
-While a journey runs, the app shows its progress under the mood, following what you hear (not what is rendered ahead), and hides the line otherwise:
+While a journey runs, you can control it with `j` in the TUI (restart, skip, or stop), or from the command line with `gentle-stream ctl journey restart`, etc. The app shows its progress under the mood, following what you hear (not what is rendered ahead), and hides the line otherwise:
 
 ```text
 Journey: Warm-up · stage 2/4 "Wake" · 62% · 67 → 72 bpm · 7:08 left

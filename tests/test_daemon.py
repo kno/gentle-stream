@@ -447,6 +447,57 @@ def test_pm007_daemon_accepts_normalized_object_without_reading_paths():
     assert player.engine.journey is not None and player.engine.journey.name == "file"
 
 
+@pytest.mark.parametrize("cmd", ["journey_restart", "journey_skip"])
+def test_pm008_controls_without_a_journey_answer_no_journey_is_running(cmd):
+    from gentle_stream import daemon
+
+    player = fake_player()
+    assert daemon.handle(player, {"cmd": cmd}) == {"ok": False, "error": "no journey is running"}
+    player.engine.render_bar()
+    assert player.engine.journey is None
+
+
+def _snap(player):
+    snap = player.engine.journey_snapshot
+    assert snap is not None
+    return snap
+
+
+def test_pm008_skip_and_restart_change_the_stage_of_the_next_bar():
+    from gentle_stream import daemon
+    from gentle_stream.journey import BUILTIN
+
+    player = fake_player()
+    daemon.handle(player, {"cmd": "journey_start", "name": "warm-up"})
+    player.engine.render_bar()
+    assert _snap(player).stage == 1
+    assert daemon.handle(player, {"cmd": "journey_skip"})["ok"] is True
+    player.engine.render_bar()
+    assert _snap(player).stage == 2
+    assert daemon.handle(player, {"cmd": "journey_restart"})["ok"] is True
+    player.engine.render_bar()
+    snap = _snap(player)
+    assert snap.stage == 1 and snap.progress == 0.0 and player.engine.journey is BUILTIN["warm-up"]
+
+
+def test_pm008_skip_at_the_final_stage_is_refused_and_changes_nothing():
+    from gentle_stream import daemon
+
+    player = fake_player()
+    daemon.handle(player, {"cmd": "journey_start", "name": "warm-up"})
+    player.engine.render_bar()
+    for _ in range(3):
+        daemon.handle(player, {"cmd": "journey_skip"})
+        player.engine.render_bar()
+    before = _snap(player)
+    assert before.stage == 4
+    answer = daemon.handle(player, {"cmd": "journey_skip"})
+    assert answer == {"ok": False, "error": "already at the final journey stage"}
+    player.engine.render_bar()
+    after = _snap(player)
+    assert after.stage == 4 and after.progress > before.progress
+
+
 def test_handle_journey_stop_without_a_journey_is_fine():
     from gentle_stream import daemon
 

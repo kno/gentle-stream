@@ -120,6 +120,18 @@ class Player:
         """The new style starts at the next rendered bar, after the audio already buffered."""
         self.engine.queue_style(style)
 
+    def journey_restart(self) -> None:
+        """Restart the running journey at the next rendered bar."""
+        self.engine.restart_journey()
+
+    def journey_skip(self) -> None:
+        """Advance the running journey to its next stage at the next rendered bar."""
+        self.engine.skip_journey()
+
+    def journey_stop(self) -> None:
+        """Stop the running journey at the next rendered bar."""
+        self.engine.stop_journey()
+
     def next(self) -> None:
         """A new piece with the same mood, right away: its first bar is rendered now and crossfaded over the
         pending audio of the old piece, which is dropped. No gap, no jump."""

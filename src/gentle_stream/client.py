@@ -210,6 +210,12 @@ class PlayerClient:
     def journey_stop(self) -> None:
         self._control("journey_stop")
 
+    def journey_restart(self) -> None:
+        self._control("journey_restart")
+
+    def journey_skip(self) -> None:
+        self._control("journey_skip")
+
     def set_volume(self, volume: float) -> None:
         self._control("set_volume", volume=float(volume))
 

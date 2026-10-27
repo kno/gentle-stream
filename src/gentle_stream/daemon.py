@@ -198,6 +198,10 @@ def handle(player, request) -> dict:
                 player.engine.queue_journey(BUILTIN[name])
         elif cmd == "journey_stop":
             player.engine.stop_journey()
+        elif cmd == "journey_restart":
+            player.engine.restart_journey()
+        elif cmd == "journey_skip":
+            player.engine.skip_journey()
         elif cmd == "set_style":
             if not isinstance(request["style"], dict):
                 raise TypeError("style must be an object")
@@ -207,9 +211,9 @@ def handle(player, request) -> dict:
         else:
             raise ValueError(f"unknown command {cmd!r}")
     except ValueError as e:
-        from .engine import JourneyDriven
+        from .engine import JourneyControlError, JourneyDriven
 
-        if isinstance(e, JourneyDriven):
+        if isinstance(e, (JourneyDriven, JourneyControlError)):
             return {"ok": False, "error": str(e)}
         return {"ok": False, "error": f"bad request: {e}"}
     except (KeyError, TypeError) as e:

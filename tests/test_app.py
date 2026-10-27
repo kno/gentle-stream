@@ -551,6 +551,39 @@ def show_journey(player, snapshot):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("downs, method", [(0, "journey_restart"), (1, "journey_skip"), (2, "journey_stop")],
+                         ids=["restart", "skip", "stop"])
+async def test_pm008_j_opens_the_journey_menu_and_each_entry_reaches_the_player(downs, method):
+    from gentle_stream.app import JourneyMenu
+
+    app, player = make_app(FakeShell())
+    calls = []
+    for name in ("journey_restart", "journey_skip", "journey_stop"):
+        setattr(player, name, lambda name=name: calls.append(name))
+    async with app.run_test() as pilot:
+        await pilot.press("j")
+        await pilot.pause(0.1)
+        assert isinstance(app.screen, JourneyMenu)
+        for _ in range(downs):
+            await pilot.press("down")
+        await pilot.press("enter")
+        await pilot.pause(0.1)
+        assert not isinstance(app.screen, JourneyMenu) and calls == [method]
+
+
+@pytest.mark.asyncio
+async def test_pm008_journey_menu_escape_does_nothing_and_errors_show_in_the_status():
+    app, player = make_app(FakeShell())
+    async with app.run_test() as pilot:
+        await pilot.press("j", "escape")
+        await pilot.pause(0.1)
+        assert "Press / to describe a mood." in text(app, "#status")
+        await pilot.press("j", "down", "enter")             # skip, but no journey runs in this player
+        await pilot.pause(0.1)
+        assert "no journey is running" in text(app, "#status")
+
+
+@pytest.mark.asyncio
 async def test_no_journey_leaves_the_journey_line_empty_and_hidden():
     app, _ = make_app(FakeShell())
     async with app.run_test() as pilot:

@@ -6,7 +6,7 @@ The player is usually the background player (`client.PlayerClient`), so `b` leav
 The mood is interpreted by Gentle Shell in a thread worker while the music keeps playing; the new style starts at
 the next bar. Everything shown comes from `player.now`, i.e. the bar that is audible right now. What is audible can
 be saved under a name and applied later, instantly, without asking Gentle Shell again. While a journey runs, a line
-shows its progress (`journey_line`), hidden otherwise.
+shows its progress (`journey_line`), hidden otherwise. The `j` key opens a menu to restart, skip, or stop the journey.
 """
 from __future__ import annotations
 
@@ -277,6 +277,42 @@ class PresetPicker(ModalScreen[Preset | None]):
         self.dismiss(None)
 
 
+class JourneyMenu(ModalScreen[str | None]):
+    """Choose a journey control: restart, skip, or stop."""
+
+    BINDINGS = [Binding("escape", "action_cancel", "Cancel")]
+    DEFAULT_CSS = """
+    JourneyMenu { align: center middle; }
+    JourneyMenu > Vertical { width: 60; height: auto; border: round $primary; padding: 0 1;
+                             background: $surface; }
+    JourneyMenu .heading { color: $primary; text-style: bold; }
+    JourneyMenu OptionList, JourneyMenu OptionList:focus { height: auto; max-height: 20; border: none;
+                                                          background: $surface; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static("Journey", classes="heading")
+            yield Static("Restart · Skip stage · Stop", id="journey-status")
+            yield OptionList(id="journey-options")
+
+    def on_mount(self) -> None:
+        options = self.query_one(OptionList)
+        options.add_options([
+            Option("Restart", id="restart"),
+            Option("Skip stage", id="skip"),
+            Option("Stop", id="stop"),
+        ])
+        options.highlighted = 0
+        options.focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option.id or None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class StreamApp(App):
     TITLE = "gentle-stream"
     SUB_TITLE = "real-time generative music"
@@ -302,6 +338,7 @@ class StreamApp(App):
         Binding("m", "pick_model", "Model"),
         Binding("s", "save_preset", "Save"),
         Binding("p", "pick_preset", "Saved"),
+        Binding("j", "journey_menu", "Journey"),
         Binding("plus,equals_sign", "volume(5)", "Vol +5"),
         Binding("minus", "volume(-5)", "Vol -5"),
         Binding("up", "volume(1)", "Vol +1"),
@@ -445,6 +482,23 @@ class StreamApp(App):
             self._status(f"Up next: [b]{escape(preset.name)}[/b] (saved)")
 
         self.push_screen(PresetPicker(self.presets), chosen)
+
+    def action_journey_menu(self) -> None:
+        def chosen(action: str | None) -> None:
+            if not action:
+                return
+            try:
+                if action == "restart":
+                    self.player.journey_restart()
+                elif action == "skip":
+                    self.player.journey_skip()
+                else:
+                    self.player.journey_stop()
+                self._tick()
+            except ValueError as e:
+                self._status(f"[$error]Journey:[/] {escape(str(e))}")
+
+        self.push_screen(JourneyMenu(), chosen)
 
     # ------------------------------------------------------------ mood interpretation
     def on_input_submitted(self, event: Input.Submitted) -> None:

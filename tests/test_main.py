@@ -95,6 +95,46 @@ def test_pm007_builtin_cli_outputs_and_errors(runtime, capsys):  # noqa: F811
     assert capsys.readouterr() == ("", "")
 
 
+@pytest.mark.parametrize("action", ["restart", "skip"])
+def test_pm008_controls_without_a_journey_exit_1(runtime, capsys, action):  # noqa: F811
+    from gentle_stream import client
+
+    client.ensure()
+    assert main(["journey", action]) == 1
+    assert capsys.readouterr() == ("", "gentle-stream: no journey is running\n")
+
+
+@pytest.mark.parametrize("action", ["restart", "skip"])
+def test_pm008_controls_when_nothing_plays_exit_1(runtime, capsys, action):  # noqa: F811
+    assert main(["journey", action]) == 1
+    assert capsys.readouterr() == ("", "gentle-stream: nothing is playing\n")
+
+
+def test_pm008_skip_then_restart_move_the_audible_stage(runtime, capsys):  # noqa: F811
+    import json
+
+    from gentle_stream import client
+    from tests.test_daemon import wait_for
+
+    def stage():
+        main(["ctl", "status"])
+        out, _ = capsys.readouterr()
+        journey = json.loads(out)["journey"]
+        return journey and journey["stage"]
+
+    client.ensure()
+    assert main(["journey", "play", "warm-up"]) == 0
+    capsys.readouterr()
+    wait_for(lambda: stage() == 1)
+    assert main(["journey", "skip"]) == 0
+    assert capsys.readouterr() == ("", "")
+    wait_for(lambda: stage() == 2)
+    assert main(["journey", "restart"]) == 0
+    assert capsys.readouterr() == ("", "")
+    wait_for(lambda: stage() == 1)
+    assert main(["journey", "stop"]) == 0
+
+
 def test_help_lists_flags_and_controls(capsys):
     with pytest.raises(SystemExit) as exit_info:
         main(["--help"])
@@ -271,8 +311,9 @@ def test_journey_without_a_player_says_nothing_is_playing(runtime, capsys, argv)
 
 
 @pytest.mark.parametrize("argv", [["journey"], ["journey", "play"], ["journey", "jump"], ["journey", "stop", "x"],
-                                  ["journey", "list", "x"]],
-                         ids=["no-action", "play-no-name", "unknown-action", "stop-with-name", "list-with-name"])
+                                  ["journey", "list", "x"], ["journey", "restart", "x"], ["journey", "skip", "x"]],
+                         ids=["no-action", "play-no-name", "unknown-action", "stop-with-name", "list-with-name",
+                              "restart-with-name", "skip-with-name"])
 def test_journey_rejects_malformed_arguments(argv, capsys):
     with pytest.raises(SystemExit) as exit_info:
         main(argv)
@@ -280,7 +321,10 @@ def test_journey_rejects_malformed_arguments(argv, capsys):
 
 
 @pytest.mark.parametrize("argv, method", [(["journey", "play", "warm-up"], "journey_start"),
-                                          (["journey", "stop"], "journey_stop")], ids=["play", "stop"])
+                                          (["journey", "stop"], "journey_stop"),
+                                          (["journey", "restart"], "journey_restart"),
+                                          (["journey", "skip"], "journey_skip")],
+                         ids=["play", "stop", "restart", "skip"])
 def test_journey_tells_how_to_restart_an_older_player(monkeypatch, capsys, argv, method):
     from gentle_stream import client
 
