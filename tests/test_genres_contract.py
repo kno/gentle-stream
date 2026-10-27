@@ -1,6 +1,7 @@
 """The contract every registered genre must meet, on both backends, plus the shared synth helpers genres use."""
 import importlib
 import time
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -19,7 +20,11 @@ BARS = 8
 
 def _engine(genre: str, backend: str, seed: int, **style) -> Engine:
     s = Style(genre=genre, **({"drums": "busy", "energy": 0.9, "lead_density": 0.9} | style))
-    e = Engine(s, seed=seed, samples=REAL if backend == "samples" else False)
+    samples_backend: Path | bool = False
+    if backend == "samples":
+        assert REAL is not None
+        samples_backend = REAL
+    e = Engine(s, seed=seed, samples=samples_backend)
     assert e.backend == backend and e.genre.name == genre
     return e
 
@@ -102,7 +107,7 @@ class _CleanGenre(genres.lofi.LofiGenre):
     """A genre with a very different master chain, to check that the engine glides between master settings."""
     name = "clean-test"
 
-    def master(self, s):
+    def master(self, style):
         return Master(space=0.1, reverb=0.4, room=0.0, vinyl=0.0, wow=0.0, tone=16000, drive=3.0,
                       threshold=-12.0, ratio=4.0)
 
@@ -141,7 +146,9 @@ def test_chord_hook_reshapes_the_composers_harmony():
 
 @pytest.mark.skipif(not HAS_SAMPLES, reason="FluidR3_GM or FluidSynth not installed (gentle-stream setup-samples)")
 def test_sampled_programs_and_hits_for_genres():
-    inst = samples.SampleInstruments(samples.load_renderer(REAL), np.random.default_rng(0))
+    renderer = samples.load_renderer(REAL)
+    assert renderer is not None
+    inst = samples.SampleInstruments(renderer, np.random.default_rng(0))
     guitar = samples.Program(30, tail=0.4, rms=0.3)            # GM 30: Distortion Guitar
     loud, soft = inst.play(guitar, 52, 0.5, 1.0), inst.play(guitar, 52, 0.5, 0.3)
     assert np.all(np.isfinite(loud)) and len(loud) >= 0.5 * SR and abs(loud[-1]) < 1e-3
