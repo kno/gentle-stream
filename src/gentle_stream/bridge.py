@@ -6,6 +6,7 @@ carry the token usage and cost of the call.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -179,10 +180,8 @@ class GentleShell:
 
     @staticmethod
     def _kill(proc: subprocess.Popen) -> None:
-        try:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
 
     def cancel(self) -> None:
         """Stop every running gentle-shell call; each one raises InterpretError("cancelled")."""
@@ -223,3 +222,21 @@ class GentleShell:
             if len(parts) >= 2 and parts[0] != "provider":
                 models.append(f"{parts[0]}/{parts[1]}")
         return models
+
+    def journey_from_prompt(self, description: str) -> tuple[dict, Usage | None]:
+        """Generate a journey JSON from a natural language description."""
+        prompt = f"""Create a progressive music journey from this description: {description}
+
+Return a JSON object with:
+- version: 1
+- name: short title (lowercase, no spaces)
+- title: human-readable title
+- stages: 2-5 stages, each with name, seconds (duration), to (fields dict), curve (linear/ease-in/ease-out/ease-in-out)
+- end: "sustain" or "release"
+
+Example fields: bpm (50-140), energy (0-1), brightness (0-1), space (0-1), lead_density (0-1).
+
+Generate only the JSON object, no explanation."""
+        text, usage = parse_output(self._run(self.command(prompt)))
+        data = extract_json(text)
+        return data, usage

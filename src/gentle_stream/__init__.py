@@ -148,14 +148,12 @@ def journey_command(action: str, name: str | None = None, *, prompt: str | None 
             print("gentle-stream: journey create requires a prompt", file=sys.stderr)
             return 1
         from .bridge import GentleShell
-        from .journey import JourneyStore, Journey
+        from .journey import Journey, JourneyStore
         shell = GentleShell()
         try:
-            # Ask Gentle Shell to generate a journey JSON based on the prompt
-            journey_json, usage = shell._run(f"Generate a journey JSON for: {prompt}", mode="json")
+            journey_json, usage = shell.journey_from_prompt(prompt)
             journey = Journey.from_dict(journey_json, name=None)
             store = JourneyStore()
-            # Extract journey name from prompt or use first word
             journey_name = journey_json.get("name") or prompt.split()[0].lower()
             if not store.save(journey_name, journey):
                 print(f"gentle-stream: could not save journey: {store.error}", file=sys.stderr)
