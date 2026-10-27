@@ -124,9 +124,11 @@ class _Bar:
 
 class Composer:
     def __init__(self, style: Style, seed: int, ton: int,
-                 chord_hook: Callable[[Chord, tuple[int, ...]], Chord] | None = None):
+                 chord_hook: Callable[[Chord, tuple[int, ...]], Chord] | None = None,
+                 skip_intro: bool = False):
         self.style, self.ton = style, ton
         self.chord_hook = chord_hook
+        self.skip_intro = skip_intro
         self.rng = np.random.default_rng([seed, 0xC0])
         self.scale_iv = MODES[style.mode]
         self.ninth = {d: bool(self.rng.random() < 0.55) for d in range(1, 8)}
@@ -211,7 +213,7 @@ class Composer:
 
     # ------------------------------------------------------------ form
     def _plan_cycle(self) -> None:
-        form = FIRST_FORM if self.cycle == 0 else FORM
+        form = FORM if self.skip_intro and self.cycle == 0 else (FIRST_FORM if self.cycle == 0 else FORM)
         if self.cycle > 0:
             self.motif = self._develop(self.motif)
         self.prog_b = self._pick_b()

@@ -224,7 +224,7 @@ class Engine:
         return 240.0 / self.style.bpm
 
     # ------------------------------------------------------------ piece setup
-    def _start_piece(self, style: Style) -> None:
+    def _start_piece(self, style: Style, skip_intro: bool = False) -> None:
         self.style = style
         self.piece_seconds = 0.0
         self.genre = genres.get(style.genre)
@@ -235,7 +235,7 @@ class Engine:
         self.bar = 0
         ton = 48 + KEYS.index(style.key)
         self.ton = ton - 12 if ton > 54 else ton
-        self.composer = Composer(style, self.seed, self.ton, self.genre.chord)
+        self.composer = Composer(style, self.seed, self.ton, self.genre.chord, skip_intro=skip_intro)
         self.section = self.composer.plan(0).section
         self._piece = Piece(style, self.rng, self.inst, self.ton, self.sr, self._acc)
         self.genre.start(self._piece)
@@ -257,6 +257,11 @@ class Engine:
         running = self._running
         t = (self.samples_out - running.start_sample) / self.sr if running is not None else 0.0
         values = self._journey_values(running, t)   # owned by the journey: a new piece starts with them
+        stage_index = running.journey.at(t, running.start)[0] if running is not None else None
+        target_genre = (running.journey.stages[int(stage_index)].genre
+                        if running is not None and stage_index is not None else None)
+        switch_genre = (target_genre is not None and target_genre != self.style.genre
+                        and self.bar > 0 and self.bar % 4 == 0)
         if running is not None and journey is None and running.journey.end == "release" \
                 and t >= running.journey.seconds:   # its final values once more, then it lets go
             self._running = None
@@ -266,6 +271,8 @@ class Engine:
             self._start_piece(replace(style, **values))
         elif nxt:
             self._start_piece(replace(self.style.variation(self._root_rng), **values))
+        elif switch_genre:
+            self._start_piece(replace(self.style, genre=target_genre, **values), skip_intro=True)
         self._apply_glides()
         if journey is not None:   # starts here, at t = 0, from the values this bar already has
             running, t = _Running(journey, self.samples_out, {f: getattr(self.style, f) for f in journey.fields}), 0.0

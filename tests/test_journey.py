@@ -292,6 +292,35 @@ def test_journey_and_journey_seconds_describe_the_last_rendered_bar_even_mid_ren
     assert (e.journey, e.journey_seconds) == (None, None)
 
 
+def test_genre_stages_switch_at_old_piece_phrase_boundaries_preserving_the_journey_and_style():
+    journey = Journey("genres", (Stage("ambient", 2.0, {"bpm": 60, "energy": 0.2}, genre="ambient"),
+                                 Stage("lofi", 20.0, {"bpm": 80, "energy": 0.5}, genre="lofi"),
+                                 Stage("synth", 20.0, {"bpm": 118, "energy": 0.9}, genre="synthwave")))
+    style = Style(genre="ambient", key="C", mode="minor", progression=(1, 4, 6, 5))
+    e = Engine(style, seed=40, samples=False)
+    e.queue_journey(journey)
+    changes = []
+    old_piece = e.piece
+    while len(changes) < 2:
+        old_bar, old_genre, old_values = e.bar, e.style.genre, (e.style.bpm, e.style.energy)
+        e.render_bar()
+        if e.piece != old_piece:
+            changes.append((old_bar, old_genre, e.style.genre, old_values, (e.style.bpm, e.style.energy)))
+            assert e.composer.plan(0).section == "A"
+            assert (e.style.key, e.style.mode, e.style.progression) == ("C", "minor", (1, 4, 6, 5))
+            old_piece = e.piece
+    assert [(bar % 4, old, new) for bar, old, new, _, _ in changes] == [(0, "ambient", "lofi"),
+                                                                           (0, "lofi", "synthwave")]
+    assert changes[0][4][0] < 80 and changes[0][4][1] < 0.5       # journey values, not a style reset
+    assert changes[1][4][0] < 118 and changes[1][4][1] < 0.9
+
+
+def test_builtin_ambient_to_synthwave_has_three_genre_stages_and_sustains():
+    journey = BUILTIN["ambient-to-synthwave"]
+    assert [s.genre for s in journey.stages] == ["ambient", "lofi", "synthwave"]
+    assert journey.end == "sustain" and journey.stages[-1].to["bpm"] == 118.0
+
+
 def test_a_journey_renders_deterministically_and_joins_bars_without_clicks():
     def run():
         e = Engine(Style(bpm=72, energy=0.2, drums="soft"), seed=28, samples=False)
@@ -313,6 +342,7 @@ def test_the_engine_snapshots_the_journey_progress_of_each_bar_it_renders():
     assert e.journey_snapshot is None                           # no journey, no snapshot
     e.queue_journey(THREE)
     t, snaps = 0.0, []
+    snap: JourneySnapshot | None = None
     while t < THREE.seconds + 4:
         bar = e.render_bar()
         snaps.append((t, e.journey_snapshot, e.style.bpm))
@@ -404,10 +434,11 @@ def test_pausing_the_player_stops_journey_time_bounded_by_the_prebuffer():
         for _ in range(20):                                        # 2 s of callbacks while paused, and time to render
             pull_seconds(stream, 0.1)
         time.sleep(0.3)
+        assert paused_at is not None
         assert engine.journey_seconds == paused_at
         assert paused_at - 3.1 <= 0.5 + 240 / 60                  # ahead of what was heard by the prebuffer and a bar
         p.play()
         pull_seconds(stream, 3.0)
-        wait_for(lambda: engine.journey_seconds > paused_at)
+        wait_for(lambda: engine.journey_seconds is not None and engine.journey_seconds > paused_at)
     finally:
         p.close()

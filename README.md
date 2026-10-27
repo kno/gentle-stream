@@ -218,17 +218,19 @@ The player listens on a Unix socket in a private directory (`$XDG_RUNTIME_DIR/ge
 A journey moves the music on its own, stage by stage: tempo, energy and colour glide from where the music is to each stage's values, then the last stage holds forever (`sustain`) or hands the music back as it is (`release`). It runs inside the background player, so it keeps going after you leave the app, and it pauses when the music pauses.
 
 ```bash
-gentle-stream journey list             # warm-up    60 to 100 bpm and energy 0.2 to 0.9 over 10 minutes, then holds
+gentle-stream journey list             # built-ins, including ambient-to-synthwave
+gentle-stream journey play ambient-to-synthwave
 gentle-stream journey play warm-up
 gentle-stream journey stop             # the music stays where the journey left it
 ```
 
 | Journey | Stages | End |
 | :--- | :--- | :--- |
+| `ambient-to-synthwave` | Ambient (1 min, ambient, 60 bpm), Chillout (3 min, lo-fi, 88 bpm), Synthwave (4 min, synthwave, 118 bpm) | sustain |
 | `warm-up` | Settle (1 min, 60 bpm, energy 0.2), Wake (3 min, 72 bpm), Rise (4 min, 88 bpm), Glow (2 min, 100 bpm, energy 0.9) | sustain |
 | `wind-down` | Ease (2 min, 84 bpm), Soften (4 min, 68 bpm), Drift (4 min, 58 bpm, energy 0.15) | release |
 
-A journey owns the fields it moves: a new mood or `next` keeps it running, and the new piece takes the journey's tempo, energy and colour from its first bar (the rest of the mood applies as usual). Starting a journey cancels glides of those fields and replaces a running journey; while it runs, trying to glide one of those fields is rejected until you stop the journey. Journey time is rendered time, so `next` advances it by the buffered audio it drops (up to about one second). Journeys stay in the genre that is playing. `gentle-stream render --journey warm-up` renders one offline.
+Genre steps start a new piece at the first following four-bar boundary of the old piece, skip its quiet intro, and preserve the key, mode, progression and journey fields; shared tails continue ringing. A journey owns the fields it moves: a new mood or `next` keeps it running, and the new piece takes the journey's tempo, energy and colour from its first bar (the rest of the mood applies as usual). Starting a journey cancels glides of those fields and replaces a running journey; while it runs, trying to glide one of those fields is rejected until you stop the journey. Journey time is rendered time, so `next` advances it by the buffered audio it drops (up to about one second). Genre stages switch at phrase boundaries. `gentle-stream render --journey warm-up` renders one offline.
 
 While a journey runs, the app shows its progress under the mood, following what you hear (not what is rendered ahead), and hides the line otherwise:
 

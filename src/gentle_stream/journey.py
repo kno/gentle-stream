@@ -25,15 +25,24 @@ from .engine import GLIDE_FIELDS
 ENDS = ("sustain", "release")
 
 
+def _genre_names() -> set[str]:
+    from . import genres
+    return set(genres.NAMES)
+
+
+
 @dataclass(frozen=True)
 class Stage:
     name: str
     seconds: float
     to: Mapping[str, float]   # the immutable values each named field reaches at the end of the stage
+    genre: str | None = None
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.seconds) or self.seconds <= 0:
             raise ValueError(f"stage {self.name!r}: seconds must be above 0")
+        if self.genre is not None and self.genre not in _genre_names():
+            raise ValueError(f"stage {self.name!r}: unknown genre {self.genre!r}")
         unknown = sorted(set(self.to) - set(GLIDE_FIELDS))
         if unknown:
             raise ValueError(f"stage {self.name!r}: cannot move {', '.join(map(repr, unknown))}: only "
@@ -43,7 +52,7 @@ class Stage:
         object.__setattr__(self, "to", MappingProxyType(dict(self.to)))
 
     def __hash__(self) -> int:
-        return hash((self.name, self.seconds, frozenset(self.to.items())))
+        return hash((self.name, self.seconds, self.genre, frozenset(self.to.items())))
 
 
 @dataclass(frozen=True)
@@ -136,6 +145,11 @@ class Journey:
 
 
 BUILTIN: dict[str, Journey] = {j.name: j for j in (
+    Journey("ambient-to-synthwave", (
+        Stage("Ambient", 60, {"bpm": 60.0}, genre="ambient"),
+        Stage("Chillout", 180, {"bpm": 88.0}, genre="lofi"),
+        Stage("Synthwave", 240, {"bpm": 118.0}, genre="synthwave"),
+    ), description="ambient at 60 bpm through lo-fi chillout to synthwave at 118 bpm, then sustains"),
     Journey("warm-up", (
         Stage("Settle", 60, {"bpm": 60.0, "energy": 0.2, "brightness": 0.35, "lead_density": 0.3}),
         Stage("Wake", 180, {"bpm": 72.0, "energy": 0.45, "brightness": 0.5}),
