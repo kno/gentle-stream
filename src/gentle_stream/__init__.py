@@ -5,6 +5,7 @@ import argparse
 import json
 import math
 import sys
+from pathlib import Path
 from typing import Any, cast
 
 CONTROLS = """controls:
@@ -120,18 +121,51 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
     return 0
 
 
+def _journey_source(source: str):
+    from .journey import BUILTIN, Journey
+    path = Path(source)
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            warnings = []
+            journey = Journey.from_dict(data, warnings, name=path.stem)
+            return journey, warnings
+        except (OSError, ValueError, json.JSONDecodeError) as e:
+            raise ValueError(str(e)) from e
+    if source in BUILTIN:
+        return BUILTIN[source], []
+    if path.suffix.lower() == ".json" or "/" in source or "\\" in source:
+        raise ValueError(f"cannot read {source}: file does not exist")
+    raise ValueError(f'no journey called "{source}" (choose from {", ".join(BUILTIN)})')
+
+
 def journey_command(action: str, name: str | None = None) -> int:
     """`journey play NAME`, `journey stop` and `journey list` (named so: the `journey` module is a package attribute)."""
-    from .journey import BUILTIN, unknown_journey
+    from .journey import BUILTIN
 
+    if action in ("validate", "show"):
+        try:
+            journey, warnings = _journey_source(str(name))
+        except ValueError as e:
+            print(f"gentle-stream: {e}", file=sys.stderr)
+            return 1
+        print(json.dumps(journey.to_dict(), ensure_ascii=False))
+        if action == "validate":
+            for warning in warnings:
+                print(f"warning: {warning}", file=sys.stderr)
+        return 0
     if action == "list":
         width = max(map(len, BUILTIN))
         for j in BUILTIN.values():
             print(f"{j.name:<{width}}  {j.description}")
         return 0
-    if action == "play" and name not in BUILTIN:
-        print(f"gentle-stream: {unknown_journey(str(name))}", file=sys.stderr)
-        return 1
+    parsed_journey = None
+    if action == "play":
+        try:
+            parsed_journey, _ = _journey_source(str(name))
+        except ValueError as e:
+            print(f"gentle-stream: {e}", file=sys.stderr)
+            return 1
     from .client import NoPlayer, PlayerError, PlayerGone, connect
 
     try:
@@ -143,8 +177,8 @@ def journey_command(action: str, name: str | None = None) -> int:
         print(f"gentle-stream: {e}", file=sys.stderr)
         return 1
     try:
-        if action == "play" and name is not None:
-            player.journey_start(name)
+        if action == "play" and parsed_journey is not None:
+            player.journey_start(parsed_journey.to_dict())
         else:
             player.journey_stop()
     except PlayerGone:
@@ -308,7 +342,9 @@ def main(argv: list[str] | None = None) -> int:
                                                 "stage on their own, then hold.")
     journey_sub = journey_parser.add_subparsers(dest="journey_action", metavar="action", required=True)
     journey_sub.add_parser("play", help="start a journey (it replaces a running one)").add_argument(
-        "name", metavar="NAME", help="a built-in journey (see `journey list`)")
+        "name", metavar="NAME|FILE", help="a built-in journey or JSON file")
+    journey_sub.add_parser("validate", help="validate and normalize a JSON journey file").add_argument("name", metavar="FILE")
+    journey_sub.add_parser("show", help="show a normalized journey or JSON file").add_argument("name", metavar="NAME|FILE")
     journey_sub.add_parser("stop", help="end the journey, leaving the music as it is")
     journey_sub.add_parser("list", help="list the built-in journeys")
     args = ap.parse_args(argv)

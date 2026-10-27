@@ -181,14 +181,21 @@ def handle(player, request) -> dict:
             fields = _glide_fields(request["fields"])
             player.engine.queue_glide(fields, _seconds(request))
         elif cmd == "journey_start":
-            from .journey import BUILTIN, unknown_journey
+            from .journey import Journey
 
-            name = request["name"]
-            if not isinstance(name, str):
-                raise TypeError("name must be a string")
-            if name not in BUILTIN:
-                return {"ok": False, "error": unknown_journey(name)}
-            player.engine.queue_journey(BUILTIN[name])
+            if "journey" in request:
+                journey = request["journey"]
+                if not isinstance(journey, dict):
+                    raise TypeError("journey must be an object")
+                player.engine.queue_journey(Journey.from_dict(journey))
+            else:  # compatibility with the PM-004 name payload; never interpret paths here
+                from .journey import BUILTIN, unknown_journey
+                name = request["name"]
+                if not isinstance(name, str):
+                    raise TypeError("name must be a string")
+                if name not in BUILTIN:
+                    return {"ok": False, "error": unknown_journey(name)}
+                player.engine.queue_journey(BUILTIN[name])
         elif cmd == "journey_stop":
             player.engine.stop_journey()
         elif cmd == "set_style":

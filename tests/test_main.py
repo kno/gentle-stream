@@ -4,6 +4,97 @@ from gentle_stream import main
 from tests.test_daemon import runtime  # noqa: F401  (fixture: private runtime dir, fake audio, cleanup)
 
 
+def test_pm007_validate_show_file(tmp_path, capsys):
+    source = tmp_path / "sunrise.json"
+    source.write_text('{"version":1,"stages":[{"seconds":10,"to":{"bpm":999}}]}')
+    assert main(["journey", "validate", str(source)]) == 0
+    out, err = capsys.readouterr()
+    assert '"name": "sunrise"' in out and "warning: stage 1" in err
+    assert main(["journey", "show", str(source)]) == 0
+    out, err = capsys.readouterr()
+    assert '"bpm": 140.0' in out and err == ""
+
+
+def test_pm007_show_builtin_is_canonical_json_only(capsys):
+    assert main(["journey", "show", "ambient-to-synthwave"]) == 0
+    out, err = capsys.readouterr()
+    import json
+    data = json.loads(out)
+    assert data["version"] == 1 and data["name"] == "ambient-to-synthwave" and err == ""
+
+
+def test_pm007_validate_is_parseable_and_warnings_are_stderr(tmp_path, capsys):
+    source = tmp_path / "warn.json"
+    source.write_text('{"version":1,"stages":[{"seconds":10,"to":{"bpm":999}}]}')
+    assert main(["journey", "validate", str(source)]) == 0
+    out, err = capsys.readouterr()
+    import json
+    data = json.loads(out)
+    assert data["stages"][0]["to"]["bpm"] == 140.0
+    assert out.count("warning") == 0 and err.startswith("warning: ") and err.endswith("\n")
+
+
+def test_pm007_missing_or_invalid_json_file_is_one_error_line(tmp_path, capsys):
+    missing = tmp_path / "missing.json"
+    assert main(["journey", "show", str(missing)]) == 1
+    out, err = capsys.readouterr()
+    assert out == "" and err == f"gentle-stream: cannot read {missing}: file does not exist\n"
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("not json")
+    assert main(["journey", "validate", str(invalid)]) == 1
+    out, err = capsys.readouterr()
+    assert out == "" and err.startswith("gentle-stream: ") and err.count("\n") == 1
+
+
+def test_pm007_invalid_file_is_one_error_line(tmp_path, capsys):
+    source = tmp_path / "bad.json"
+    source.write_text('{"version":2,"stages":[]}')
+    assert main(["journey", "validate", str(source)]) == 1
+    out, err = capsys.readouterr()
+    assert out == "" and err.count("\n") == 1 and err.startswith("gentle-stream: ")
+
+
+def test_pm007_play_file_sends_normalized_journey_to_fake_daemon(tmp_path, runtime, capsys):  # noqa: F811
+    import json
+    from gentle_stream import client
+    from tests.test_daemon import wait_for
+
+    source = tmp_path / "sunrise.json"
+    source.write_text('{"version":1,"stages":[{"seconds":10,"to":{"bpm":999}}]}')
+    client.ensure()
+    assert main(["journey", "play", str(source)]) == 0
+    assert capsys.readouterr() == ("", "")
+
+    seen = {}
+    def journey_started():
+        main(["ctl", "status"])
+        out, err = capsys.readouterr()
+        assert err == ""
+        seen.update(json.loads(out))
+        journey = seen.get("journey")
+        return journey is not None and journey["name"] == "sunrise"
+
+    wait_for(journey_started)
+    assert seen["journey"]["target_bpm"] == 140.0
+    assert main(["journey", "stop"]) == 0
+    assert capsys.readouterr() == ("", "")
+
+
+def test_pm007_builtin_cli_outputs_and_errors(runtime, capsys):  # noqa: F811
+    from gentle_stream import client
+    client.ensure()
+    assert main(["journey", "list"]) == 0
+    listed, err = capsys.readouterr()
+    assert err == "" and "warm-up" in listed and "ambient-to-synthwave" in listed
+    assert main(["journey", "play", "nope"]) == 1
+    out, err = capsys.readouterr()
+    assert out == "" and err.startswith('gentle-stream: no journey called "nope"') and err.endswith("\n")
+    assert main(["journey", "play", "warm-up"]) == 0
+    assert capsys.readouterr() == ("", "")
+    assert main(["journey", "stop"]) == 0
+    assert capsys.readouterr() == ("", "")
+
+
 def test_help_lists_flags_and_controls(capsys):
     with pytest.raises(SystemExit) as exit_info:
         main(["--help"])

@@ -203,9 +203,9 @@ class PlayerClient:
         """Glide continuous style fields in place; PlayerError when the player refuses (or predates glides)."""
         self._control("glide", fields={k: float(v) for k, v in fields.items()}, seconds=float(seconds))
 
-    def journey_start(self, name: str) -> None:
-        """Run a built-in journey; PlayerError when the player refuses the name (or predates journeys)."""
-        self._control("journey_start", name=name)
+    def journey_start(self, journey: dict) -> None:
+        """Run a normalized journey object."""
+        self._control("journey_start", journey=journey)
 
     def journey_stop(self) -> None:
         self._control("journey_stop")

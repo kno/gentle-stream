@@ -428,6 +428,25 @@ def test_handle_journey_start_runs_a_built_in_journey_from_the_next_bar():
     assert player.engine.journey is None
 
 
+@pytest.mark.parametrize("journey", [None, "./user.json", {"version": 2}, {"version": 1, "stages": []}],
+                         ids=["null", "path-string", "bad-version", "empty"])
+def test_pm007_daemon_rejects_malformed_journey_objects(journey):
+    from gentle_stream import daemon
+    player = fake_player()
+    answer = daemon.handle(player, {"cmd": "journey_start", "journey": journey})
+    assert answer["ok"] is False and answer["error"].startswith("bad request: ")
+
+
+def test_pm007_daemon_accepts_normalized_object_without_reading_paths():
+    from gentle_stream import daemon
+    player = fake_player()
+    journey = {"version": 1, "name": "file", "stages": [{"name": "a", "seconds": 10, "to": {}}]}
+    answer = daemon.handle(player, {"cmd": "journey_start", "journey": journey})
+    assert answer["ok"] is True
+    player.engine.render_bar()
+    assert player.engine.journey is not None and player.engine.journey.name == "file"
+
+
 def test_handle_journey_stop_without_a_journey_is_fine():
     from gentle_stream import daemon
 

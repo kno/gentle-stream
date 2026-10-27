@@ -221,6 +221,9 @@ A journey moves the music on its own, stage by stage: tempo, energy and colour g
 gentle-stream journey list             # built-ins, including ambient-to-synthwave
 gentle-stream journey play ambient-to-synthwave
 gentle-stream journey play warm-up
+gentle-stream journey validate ./sunrise.json > normalized.json
+gentle-stream journey show ambient-to-synthwave > journey.json
+gentle-stream journey play ./sunrise.json
 gentle-stream journey stop             # the music stays where the journey left it
 ```
 

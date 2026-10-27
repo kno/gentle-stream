@@ -35,6 +35,67 @@ def bpm_of(bar):
     return 240.0 / (len(bar) / SR)
 
 
+# ------------------------------------------------------------ PM-007 file schema
+@pytest.mark.parametrize("data", [None, [], {}, {"version": 2, "stages": []}, {"version": 1},
+                                  {"version": 1, "stages": []}], ids=["null", "array", "missing-version", "bad-version", "missing-stages", "empty-stages"])
+def test_pm007_rejects_invalid_file_shapes(data):
+    with pytest.raises(ValueError):
+        Journey.from_dict(data)
+
+
+def test_pm007_rejects_stage_count_and_total_duration_exactly():
+    with pytest.raises(ValueError, match=r'^"stages" must contain at most 24 stages$'):
+        Journey.from_dict({"version": 1, "stages": [{"seconds": 10, "to": {}}] * 25})
+    with pytest.raises(ValueError, match=r'^combined stage duration must be at most 43200 seconds$'):
+        Journey.from_dict({"version": 1, "stages": [{"seconds": 14400, "to": {}}] * 4})
+
+
+@pytest.mark.parametrize("data", [
+    {"version": 1, "name": 3, "stages": [{"seconds": 10, "to": {}}]},
+    {"version": 1, "stages": [{"name": 3, "seconds": 10, "to": {}}]},
+    {"version": 1, "stages": [{"seconds": 10, "to": []}]},
+], ids=["bad-top-name", "bad-stage-name", "bad-to"])
+def test_pm007_rejects_structural_types(data):
+    with pytest.raises(ValueError):
+        Journey.from_dict(data)
+
+
+def test_pm007_normalizes_every_continuous_field_to_its_declared_bound():
+    warnings = []
+    source = {"version": 1, "stages": [{"seconds": 10, "to": {
+        "bpm": -1, "energy": 2, "brightness": -1, "space": 2,
+        "swing": -1, "vinyl": 2, "lead_density": -1}}]}
+    journey = Journey.from_dict({**source, "name": "bounds"}, warnings)
+    assert journey.stages[0].to == {"bpm": 50.0, "energy": 1.0, "brightness": 0.0,
+                                    "space": 1.0, "swing": 0.0, "vinyl": 1.0, "lead_density": 0.0}
+
+
+@pytest.mark.parametrize("value", [True, 9, 14401, float("nan")], ids=["bool", "low", "high", "nan"])
+def test_pm007_seconds_exact_error(value):
+    with pytest.raises(ValueError, match=r'^stage 3: "seconds" must be a number between 10 and 14400$'):
+        Journey.from_dict({"version": 1, "stages": [{"seconds": 10, "to": {}}, {"seconds": 10, "to": {}},
+                                                       {"seconds": value, "to": {}}]})
+
+
+def test_pm007_round_trip_and_unknown_keys_and_clamping_warnings():
+    warnings = []
+    journey = Journey.from_dict({"version": 1, "name": "x", "ignored": 1, "stages": [
+        {"name": "s", "seconds": 10, "to": {field: 999}, "ignored": True} for field in GLIDE_FIELDS]}, warnings)
+    assert len(warnings) == len(GLIDE_FIELDS)
+    assert Journey.from_dict(journey.to_dict()) == journey
+    assert journey.to_dict()["version"] == 1
+
+
+@pytest.mark.parametrize("data", [
+    {"version": 1, "stages": [{"seconds": 10, "to": {"nope": 1}}]},
+    {"version": 1, "stages": [{"seconds": 10, "to": {}, "genre": "nope"}]},
+    {"version": 1, "stages": [{"seconds": 10, "to": {}}], "end": "nope"},
+])
+def test_pm007_rejects_invalid_categories(data):
+    with pytest.raises(ValueError):
+        Journey.from_dict(data)
+
+
 # ------------------------------------------------------------ Journey.at (pure)
 def test_at_starts_from_the_given_values():
     assert THREE.at(0, START) == (0, 0.0, {"bpm": 72.0, "energy": 0.2})

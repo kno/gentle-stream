@@ -104,6 +104,77 @@ class Journey:
         if not self.title:
             object.__setattr__(self, "title", self.name[:1].upper() + self.name[1:])
 
+    @classmethod
+    def from_dict(cls, data, warnings=None, *, name: str | None = None) -> Journey:
+        """Parse and normalize a version-one journey object.
+
+        ``warnings`` is an optional list receiving one message per clamped value.
+        Unknown keys are deliberately ignored.
+        """
+        if not isinstance(data, Mapping):
+            raise ValueError("journey must be a JSON object")
+        if data.get("version") != 1:
+            raise ValueError('"version" must be 1')
+        raw_stages = data.get("stages")
+        if not isinstance(raw_stages, list):
+            raise ValueError('"stages" must be an array')
+        if not raw_stages:
+            raise ValueError('"stages" must not be empty')
+        if len(raw_stages) > 24:
+            raise ValueError('"stages" must contain at most 24 stages')
+        warnings = warnings if warnings is not None else []
+        stages = []
+        total = 0.0
+        for number, raw in enumerate(raw_stages, 1):
+            if not isinstance(raw, Mapping):
+                raise ValueError(f"stage {number} must be an object")
+            seconds = raw.get("seconds")
+            if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) or not 10 <= seconds <= 14400:
+                raise ValueError(f'stage {number}: "seconds" must be a number between 10 and 14400')
+            total += float(seconds)
+            stage_name = raw.get("name", f"Stage {number}")
+            if not isinstance(stage_name, str):
+                raise ValueError(f"stage {number}: \"name\" must be a string")
+            to = raw.get("to", {})
+            if not isinstance(to, Mapping):
+                raise ValueError(f"stage {number}: \"to\" must be an object")
+            normalized = {}
+            for key, value in to.items():
+                if key not in GLIDE_FIELDS:
+                    raise ValueError(f'stage {number}: unknown "to" field {key!r}')
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                    raise ValueError(f'stage {number}: "to.{key}" must be a number')
+                lo, hi = GLIDE_FIELDS[key]
+                result = round(min(hi, max(lo, float(value))), 1) if key == "bpm" else min(hi, max(lo, float(value)))
+                if result != value:
+                    warnings.append(f'stage {number}: "to.{key}" clamped from {value!r} to {result!r}')
+                normalized[key] = result
+            genre = raw.get("genre")
+            if genre is not None and (not isinstance(genre, str) or genre not in _genre_names()):
+                raise ValueError(f"stage {number}: unknown genre {genre!r}")
+            stages.append(Stage(stage_name, float(seconds), normalized, genre))
+        if total > 12 * 60 * 60:
+            raise ValueError('combined stage duration must be at most 43200 seconds')
+        journey_name = data.get("name", name)
+        if journey_name is None:
+            raise ValueError('"name" is required')
+        if not isinstance(journey_name, str) or not journey_name:
+            raise ValueError('"name" must be a non-empty string')
+        end = data.get("end", "sustain")
+        if end not in ENDS:
+            raise ValueError(f'"end" must be one of {", ".join(ENDS)}')
+        for key in ("title", "description"):
+            if key in data and not isinstance(data[key], str):
+                raise ValueError(f'"{key}" must be a string')
+        return cls(journey_name, tuple(stages), end=end, description=data.get("description", ""),
+                   title=data.get("title", ""))
+
+    def to_dict(self) -> dict:
+        return {"version": 1, "name": self.name, "title": self.title, "description": self.description,
+                "end": self.end, "stages": [{"name": s.name, "seconds": s.seconds, "to": dict(s.to),
+                                                **({"genre": s.genre} if s.genre is not None else {})}
+                                               for s in self.stages]}
+
     @property
     def seconds(self) -> float:
         """The length of every stage together."""
