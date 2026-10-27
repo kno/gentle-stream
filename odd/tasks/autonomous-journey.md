@@ -16,7 +16,7 @@ Branch: `feat/autonomous-journey`, stacked on `feat/live-evolution` (M1, pushed 
 |----|-------|-------|--------|--------|
 | T1 PM-004 | S1, S4 | gentle-ai-worker, background; independent verify (Risk 4: journey commands from daemon threads applied on the render thread) | done (verified; J1-J5 corrected) | fb03b31, bcbd588 |
 | T2 PM-005 | S2, S4 | same worker, continued after T1 commit | done | 9923a93 |
-| T3 PM-006 | S3, S4 | gentle-ai-worker, background | done (independent verification pending) | 1c9536b |
+| T3 PM-006 | S3, S4 | gentle-ai-worker, background; independent verifier | done | 1c9536b |
 
 ## Log
 
@@ -27,4 +27,5 @@ Branch: `feat/autonomous-journey`, stacked on `feat/live-evolution` (M1, pushed 
 - L5: J1-J5 corrected in bcbd588: journey-owned fields reject direct glides atomically; glides are cancelled only when the journey starts; rendered-bar state avoids premature journey visibility; stage targets are immutable and hashable; README documents `next` advancing rendered journey time by the dropped buffer. Focused tests: 135 passed plus six known teardown-only daemon-race errors; LSP clean.
 - L6: T3 PM-006 started with worker mvqadnbe-h-45ir after type-diagnostics cleanup; scope is strictly the stage-genre switch, `skip_intro`, tests and documentation in S3-S4.
 - L7: User chose "Cerrar M2 con producción limpia" when a full scan exposed 142 pre-existing test-only Pyright diagnostics; they are deferred as a separate cleanup. Production source is LSP-clean and M2 functional verification continues.
-- L8: T3 implementation in 1c9536b and focused acceptance suite: 209 passed, 11 skipped. Full suite: 578 passed, 27 skipped; four teardown-only `ProcessLookupError` errors at `tests/test_daemon.py:108`, no assertion failures. `render --journey ambient-to-synthwave --seconds 30 --seed 1` was byte-identical twice (sha256 b94d7ce1…). Manual listening remains unverified; independent verification is pending.
+- L8: T3 implementation in 1c9536b and focused acceptance suite: 209 passed, 11 skipped. Full suite: 578 passed, 27 skipped; four teardown-only `ProcessLookupError` errors at `tests/test_daemon.py:108`, no assertion failures. `render --journey ambient-to-synthwave --seconds 30 --seed 1` was byte-identical twice (sha256 b94d7ce1…). Manual listening remains unverified.
+- L9: Independent verifier mvqbfgo9-1-wmoa: S3 PASS, S4 PASS with known daemon teardown flake; all PM-006 acceptance criteria pass. Native review could not start because the accumulated M2 candidate exceeds its lens context budget; no authority/lineage was created. The next proof unavailable to automation is manual listening of each hard genre transition.
