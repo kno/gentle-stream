@@ -13,8 +13,8 @@ Objective: deliver PM-007 Journey files on `feat/configurable-journeys`, stacked
 
 | ID | Specs | Route | Status | Commit |
 |---|---|---|---|---|
-| T1 PM-007 journey file schema and CLI | S1-S4 | explore, implementation, focused verification | done (independent verification pending) | pending commit |
-| T2 PM-007 independent verification | S1-S4 | verifier after T1 commit | pending | |
+| T1 PM-007 journey file schema and CLI | S1-S4 | explore, implementation, focused verification | done | 8716405, 7fad3b9 |
+| T2 PM-007 independent verification | S1-S4 | verifier after T1 commit and correction | done | mvqfalnv-8-5fu2 |
 
 ## Log
 
@@ -22,4 +22,6 @@ Objective: deliver PM-007 Journey files on `feat/configurable-journeys`, stacked
 - L2: User selected a new `feat/configurable-journeys` branch, stacked on accepted M2, for PM-007.
 - L3 (user): "Aplicar el contrato propuesto" — canonical v1 journey JSON is `{version: 1, name, title?, description?, end?, stages}` with required version/stages and file-name default name; validate writes normalized JSON to stdout and warnings to stderr, show JSON only, invalid input uses `gentle-stream: ...` and exit 1.
 - L4: T1 public PM-007 subset: 31 passed; production LSP clean. Full suite: 609 passed, 27 skipped, 3 teardown-only `ProcessLookupError` errors at `tests/test_daemon.py:108`; no assertion failures.
-- L5: Independent verification found schema defects in 8716405: unknown `to` keys were rejected (contrary to unknown-key tolerance), boolean `version` was accepted, and unhashable `end` could raise `TypeError`. Corrected pending commit with explicit regression tests; PM-007 subset now 32 passed and LSP is clean.
+- L5: Independent verification found schema defects in 8716405: unknown `to` keys were rejected (contrary to unknown-key tolerance), boolean `version` was accepted, and unhashable `end` could raise `TypeError`. Corrected in 7fad3b9 with explicit regression tests; PM-007 subset now 32 passed and LSP is clean.
+- L6: Full post-fix suite: 610 passed, 27 skipped, 3 teardown-only `ProcessLookupError` errors at `tests/test_daemon.py:108`, with no assertion failures. Native review was declined for this candidate at consent; repeat independent verification is in progress.
+- L7: Repeat verifier mvqfalnv-8-5fu2: S1-S3 PASS; S4 functional checks PASS with the known teardown flake, LSP UNVERIFIED because its scratch session had no LSP tool. The parent production LSP check was clean. PM-007 closed locally; no push requested.
