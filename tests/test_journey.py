@@ -9,9 +9,11 @@ import pytest
 from gentle_stream.engine import GLIDE_FIELDS, SR, Engine
 from gentle_stream.journey import (
     BUILTIN,
+    CURVES,
     Journey,
     JourneySnapshot,
     Stage,
+    shape,
     unknown_journey,
 )
 from gentle_stream.player import Player
@@ -541,3 +543,82 @@ def test_pm008_controls_reject_missing_or_final_journey():
     e.render_bar()
     with pytest.raises(ValueError, match="^already at the final journey stage$"):
         e.skip_journey()
+
+
+def test_pm009_curves_hit_0_at_0_and_1_at_1():
+    for curve in CURVES:
+        assert shape(curve, 0.0) == 0.0, f"{curve} at 0"
+        assert shape(curve, 1.0) == 1.0, f"{curve} at 1"
+
+
+def test_pm009_curves_are_monotonic():
+    for curve in CURVES:
+        prev = 0.0
+        for i in range(1, 101):
+            curr = shape(curve, i / 100)
+            assert curr >= prev, f"{curve} not monotonic at {i/100}: {prev} > {curr}"
+            prev = curr
+
+
+def test_pm009_ease_in_below_linear_at_halfway():
+    assert shape("ease-in", 0.5) < shape("linear", 0.5)
+    assert shape("ease-in", 0.5) == 0.25  # 0.5^2
+
+
+def test_pm009_curve_in_stage_from_dict_and_to_dict():
+    data = {
+        "version": 1,
+        "name": "test",
+        "stages": [
+            {"name": "a", "seconds": 60, "to": {"bpm": 100}, "curve": "ease-in"},
+            {"name": "b", "seconds": 120, "to": {"bpm": 120}, "curve": "step"},
+            {"name": "c", "seconds": 180, "to": {"bpm": 80}},  # default linear
+        ]
+    }
+    j = Journey.from_dict(data)
+    assert j.stages[0].curve == "ease-in"
+    assert j.stages[1].curve == "step"
+    assert j.stages[2].curve == "linear"
+    out = j.to_dict()
+    assert out["stages"][0]["curve"] == "ease-in"
+    assert out["stages"][1]["curve"] == "step"
+    assert "curve" not in out["stages"][2]  # linear is omitted
+
+
+def test_pm009_unknown_curve_fallback_to_linear():
+    data = {
+        "version": 1,
+        "name": "test",
+        "stages": [
+            {"name": "a", "seconds": 60, "to": {"bpm": 100}, "curve": "wobble"},
+        ]
+    }
+    warnings = []
+    j = Journey.from_dict(data, warnings=warnings)
+    assert j.stages[0].curve == "linear"
+    assert any("wobble" in w for w in warnings)
+
+
+def test_pm009_curves_affect_interpolation():
+    linear_data = {
+        "version": 1,
+        "name": "linear-test",
+        "stages": [
+            {"name": "s1", "seconds": 100, "to": {"bpm": 100}},
+        ]
+    }
+    ease_in_data = {
+        "version": 1,
+        "name": "ease-in-test",
+        "stages": [
+            {"name": "s1", "seconds": 100, "to": {"bpm": 100}, "curve": "ease-in"},
+        ]
+    }
+    j_linear = Journey.from_dict(linear_data)
+    j_ease_in = Journey.from_dict(ease_in_data)
+    start = {"bpm": 80.0}
+    _, p_linear, vals_linear = j_linear.at(50, start)
+    _, p_ease_in, vals_ease_in = j_ease_in.at(50, start)
+    assert p_linear == p_ease_in == 0.5
+    assert vals_linear["bpm"] == 90.0  # linear: 0.5 * 80 + 0.5 * 100
+    assert vals_ease_in["bpm"] < vals_linear["bpm"]  # ease-in at 0.5 = 0.25, so closer to start

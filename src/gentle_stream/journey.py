@@ -23,11 +23,31 @@ from types import MappingProxyType
 from .engine import GLIDE_FIELDS
 
 ENDS = ("sustain", "release")
+CURVES = ("linear", "ease-in", "ease-out", "ease-in-out", "exp", "step")
 
 
 def _genre_names() -> set[str]:
     from . import genres
     return set(genres.NAMES)
+
+
+def shape(curve: str, progress: float) -> float:
+    """Curve shape from 0 to 1. Unknown curves fall back to linear."""
+    if progress <= 0:
+        return 0.0
+    if progress >= 1:
+        return 1.0
+    if curve == "ease-in":
+        return progress ** 2
+    if curve == "ease-out":
+        return 1 - (1 - progress) ** 2
+    if curve == "ease-in-out":
+        return 0.5 * (2 * progress) ** 2 if progress < 0.5 else 1 - 0.5 * (2 * (1 - progress)) ** 2
+    if curve == "exp":
+        return progress
+    if curve == "step":
+        return 0.0
+    return progress
 
 
 
@@ -37,12 +57,15 @@ class Stage:
     seconds: float
     to: Mapping[str, float]   # the immutable values each named field reaches at the end of the stage
     genre: str | None = None
+    curve: str = "linear"
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.seconds) or self.seconds <= 0:
             raise ValueError(f"stage {self.name!r}: seconds must be above 0")
         if self.genre is not None and self.genre not in _genre_names():
             raise ValueError(f"stage {self.name!r}: unknown genre {self.genre!r}")
+        if self.curve not in CURVES:
+            raise ValueError(f"stage {self.name!r}: unknown curve {self.curve!r}")
         unknown = sorted(set(self.to) - set(GLIDE_FIELDS))
         if unknown:
             raise ValueError(f"stage {self.name!r}: cannot move {', '.join(map(repr, unknown))}: only "
@@ -52,7 +75,7 @@ class Stage:
         object.__setattr__(self, "to", MappingProxyType(dict(self.to)))
 
     def __hash__(self) -> int:
-        return hash((self.name, self.seconds, self.genre, frozenset(self.to.items())))
+        return hash((self.name, self.seconds, self.genre, self.curve, frozenset(self.to.items())))
 
 
 @dataclass(frozen=True)
@@ -153,7 +176,14 @@ class Journey:
             genre = raw.get("genre")
             if genre is not None and (not isinstance(genre, str) or genre not in _genre_names()):
                 raise ValueError(f"stage {number}: unknown genre {genre!r}")
-            stages.append(Stage(stage_name, float(seconds), normalized, genre))
+            curve = raw.get("curve", "linear")
+            if not isinstance(curve, str) or curve not in CURVES:
+                if isinstance(curve, str):
+                    warnings.append(f'stage {number}: unknown curve {curve!r}; using linear')
+                    curve = "linear"
+                else:
+                    raise ValueError(f'stage {number}: "curve" must be a string')
+            stages.append(Stage(stage_name, float(seconds), normalized, genre, curve))
         if total > 12 * 60 * 60:
             raise ValueError('combined stage duration must be at most 43200 seconds')
         journey_name = data.get("name", name)
@@ -171,10 +201,16 @@ class Journey:
                    title=data.get("title", ""))
 
     def to_dict(self) -> dict:
+        stages_list = []
+        for s in self.stages:
+            stage_dict = {"name": s.name, "seconds": s.seconds, "to": dict(s.to)}
+            if s.genre is not None:
+                stage_dict["genre"] = s.genre
+            if s.curve != "linear":
+                stage_dict["curve"] = s.curve
+            stages_list.append(stage_dict)
         return {"version": 1, "name": self.name, "title": self.title, "description": self.description,
-                "end": self.end, "stages": [{"name": s.name, "seconds": s.seconds, "to": dict(s.to),
-                                                **({"genre": s.genre} if s.genre is not None else {})}
-                                               for s in self.stages]}
+                "end": self.end, "stages": stages_list}
 
     @property
     def seconds(self) -> float:
@@ -199,8 +235,9 @@ class Journey:
         values = {name: float(start[name]) for name in self.fields}
         for previous in self.stages[:index]:
             values.update(previous.to)
-        for name, target in stage.to.items():   # (1 - p) a + p b: exactly a at p = 0 and exactly b at p = 1
-            values[name] = (1 - progress) * values[name] + progress * target
+        for name, target in stage.to.items():
+            shaped = shape(stage.curve, progress)
+            values[name] = (1 - shaped) * values[name] + shaped * target
         return index, progress, values
 
     def snapshot(self, t: float, start: Mapping[str, float], bpm: float) -> JourneySnapshot:
