@@ -313,6 +313,79 @@ class JourneyMenu(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+
+class JourneyPromptModal(ModalScreen[dict | None]):
+    """Modal to create a journey from natural language."""
+
+    BINDINGS = [Binding("escape", "action_cancel", "Cancel")]
+    DEFAULT_CSS = """
+    JourneyPromptModal { align: center middle; }
+    JourneyPromptModal > Vertical { width: 70; height: auto; border: round $primary; padding: 1;
+                                    background: $surface; }
+    JourneyPromptModal .heading { color: $primary; text-style: bold; margin-bottom: 1; }
+    JourneyPromptModal Input { margin-bottom: 1; }
+    JourneyPromptModal #buttons { height: auto; margin-top: 1; }
+    JourneyPromptModal Button { margin-right: 1; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static("Create a journey", classes="heading")
+            yield Static("Describe the journey you want (e.g. 'calm morning rising to energetic peak')")
+            yield Input(placeholder="Journey description", id="prompt")
+            with Horizontal(id="buttons"):
+                yield Button("Create", id="create", variant="primary")
+                yield Button("Cancel", id="cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "create":
+            prompt = self.query_one(Input).value.strip()
+            if prompt:
+                self.dismiss({"action": "create", "prompt": prompt})
+        elif event.button.id == "cancel":
+            self.action_cancel()
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class JourneyPickerModal(ModalScreen[str | None]):
+    """Modal to pick a journey (built-in or saved)."""
+
+    BINDINGS = [Binding("escape", "action_cancel", "Cancel")]
+    DEFAULT_CSS = """
+    JourneyPickerModal { align: center middle; }
+    JourneyPickerModal > Vertical { width: 70; height: auto; border: round $primary; padding: 1;
+                                    background: $surface; }
+    JourneyPickerModal .heading { color: $primary; text-style: bold; margin-bottom: 1; }
+    JourneyPickerModal OptionList { height: auto; max-height: 20; border: none; }
+    JourneyPickerModal OptionList:focus { background: $surface; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static("Pick a journey", classes="heading")
+            yield OptionList(id="journey-list")
+
+    def on_mount(self) -> None:
+        from .journey import BUILTIN, JourneyStore
+        options = self.query_one(OptionList)
+        for name, journey in BUILTIN.items():
+            options.add_option(f"[built-in] {name}: {journey.description}", id=f"builtin:{name}")
+        store = JourneyStore()
+        for saved_name, _ in store.list():
+            options.add_option(f"[saved] {saved_name}", id=f"saved:{saved_name}")
+        if options.option_count > 0:
+            options.highlighted = 0
+            options.focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option.id or None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class StreamApp(App):
     TITLE = "gentle-stream"
     SUB_TITLE = "real-time generative music"
