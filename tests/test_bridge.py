@@ -124,6 +124,28 @@ def test_list_models_reads_the_provider_model_table(fake):
     assert "--list-models" in argv()
 
 
+def test_journey_prompt_returns_normalized_journey_and_usage(fake):
+    run, _ = fake
+    from gentle_stream.journey import Journey
+    answer = '{"version":1,"name":"morning","stages":[{"name":"Start","seconds":10,"to":{"bpm":999}}]}'
+    journey, usage = GentleShell(binary=str(run(answer))).journey_from_prompt("morning")
+    assert isinstance(journey, Journey)
+    assert journey.to_dict()["stages"][0]["to"]["bpm"] == 140.0
+    assert usage is None
+
+
+def test_journey_prompt_without_json_has_the_required_error(fake):
+    run, _ = fake
+    with pytest.raises(InterpretError, match="the model answered with no JSON object"):
+        GentleShell(binary=str(run("no JSON"))).journey_from_prompt("x")
+
+
+def test_journey_prompt_timeout_has_the_existing_message(fake):
+    run, _ = fake
+    with pytest.raises(InterpretError, match="gentle-shell timed out after 0.1s"):
+        GentleShell(binary=str(run('{"version":1}', sleep=1)), timeout=0.1).journey_from_prompt("x")
+
+
 def test_cancel_kills_a_running_gentle_shell(fake):
     import threading
     import time

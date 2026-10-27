@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 
 from .genres import NAMES as GENRE_NAMES, REGISTRY
 from .style import CHORD_INSTRUMENTS, DRUMS, KEYS, LEAD_INSTRUMENTS, MODES, Style
+from .engine import GLIDE_FIELDS
+from .journey import CURVES, Journey
 
 QUIET_FLAGS = ("--no-session", "-nt", "-ns", "-np", "-nc", "--no-mcp", "--no-themes", "--no-skill-registry")
 
@@ -223,20 +225,22 @@ class GentleShell:
                 models.append(f"{parts[0]}/{parts[1]}")
         return models
 
-    def journey_from_prompt(self, description: str) -> tuple[dict, Usage | None]:
-        """Generate a journey JSON from a natural language description."""
-        prompt = f"""Create a progressive music journey from this description: {description}
-
-Return a JSON object with:
-- version: 1
-- name: short title (lowercase, no spaces)
-- title: human-readable title
-- stages: 2-5 stages, each with name, seconds (duration), to (fields dict), curve (linear/ease-in/ease-out/ease-in-out)
-- end: "sustain" or "release"
-
-Example fields: bpm (50-140), energy (0-1), brightness (0-1), space (0-1), lead_density (0-1).
-
-Generate only the JSON object, no explanation."""
+    def journey_from_prompt(self, description: str) -> tuple[Journey, Usage | None]:
+        """Generate and validate a journey from a natural language description."""
+        ranges = ", ".join(f"{name} {lo}-{hi}" for name, (lo, hi) in GLIDE_FIELDS.items())
+        prompt = f"""Create one progressive music journey for this request: {description}
+Original music only: never reproduce existing songs, melodies, riffs or soundtracks; capture only a general feel.
+Genres and tempo ranges:
+{genre_lines()}
+Fields and ranges: {ranges}
+Curves: {', '.join(CURVES)}. Ends: sustain or release. Stage seconds: 10-14400 each, 43200 total.
+Return only JSON with version, name, title, description, end, and stages. Each stage has name, seconds, to, and
+optional genre and curve; to contains fields only.
+"""
         text, usage = parse_output(self._run(self.command(prompt)))
         data = extract_json(text)
-        return data, usage
+        try:
+            journey = Journey.from_dict(data)
+        except ValueError as e:
+            raise InterpretError(f"invalid journey: {e}") from e
+        return journey, usage

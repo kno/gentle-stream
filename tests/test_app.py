@@ -634,10 +634,14 @@ class JourneyShell(FakeShell):
         self.journey, self.journey_error, self.prompts = journey, error, []
 
     def journey_from_prompt(self, description):
+        from gentle_stream.bridge import InterpretError
+        from gentle_stream.journey import Journey
         self.prompts.append(description)
         if self.journey_error:
             raise self.journey_error
-        return self.journey, self.usage
+        if isinstance(self.journey, dict) and self.journey.get("version") != 1:
+            raise InterpretError('invalid journey: "version" must be 1')
+        return Journey.from_dict(self.journey), self.usage
 
 
 def picker_ids(app):

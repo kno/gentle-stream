@@ -1,6 +1,8 @@
 import pytest
 
 from gentle_stream import main
+from tests.test_bridge import fake, jsonl  # noqa: F401  (fixture: a fake gentle-shell)
+from tests.test_bridge import text as text_part
 from tests.test_daemon import runtime  # noqa: F401  (fixture: private runtime dir, fake audio, cleanup)
 
 
@@ -361,6 +363,50 @@ def test_journey_play_and_stop_reach_a_running_player(runtime, capsys):
     assert capsys.readouterr() == ("", "")
 
 
+def test_journey_save_list_replace_and_delete(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    source = tmp_path / "walk.json"
+    source.write_text('{"version":1,"name":"walk","stages":[{"seconds":10,"to":{"bpm":80}}]}')
+    assert main(["journey", "save", "Morning run", str(source)]) == 0
+    assert capsys.readouterr() == ('Saved journey "Morning run"\n', "")
+    assert main(["journey", "show", "morning RUN"]) == 0
+    assert '"name": "Morning run"' in capsys.readouterr().out
+    assert main(["journey", "save", "MORNING RUN", str(source)]) == 0
+    assert capsys.readouterr().out == 'Replaced journey "MORNING RUN"\n'
+    assert main(["journey", "delete", "Morning run"]) == 0
+    assert capsys.readouterr() == ('Deleted journey "Morning run"\n', "")
+
+
+def test_journey_save_rejects_builtin_and_corrupt_store_unchanged(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    from gentle_stream.journey import JourneyStore
+    path = tmp_path / "gentle-stream" / "journeys.json"
+    path.parent.mkdir()
+    path.write_bytes(b"not json")
+    before = path.read_bytes()
+    source = tmp_path / "walk.json"
+    source.write_text('{"version":1,"stages":[{"seconds":10,"to":{}}]}')
+    assert main(["journey", "save", "warm-up", str(source)]) == 1
+    assert capsys.readouterr().out == ""
+    assert main(["journey", "save", "new", str(source)]) == 1
+    assert capsys.readouterr().out == ""
+    assert path.read_bytes() == before
+    assert JourneyStore(path).list() == []
+
+
+def test_journey_delete_unknown_and_list_saved(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    assert main(["journey", "delete", "missing"]) == 1
+    assert capsys.readouterr().err == 'gentle-stream: no saved journey called "missing"\n'
+    source = tmp_path / "walk.json"
+    source.write_text('{"version":1,"stages":[{"seconds":10,"to":{}}]}')
+    assert main(["journey", "save", "saved", str(source)]) == 0
+    capsys.readouterr()
+    assert main(["journey", "list"]) == 0
+    out, err = capsys.readouterr()
+    assert out.startswith("ambient-to-synthwave") and "saved" in out and err == ""
+
+
 def test_help_lists_the_journey_command(capsys):
     with pytest.raises(SystemExit):
         main(["--help"])
@@ -407,3 +453,158 @@ def test_ctl_glide_and_tempo_refuse_the_fields_a_journey_drives(runtime, capsys)
     assert main(["journey", "stop"]) == 0
     assert main(["ctl", "tempo", "110"]) == 0
     assert capsys.readouterr() == ("", "")
+
+
+# ------------------------------------------------------------ M4: journey create, save --last, play by name
+ANSWER = ('{"version": 1, "name": "sunrise", "title": "Sunrise", "end": "sustain", '
+          '"stages": [{"name": "Dawn", "seconds": 60, "to": {"bpm": 999}}, '
+          '{"name": "Day", "seconds": 120, "to": {"bpm": 100, "energy": 0.7}, "curve": "ease-in"}]}')
+
+
+@pytest.fixture
+def config(tmp_path, monkeypatch):
+    """A private config dir, so no test reads or writes the real saved journeys."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    return tmp_path / "xdg" / "gentle-stream" / "journeys.json"
+
+
+def normalized_answer() -> str:
+    import json
+
+    from gentle_stream.journey import Journey
+
+    return json.dumps(Journey.from_dict(json.loads(ANSWER)).to_dict(), ensure_ascii=False) + "\n"
+
+
+def last_journey():
+    from gentle_stream import client
+
+    player = client.connect()
+    try:
+        return player.journey_last()
+    finally:
+        player.detach()
+
+
+def test_m4_create_prints_the_journey_and_usage_then_starts_it(fake, runtime, config, capsys):  # noqa: F811
+    from gentle_stream import client
+    from gentle_stream.journey import JourneyStore
+
+    run, argv = fake
+    script = run(jsonl(text_part(ANSWER)))
+    client.ensure()
+    code = main(["--gentle-shell", str(script), "--model", "openai-codex/gpt-6-luna", "journey", "create",
+                 "a sunrise that wakes up"])
+    assert (code, *capsys.readouterr()) == (0, normalized_answer(), "usage: 17.7k tokens · $0.0001\n")
+    assert argv()[argv().index("--model") + 1] == "openai-codex/gpt-6-luna"
+    assert "a sunrise that wakes up" in argv()[-1]
+    started = last_journey()
+    assert started is not None and started["name"] == "sunrise"
+    assert JourneyStore().list() == [] and not config.exists()     # create never saves
+
+
+def test_m4_create_dry_run_prints_without_starting(fake, runtime, config, capsys):  # noqa: F811
+    from gentle_stream import client
+
+    run, _ = fake
+    script = run(jsonl(text_part(ANSWER), usage={}))
+    client.ensure()
+    assert main(["--gentle-shell", str(script), "journey", "create", "--dry-run", "sunrise"]) == 0
+    assert capsys.readouterr() == (normalized_answer(), "usage: 0 tokens · $0.0000\n")
+    assert last_journey() is None
+
+
+def test_m4_create_with_nothing_playing_still_prints_the_journey(fake, runtime, config, capsys):  # noqa: F811
+    run, _ = fake
+    script = run(ANSWER)                                   # plain text answer: no usage reported
+    assert main(["--gentle-shell", str(script), "journey", "create", "sunrise"]) == 1
+    assert capsys.readouterr() == (normalized_answer(), "gentle-stream: nothing is playing\n")
+
+
+@pytest.mark.parametrize("answer, sleep, message", [
+    ("I would rather not.", 0, "gentle-stream: the model answered with no JSON object\n"),
+    ('{"version": 2, "stages": []}', 0, 'gentle-stream: invalid journey: "version" must be 1\n'),
+], ids=["no-json", "invalid-journey"])
+def test_m4_create_errors_exit_1_and_print_no_journey(fake, config, capsys, answer, sleep, message):
+    run, _ = fake
+    script = run(answer, sleep=sleep)
+    assert main(["--gentle-shell", str(script), "journey", "create", "sunrise"]) == 1
+    assert capsys.readouterr() == ("", message)
+    assert not config.exists()
+
+
+def test_m4_create_timeout_prints_the_existing_timeout_message(fake, config, capsys, monkeypatch):
+    from gentle_stream import bridge
+
+    run, _ = fake
+    script = run(ANSWER, sleep=5)
+    real = bridge.GentleShell
+
+    def quick(**kw):
+        return real(timeout=0.2, **kw)
+
+    monkeypatch.setattr(bridge, "GentleShell", quick)
+    assert main(["--gentle-shell", str(script), "journey", "create", "sunrise"]) == 1
+    assert capsys.readouterr() == ("", "gentle-stream: gentle-shell timed out after 0.2s\n")
+
+
+def test_m4_save_last_needs_a_player_and_a_started_journey(runtime, config, capsys):  # noqa: F811
+    from gentle_stream import client
+
+    assert main(["journey", "save", "Morning run", "--last"]) == 1
+    assert capsys.readouterr() == ("", "gentle-stream: nothing is playing\n")
+    client.ensure()
+    assert main(["journey", "save", "Morning run", "--last"]) == 1
+    assert capsys.readouterr() == ("", "gentle-stream: no journey has been started yet\n")
+    assert not config.exists()
+
+
+def test_m4_save_needs_exactly_one_source(config, capsys, tmp_path):
+    source = tmp_path / "walk.json"
+    source.write_text('{"version":1,"stages":[{"seconds":10,"to":{}}]}')
+    with pytest.raises(SystemExit) as no_source:
+        main(["journey", "save", "Morning run"])
+    with pytest.raises(SystemExit) as both:
+        main(["journey", "save", "Morning run", str(source), "--last"])
+    assert no_source.value.code == both.value.code == 2
+    assert not config.exists()
+
+
+def test_m4_demo_create_save_last_and_play_by_name(fake, runtime, config, capsys):  # noqa: F811
+    from gentle_stream import client
+
+    run, _ = fake
+    script = run(jsonl(text_part(ANSWER)))
+    client.ensure()
+    assert main(["--gentle-shell", str(script), "journey", "create", "a sunrise that wakes up"]) == 0
+    capsys.readouterr()
+    assert main(["journey", "save", "Morning run", "--last"]) == 0
+    assert capsys.readouterr() == ('Saved journey "Morning run"\n', "")
+    assert main(["journey", "stop"]) == 0
+    assert main(["journey", "play", "MORNING RUN"]) == 0
+    assert capsys.readouterr() == ("", "")
+    started = last_journey()
+    assert started is not None and (started["name"], started["title"]) == ("Morning run", "Morning run")
+    assert started["stages"] == json_stages(normalized_answer())
+
+
+def json_stages(text_: str) -> list:
+    import json
+
+    return json.loads(text_)["stages"]
+
+
+def test_m4_list_keeps_the_built_in_lines_when_nothing_is_saved(config, capsys):
+    from gentle_stream.journey import BUILTIN
+
+    width = max(map(len, BUILTIN))
+    assert main(["journey", "list"]) == 0
+    assert capsys.readouterr() == ("".join(f"{j.name:<{width}}  {j.description}\n" for j in BUILTIN.values()), "")
+
+
+def test_m4_play_and_show_resolve_built_ins_before_saved_journeys(config, capsys, tmp_path):
+    from gentle_stream.journey import BUILTIN
+
+    assert main(["journey", "show", "WARM-UP"]) == 0
+    out, err = capsys.readouterr()
+    assert json_stages(out) == BUILTIN["warm-up"].to_dict()["stages"] and err == ""

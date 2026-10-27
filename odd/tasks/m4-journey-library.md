@@ -37,8 +37,8 @@ run"`."
 | Task | Specs | Route | Commit |
 | :--- | :--- | :--- | :--- |
 | T1 | S5, S6, S7 | worker + inline rewrite: `storage.py`, `presets.py`, `journey.py` store, `app.py`; tests | done (T1 commit) |
-| T2 | S4, S5, S8 | inline: `__init__.py` save/list/delete/play/show by name, daemon `journey_last`, client | pending |
-| T3 | S1, S2, S3 | inline: `bridge.py` prompt, `__init__.py` create (`--dry-run`, usage, errors, flags) | pending |
+| T2 | S4, S5, S8 | worker + inline review: `__init__.py` save/list/delete/play/show by name, daemon `journey_last`, client | done (T2+T3 commit) |
+| T3 | S1, S2, S3 | worker + inline tests: `bridge.py` prompt, `__init__.py` create (`--dry-run`, usage, errors, flags) | done (T2+T3 commit) |
 | T4 | all | README/help; independent verify (Risk items 1, 3) | pending |
 
 ## Log
@@ -52,3 +52,8 @@ run"`."
   leaked `PresetError`); name errors now raise `JourneyStoreError`. Mutation check (built-in guard and corrupt-file
   guard disabled) -> 7 store tests RED; restored -> 20 passed. Focused suites 167 passed; `tests/test_presets.py`
   unchanged. Stack check: all 14 chained branches pass (only the known daemon teardown errors).
+- L4: T2+T3 evidence: worker passes skipped tests twice; review fixes (shared `_round_trip`, save/delete inside
+  `journey_command`, narrow excepts, OLDER_PLAYER for `--last` and `create`, no dict hack in the TUI, explicit
+  `source`/`last` instead of overloading `prompt`). CLI create/demo tests written inline. Mutations (dry-run ignored,
+  usage not printed, daemon forgets the last journey, saved names not resolved) each turned tests RED; restored ->
+  green. Full suite 683 passed, 27 skipped, 2 known daemon teardown errors; no production diagnostics.

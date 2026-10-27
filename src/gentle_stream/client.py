@@ -130,8 +130,8 @@ class PlayerClient:
         self._update(self.request("state"))
 
     # ------------------------------------------------------------ transport
-    def request(self, cmd: str, **args) -> dict:
-        """One round trip; raises PlayerGone when the player is no longer there."""
+    def _round_trip(self, cmd: str, **args) -> dict:
+        """One round trip returning the complete answer."""
         with self._lock:
             if self._conn is None:
                 raise PlayerGone("the player stopped")
@@ -143,7 +143,11 @@ class PlayerClient:
                 raise PlayerGone("the player stopped") from e
         if not answer.get("ok"):
             raise PlayerError(answer.get("error", "the player refused the request"))
-        return answer.get("state") or {}
+        return answer
+
+    def request(self, cmd: str, **args) -> dict:
+        """One round trip; raises PlayerGone when the player is no longer there."""
+        return self._round_trip(cmd, **args).get("state") or {}
 
     def _hang_up(self) -> None:
         if self._conn is not None:
@@ -206,6 +210,10 @@ class PlayerClient:
     def journey_start(self, journey: dict) -> None:
         """Run a normalized journey object."""
         self._control("journey_start", journey=journey)
+
+    def journey_last(self) -> dict | None:
+        """Return the last normalized journey started by the player."""
+        return self._round_trip("journey_last").get("journey")
 
     def journey_stop(self) -> None:
         self._control("journey_stop")

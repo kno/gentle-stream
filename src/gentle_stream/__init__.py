@@ -122,7 +122,7 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
 
 
 def _journey_source(source: str):
-    from .journey import BUILTIN, Journey
+    from .journey import BUILTIN, Journey, JourneyStore
     path = Path(source)
     if path.is_file():
         try:
@@ -132,36 +132,110 @@ def _journey_source(source: str):
             return journey, warnings
         except (OSError, ValueError, json.JSONDecodeError) as e:
             raise ValueError(str(e)) from e
-    if source in BUILTIN:
-        return BUILTIN[source], []
+    builtin = next((journey for key, journey in BUILTIN.items() if key.casefold() == source.casefold()), None)
+    if builtin is not None:
+        return builtin, []
+    saved = JourneyStore().get(source)
+    if saved is not None:
+        return saved, []
     if path.suffix.lower() == ".json" or "/" in source or "\\" in source:
         raise ValueError(f"cannot read {source}: file does not exist")
     raise ValueError(f'no journey called "{source}" (choose from {", ".join(BUILTIN)})')
 
 
-def journey_command(action: str, name: str | None = None, *, prompt: str | None = None) -> int:
-    """`journey play|create|validate|show|list|restart|skip|stop` (the journey module is a package attribute)."""
-    from .journey import BUILTIN
+def journey_command(action: str, name: str | None = None, *, prompt: str | None = None,
+                    model: str | None = None, gentle_shell: str = "gentle-shell", dry_run: bool = False,
+                    source: str | None = None, last: bool = False) -> int:
+    """`journey play|create|save|delete|validate|show|list|restart|skip|stop` (the journey module is a package
+    attribute). `create` is the only action that calls a model; `save` takes a journey file (`source`) or the last
+    journey the background player started (`last`)."""
+    from .journey import BUILTIN, Journey, JourneyStore, JourneyStoreError
+
+    if action == "save":
+        from .client import NoPlayer, PlayerError, PlayerGone, connect
+        try:
+            store = JourneyStore()
+            if last:
+                try:
+                    player = connect()
+                    data = player.journey_last()
+                    player.detach()
+                except NoPlayer:
+                    print("gentle-stream: nothing is playing", file=sys.stderr)
+                    return 1
+                except PlayerGone:
+                    print("gentle-stream: nothing is playing", file=sys.stderr)
+                    return 1
+                except PlayerError as e:
+                    message = OLDER_PLAYER if "unknown command" in str(e) else str(e)
+                    print(f"gentle-stream: {message}", file=sys.stderr)
+                    return 1
+                if data is None:
+                    print("gentle-stream: no journey has been started yet", file=sys.stderr)
+                    return 1
+                warnings = []
+                journey = Journey.from_dict(data, warnings)
+            else:
+                journey, warnings = _journey_source(str(source))
+            stored, replaced = store.save(str(name), journey)
+        except (JourneyStoreError, ValueError) as e:
+            print(f"gentle-stream: {e}", file=sys.stderr)
+            return 1
+        for warning in warnings:
+            print(f"warning: {warning}", file=sys.stderr)
+        print(f"{'Replaced' if replaced else 'Saved'} journey \"{stored}\"")
+        return 0
+    if action == "delete":
+        if any(str(name).casefold() == builtin.casefold() for builtin in BUILTIN):
+            print(f'gentle-stream: "{name}" is a built-in journey; it cannot be deleted.', file=sys.stderr)
+            return 1
+        store = JourneyStore()
+        try:
+            deleted = store.delete(str(name))
+        except JourneyStoreError as e:
+            print(f"gentle-stream: {e}", file=sys.stderr)
+            return 1
+        if not deleted:
+            print(f'gentle-stream: no saved journey called "{name}"', file=sys.stderr)
+            return 1
+        print(f'Deleted journey "{name}"')
+        return 0
 
     if action == "create":
         if prompt is None:
             print("gentle-stream: journey create requires a prompt", file=sys.stderr)
             return 1
-        from .bridge import GentleShell
-        from .journey import Journey, JourneyStore
-        shell = GentleShell()
+        from .bridge import GentleShell, InterpretError
+        shell = GentleShell(binary=gentle_shell, model=model)
         try:
-            journey_json, usage = shell.journey_from_prompt(prompt)
-            journey = Journey.from_dict(journey_json, name=None)
-            store = JourneyStore()
-            journey_name = journey_json.get("name") or prompt.split()[0].lower()
-            if not store.save(journey_name, journey):
-                print(f"gentle-stream: could not save journey: {store.error}", file=sys.stderr)
+            journey, usage = shell.journey_from_prompt(prompt)
+            print(json.dumps(journey.to_dict(), ensure_ascii=False))
+            if usage is not None:
+                print(f"usage: {usage.format()}", file=sys.stderr)
+            if dry_run:
+                return 0
+            from .client import NoPlayer, PlayerError, PlayerGone, connect
+            try:
+                player = connect()
+            except NoPlayer:
+                print("gentle-stream: nothing is playing", file=sys.stderr)
                 return 1
-            print(f"Saved journey '{journey_name}' from: {prompt}")
+            except PlayerError as e:
+                print(f"gentle-stream: {e}", file=sys.stderr)
+                return 1
+            try:
+                player.journey_start(journey.to_dict())
+            except PlayerGone:
+                print("gentle-stream: nothing is playing", file=sys.stderr)
+                return 1
+            except PlayerError as e:
+                message = OLDER_PLAYER if "unknown command" in str(e) else str(e)
+                print(f"gentle-stream: {message}", file=sys.stderr)
+                return 1
+            player.detach()
             return 0
-        except Exception as e:
-            print(f"gentle-stream: could not create journey: {e}", file=sys.stderr)
+        except (InterpretError, ValueError) as e:
+            print(f"gentle-stream: {e}", file=sys.stderr)
             return 1
     if action in ("validate", "show"):
         try:
@@ -175,9 +249,16 @@ def journey_command(action: str, name: str | None = None, *, prompt: str | None 
                 print(f"warning: {warning}", file=sys.stderr)
         return 0
     if action == "list":
-        width = max(map(len, BUILTIN))
+        store = JourneyStore()
+        saved = store.list()
+        width = max([*map(len, BUILTIN), *(len(name) for name, _ in saved)], default=1)
         for j in BUILTIN.values():
             print(f"{j.name:<{width}}  {j.description}")
+        for saved_name, journey in saved:
+            minutes = journey.seconds / 60
+            print(f"{saved_name:<{width}}  {len(journey.stages)} stages, {minutes:g} minutes")
+        if store.error:
+            print(f"gentle-stream: {store.error}", file=sys.stderr)
         return 0
     parsed_journey = None
     if action == "play":
@@ -367,9 +448,8 @@ def main(argv: list[str] | None = None) -> int:
                                                                  "(see `journey list`)")
     render_parser.add_argument("--procedural", action="store_true",
                                help="use the procedural instruments even if the soundfont is installed")
-    journey_parser = sub.add_parser("journey", help="run a built-in journey in the background player",
-                                    description="Run a built-in journey: tempo, energy and colour move stage by "
-                                                "stage on their own, then hold.")
+    journey_parser = sub.add_parser("journey", help="create, manage, and play journeys",
+                                    description="Create, validate, save, list, delete, show, and play journeys.")
     journey_sub = journey_parser.add_subparsers(dest="journey_action", metavar="action", required=True)
     journey_sub.add_parser("play", help="start a journey (it replaces a running one)").add_argument(
         "name", metavar="NAME|FILE", help="a built-in journey or JSON file")
@@ -378,15 +458,25 @@ def main(argv: list[str] | None = None) -> int:
     journey_sub.add_parser("stop", help="end the journey, leaving the music as it is")
     journey_sub.add_parser("restart", help="restart the journey from its first stage")
     journey_sub.add_parser("skip", help="advance the journey to its next stage")
-    journey_sub.add_parser("list", help="list the built-in journeys")
-    journey_sub.add_parser("create", help="create a new journey from a text prompt").add_argument(
-        "prompt", metavar="PROMPT", help="a text description of the journey you want")
+    journey_sub.add_parser("list", help="list built-in and saved journeys")
+    save_parser = journey_sub.add_parser("save", help="save a journey file or the last started journey")
+    save_parser.add_argument("name", metavar="NAME")
+    source = save_parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("file", nargs="?", metavar="FILE")
+    source.add_argument("--last", action="store_true", help="save the last journey started by the player")
+    delete_parser = journey_sub.add_parser("delete", help="delete a saved journey")
+    delete_parser.add_argument("name", metavar="NAME")
+    create_parser = journey_sub.add_parser("create", help="create a journey from a text prompt")
+    create_parser.add_argument("prompt", metavar="PROMPT", help="a text description of the journey you want")
+    create_parser.add_argument("--dry-run", action="store_true", help="print without starting")
     args = ap.parse_args(argv)
     if args.command == "ctl":
         return ctl(args.action, *_ctl_args(ctl_parser, args))
     if args.command == "journey":
         return journey_command(args.journey_action, getattr(args, "name", None),
-                              prompt=getattr(args, "prompt", None))
+                              prompt=getattr(args, "prompt", None), model=args.model,
+                              gentle_shell=args.gentle_shell, dry_run=getattr(args, "dry_run", False),
+                              source=getattr(args, "file", None), last=getattr(args, "last", False))
     if args.command == "render":
         from .style import genre_names
 

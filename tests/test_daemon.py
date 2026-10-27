@@ -413,6 +413,16 @@ def test_the_client_attaches_to_a_player_older_than_the_timing_and_tempo_keys():
 
 
 # ------------------------------------------------------------ journeys (handle(), unit-level)
+def test_handle_journey_last_is_empty_then_returns_the_started_journey():
+    from gentle_stream import daemon
+
+    player = fake_player()
+    assert daemon.handle(player, {"cmd": "journey_last"}) == {"ok": True, "journey": None}
+    request = {"cmd": "journey_start", "journey": {"version": 1, "name": "saved", "stages": [{"seconds": 10, "to": {}}]}}
+    assert daemon.handle(player, request)["ok"] is True
+    assert daemon.handle(player, {"cmd": "journey_last"})["journey"]["name"] == "saved"
+
+
 def test_handle_journey_start_runs_a_built_in_journey_from_the_next_bar():
     from gentle_stream import daemon
     from gentle_stream.journey import BUILTIN

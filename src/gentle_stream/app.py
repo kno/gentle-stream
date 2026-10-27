@@ -15,8 +15,8 @@ from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.markup import escape
 from textual.containers import Horizontal, Vertical
+from textual.markup import escape
 from textual.screen import ModalScreen
 from textual.theme import Theme
 from textual.widgets import Button, Footer, Header, Input, OptionList, Static
@@ -24,7 +24,7 @@ from textual.widgets.option_list import Option
 from textual.worker import get_current_worker
 
 from .bridge import GentleShell, InterpretError, Usage
-from .journey import BUILTIN, Journey, JourneySnapshot, JourneyStore, JourneyStoreError
+from .journey import BUILTIN, JourneySnapshot, JourneyStore, JourneyStoreError
 from .player import Player
 from .presets import NAME_MAX, Preset, PresetError, PresetStore, normalize_name
 from .style import Style
@@ -375,15 +375,14 @@ class JourneyPromptModal(ModalScreen[str | None]):
     def _generate(self, prompt: str, name: str) -> None:
         worker = get_current_worker()
         try:
-            data, usage = self.shell.journey_from_prompt(prompt)
-            journey = Journey.from_dict(data)
+            journey, usage = self.shell.journey_from_prompt(prompt)
         except (InterpretError, ValueError) as e:
             if not worker.is_cancelled:
                 self.app.call_from_thread(self._show, f"Could not create the journey: {e}")
             return
         if worker.is_cancelled:
             return
-        chosen_name = name or str(data.get("name") or prompt)
+        chosen_name = name or journey.name or prompt
         try:
             stored_name, _ = self.store.save(chosen_name, journey)
         except JourneyStoreError as e:

@@ -18,6 +18,7 @@ key kept in a 0600 file. Messages are JSON (never pickle), one request and one r
     {"cmd": "journey_start", "name": "warm-up"}   (a built-in journey, see journey.BUILTIN, from the next bar; it
                                      replaces a running one; an unknown name answers {"ok": false, "error":
                                      "no journey called ..."} listing the built-ins)
+    {"cmd": "journey_last"}          -> {"ok": true, "journey": {...} | null} (last started journey)
     {"cmd": "journey_stop"}          (leaves the music as it is; fine when no journey runs)
     {"cmd": "stop"}                  -> {"ok": true}, then the process exits and every connection sees EOF
     anything else                    -> {"ok": false, "error": "..."}
@@ -187,7 +188,9 @@ def handle(player, request) -> dict:
                 journey = request["journey"]
                 if not isinstance(journey, dict):
                     raise TypeError("journey must be an object")
-                player.engine.queue_journey(Journey.from_dict(journey))
+                normalized = Journey.from_dict(journey)
+                player.last_journey = normalized.to_dict()
+                player.engine.queue_journey(normalized)
             else:  # compatibility with the PM-004 name payload; never interpret paths here
                 from .journey import BUILTIN, unknown_journey
                 name = request["name"]
@@ -196,6 +199,8 @@ def handle(player, request) -> dict:
                 if name not in BUILTIN:
                     return {"ok": False, "error": unknown_journey(name)}
                 player.engine.queue_journey(BUILTIN[name])
+        elif cmd == "journey_last":
+            return {"ok": True, "journey": getattr(player, "last_journey", None)}
         elif cmd == "journey_stop":
             player.engine.stop_journey()
         elif cmd == "journey_restart":
