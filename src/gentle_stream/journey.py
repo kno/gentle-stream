@@ -13,11 +13,15 @@ The built-in journeys (`BUILTIN`) stay in the genre that is playing; genre steps
 """
 from __future__ import annotations
 
+import json
 import math
+import os
+import tempfile
 from bisect import bisect_right
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from itertools import accumulate
+from pathlib import Path
 from types import MappingProxyType
 
 from .engine import GLIDE_FIELDS
@@ -275,3 +279,67 @@ BUILTIN: dict[str, Journey] = {j.name: j for j in (
 
 def unknown_journey(name: str) -> str:
     return f'no journey called "{name}" (choose from {", ".join(BUILTIN)})'
+
+
+class JourneyStore:
+    """Saved custom journeys: individual JSON files in ~/.config/gentle-stream/journeys/."""
+
+    def __init__(self):
+        self.base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "gentle-stream" / "journeys"
+        self.base.mkdir(parents=True, exist_ok=True)
+        self.error: str | None = None
+
+    def list(self) -> list[tuple[str, Journey]]:
+        """Return list of (name, journey) tuples, sorted alphabetically."""
+        result = []
+        if not self.base.exists():
+            return result
+        for path in sorted(self.base.glob("*.json")):
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+                journey = Journey.from_dict(data, name=path.stem)
+                result.append((path.stem, journey))
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return result
+
+    def get(self, name: str) -> Journey | None:
+        """Load a saved journey by name."""
+        path = self.base / f"{name}.json"
+        if not path.exists():
+            self.error = f'"{name}" not found'
+            return None
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            return Journey.from_dict(data, name=name)
+        except (json.JSONDecodeError, ValueError) as e:
+            self.error = str(e)
+            return None
+
+    def save(self, name: str, journey: Journey) -> bool:
+        """Save a journey. Returns True on success."""
+        path = self.base / f"{name}.json"
+        try:
+            data = journey.to_dict()
+            with tempfile.NamedTemporaryFile(mode="w", dir=self.base, delete=False, suffix=".json") as tmp:
+                json.dump(data, tmp, ensure_ascii=False)
+                tmp_path = Path(tmp.name)
+            tmp_path.replace(path)
+            self.error = None
+            return True
+        except Exception as e:
+            self.error = str(e)
+            return False
+
+    def delete(self, name: str) -> bool:
+        """Delete a saved journey."""
+        path = self.base / f"{name}.json"
+        try:
+            path.unlink()
+            self.error = None
+            return True
+        except Exception as e:
+            self.error = str(e)
+            return False
