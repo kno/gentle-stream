@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "name": "curves-demo",
+  "title": "Curves Demo: Linear vs Ease-In vs Ease-Out",
+  "description": "Compare different curve interpolations: linear ramp, ease-in slow start, ease-out fast start, ease-in-out smooth both.",
+  "stages": [
+    {
+      "name": "Linear ramp (60→120)",
+      "seconds": 20,
+      "to": {"bpm": 120.0, "energy": 0.7},
+      "curve": "linear"
+    },
+    {
+      "name": "Ease-in slow start (120→80)",
+      "seconds": 20,
+      "to": {"bpm": 80.0, "energy": 0.3},
+      "curve": "ease-in"
+    },
+    {
+      "name": "Ease-out fast start (80→140)",
+      "seconds": 20,
+      "to": {"bpm": 140.0, "energy": 0.95},
+      "curve": "ease-out"
+    },
+    {
+      "name": "Ease-in-out smooth (140→90)",
+      "seconds": 30,
+      "to": {"bpm": 90.0, "energy": 0.5, "brightness": 0.6},
+      "curve": "ease-in-out"
+    },
+    {
+      "name": "Step jump (90→110 instant)",
+      "seconds": 15,
+      "to": {"bpm": 110.0},
+      "curve": "step"
+    }
+  ],
+  "end": "sustain"
+}

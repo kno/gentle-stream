@@ -139,10 +139,32 @@ def _journey_source(source: str):
     raise ValueError(f'no journey called "{source}" (choose from {", ".join(BUILTIN)})')
 
 
-def journey_command(action: str, name: str | None = None) -> int:
-    """`journey play NAME|FILE`, `journey validate|show FILE`, `journey restart|skip|stop|list` (named so: the `journey` module is a package attribute)."""
+def journey_command(action: str, name: str | None = None, *, prompt: str | None = None) -> int:
+    """`journey play|create|validate|show|list|restart|skip|stop` (the journey module is a package attribute)."""
     from .journey import BUILTIN
 
+    if action == "create":
+        if prompt is None:
+            print("gentle-stream: journey create requires a prompt", file=sys.stderr)
+            return 1
+        from .bridge import GentleShell
+        from .journey import JourneyStore, Journey
+        shell = GentleShell()
+        try:
+            # Ask Gentle Shell to generate a journey JSON based on the prompt
+            journey_json, usage = shell._run(f"Generate a journey JSON for: {prompt}", mode="json")
+            journey = Journey.from_dict(journey_json, name=None)
+            store = JourneyStore()
+            # Extract journey name from prompt or use first word
+            journey_name = journey_json.get("name") or prompt.split()[0].lower()
+            if not store.save(journey_name, journey):
+                print(f"gentle-stream: could not save journey: {store.error}", file=sys.stderr)
+                return 1
+            print(f"Saved journey '{journey_name}' from: {prompt}")
+            return 0
+        except Exception as e:
+            print(f"gentle-stream: could not create journey: {e}", file=sys.stderr)
+            return 1
     if action in ("validate", "show"):
         try:
             journey, warnings = _journey_source(str(name))
@@ -359,11 +381,14 @@ def main(argv: list[str] | None = None) -> int:
     journey_sub.add_parser("restart", help="restart the journey from its first stage")
     journey_sub.add_parser("skip", help="advance the journey to its next stage")
     journey_sub.add_parser("list", help="list the built-in journeys")
+    journey_sub.add_parser("create", help="create a new journey from a text prompt").add_argument(
+        "prompt", metavar="PROMPT", help="a text description of the journey you want")
     args = ap.parse_args(argv)
     if args.command == "ctl":
         return ctl(args.action, *_ctl_args(ctl_parser, args))
     if args.command == "journey":
-        return journey_command(args.journey_action, getattr(args, "name", None))
+        return journey_command(args.journey_action, getattr(args, "name", None),
+                              prompt=getattr(args, "prompt", None))
     if args.command == "render":
         from .style import genre_names
 
