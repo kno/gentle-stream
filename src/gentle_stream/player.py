@@ -15,7 +15,7 @@ import numpy as np
 
 from .composer import cycle_position
 from .engine import Engine
-from .journey import JourneySnapshot
+from .journey import Journey, JourneySnapshot
 from .style import Style
 
 RAMP_SECONDS = 0.03
@@ -119,6 +119,10 @@ class Player:
     def set_style(self, style: Style) -> None:
         """The new style starts at the next rendered bar, after the audio already buffered."""
         self.engine.queue_style(style)
+
+    def journey_start(self, journey: dict) -> None:
+        """Run a journey object (`Journey.to_dict`) from the next rendered bar, like the background player."""
+        self.engine.queue_journey(Journey.from_dict(journey))
 
     def journey_restart(self) -> None:
         """Restart the running journey at the next rendered bar."""

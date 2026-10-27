@@ -620,3 +620,183 @@ async def test_a_journey_line_shows_markup_in_names_literally_and_hides_again_wh
         show_journey(player, None)
         await pilot.pause(0.2)
         assert text(app, "#journey") == "" and not app.query_one("#journey").display
+
+
+# ------------------------------------------------------------ PM-012: journey prompt and picker
+def valid_journey(name="night-drive"):
+    from gentle_stream.journey import BUILTIN
+    return {**BUILTIN["warm-up"].to_dict(), "name": name, "title": "Night drive"}
+
+
+class JourneyShell(FakeShell):
+    def __init__(self, journey=None, error=None, **kw):
+        super().__init__(**kw)
+        self.journey, self.journey_error, self.prompts = journey, error, []
+
+    def journey_from_prompt(self, description):
+        self.prompts.append(description)
+        if self.journey_error:
+            raise self.journey_error
+        return self.journey, self.usage
+
+
+def picker_ids(app):
+    from textual.widgets import OptionList
+    options = app.screen.query_one(OptionList)
+    return [options.get_option_at_index(i).id for i in range(options.option_count)]
+
+
+def record_journey_start(player):
+    started = []
+    player.journey_start = started.append
+    return started
+
+
+@pytest.mark.asyncio
+async def test_pm012_shift_j_lists_create_then_builtins_then_saved_alphabetically():
+    from gentle_stream.app import JourneyPickerModal
+    from gentle_stream.journey import BUILTIN, Journey, JourneyStore
+
+    store = JourneyStore()
+    for name in ("zeta", "alpha"):
+        store.save(name, Journey.from_dict(valid_journey(name)))
+    app, _ = make_app(JourneyShell())
+    async with app.run_test() as pilot:
+        await pilot.press("J")
+        await pilot.pause(0.1)
+        assert isinstance(app.screen, JourneyPickerModal)
+        assert picker_ids(app) == (["create"] + [f"builtin:{n}" for n in BUILTIN] + ["saved:alpha", "saved:zeta"])
+
+
+@pytest.mark.asyncio
+async def test_pm012_picking_a_builtin_or_saved_journey_starts_it_immediately():
+    from gentle_stream.journey import BUILTIN, Journey, JourneyStore
+
+    JourneyStore().save("alpha", Journey.from_dict(valid_journey("alpha")))
+    app, player = make_app(JourneyShell())
+    started = record_journey_start(player)
+    async with app.run_test() as pilot:
+        await pilot.press("J", "down", "enter")          # first built-in
+        await pilot.pause(0.1)
+        await pilot.press("J", *["down"] * (len(BUILTIN) + 1), "enter")   # first saved
+        await pilot.pause(0.1)
+        assert "Journey Night drive (alpha) starts at the next bar" in text(app, "#status")
+    first = next(iter(BUILTIN.values()))
+    assert started == [first.to_dict(), JourneyStore().get("alpha").to_dict()]
+
+
+@pytest.mark.asyncio
+async def test_pm012_create_saves_the_generated_journey_and_reopens_the_picker_on_it():
+    from gentle_stream.app import JourneyPickerModal, JourneyPromptModal
+    from gentle_stream.journey import Journey, JourneyStore
+
+    shell = JourneyShell(journey=valid_journey("night-drive"))
+    app, player = make_app(shell)
+    started = record_journey_start(player)
+    async with app.run_test() as pilot:
+        await pilot.press("J", "enter")                  # "Create from a description…"
+        await pilot.pause(0.1)
+        assert isinstance(app.screen, JourneyPromptModal)
+        await pilot.press(*"slow night drive", "enter")
+        await pilot.pause(0.3)
+        assert shell.prompts == ["slow night drive"]
+        assert isinstance(app.screen, JourneyPickerModal)
+        assert picker_ids(app)[app.screen.query_one("OptionList").highlighted] == "saved:night-drive"
+        await pilot.press("enter")
+        await pilot.pause(0.1)
+    saved = JourneyStore().get("night-drive")
+    assert saved == Journey.from_dict(valid_journey("night-drive"), name="night-drive")
+    assert started == [saved.to_dict()]
+
+
+@pytest.mark.asyncio
+async def test_pm012_the_optional_name_wins_and_unsafe_names_are_normalized():
+    from gentle_stream.journey import JourneyStore
+
+    shell = JourneyShell(journey=valid_journey("../../evil"))
+    app, _ = make_app(shell)
+    async with app.run_test() as pilot:
+        await pilot.press("J", "enter")
+        await pilot.pause(0.1)
+        await pilot.press(*"first", "tab", *"My Drive!", "enter")
+        await pilot.pause(0.3)
+        await pilot.press("escape")
+        await pilot.press("J", "enter")
+        await pilot.pause(0.1)
+        await pilot.press(*"second", "enter")             # no name: the generated one, made safe
+        await pilot.pause(0.3)
+    store = JourneyStore()
+    assert sorted(name for name, _ in store.list()) == ["evil", "my-drive"]
+    assert sorted(p.name for p in store.base.iterdir()) == ["evil.json", "my-drive.json"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error, message", [
+    (InterpretError("gentle-shell timed out"), "gentle-shell timed out"),
+    (InterpretError("no JSON object in the answer"), "no JSON object in the answer"),
+    (None, '"version" must be 1'),
+], ids=["timeout", "invalid-json", "schema"])
+async def test_pm012_errors_show_in_the_modal_and_keep_the_input(error, message):
+    from textual.widgets import Input
+    from gentle_stream.app import JourneyPromptModal
+    from gentle_stream.journey import JourneyStore
+
+    shell = JourneyShell(journey={"version": 2, "stages": []}, error=error)
+    app, player = make_app(shell)
+    started = record_journey_start(player)
+    async with app.run_test() as pilot:
+        await pilot.press("J", "enter")
+        await pilot.pause(0.1)
+        await pilot.press(*"rainy dawn", "enter")
+        await pilot.pause(0.3)
+        assert isinstance(app.screen, JourneyPromptModal)
+        assert app.screen.query_one("#prompt", Input).value == "rainy dawn"
+        assert message in str(app.screen.query_one("#journey-error").render())
+    assert JourneyStore().list() == [] and started == []
+
+
+@pytest.mark.asyncio
+async def test_pm012_escape_dismisses_both_modals_without_saving_or_playing():
+    from gentle_stream.app import JourneyPickerModal, JourneyPromptModal
+    from gentle_stream.journey import JourneyStore
+
+    shell = JourneyShell(journey=valid_journey())
+    app, player = make_app(shell)
+    started = record_journey_start(player)
+    async with app.run_test() as pilot:
+        await pilot.press("J")
+        await pilot.pause(0.1)
+        await pilot.press("escape")
+        await pilot.pause(0.1)
+        assert not isinstance(app.screen, JourneyPickerModal)
+        await pilot.press("J", "enter")
+        await pilot.pause(0.1)
+        await pilot.press(*"draft", "escape")
+        await pilot.pause(0.1)
+        assert not isinstance(app.screen, (JourneyPickerModal, JourneyPromptModal))
+        assert "Press / to describe a mood." in text(app, "#status")
+    assert shell.prompts == [] and JourneyStore().list() == [] and started == []
+
+
+@pytest.mark.asyncio
+async def test_pm012_lowercase_j_still_opens_the_journey_controls_and_escape_closes_them():
+    from gentle_stream.app import JourneyMenu
+
+    app, _ = make_app(JourneyShell())
+    async with app.run_test() as pilot:
+        await pilot.press("j")
+        await pilot.pause(0.1)
+        assert isinstance(app.screen, JourneyMenu)
+        await pilot.press("escape")
+        await pilot.pause(0.1)
+        assert not isinstance(app.screen, JourneyMenu)
+
+
+def test_pm012_in_process_player_starts_a_journey_object():
+    from gentle_stream.journey import BUILTIN
+
+    player = Player(Engine(Style(name="Midnight Rain"), seed=1), stream_factory=lambda **k: FakeStream(**k))
+    queued = []
+    player.engine.queue_journey = queued.append
+    player.journey_start(BUILTIN["warm-up"].to_dict())
+    assert queued == [BUILTIN["warm-up"]]

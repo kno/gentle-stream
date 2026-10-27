@@ -6,24 +6,27 @@ The player is usually the background player (`client.PlayerClient`), so `b` leav
 The mood is interpreted by Gentle Shell in a thread worker while the music keeps playing; the new style starts at
 the next bar. Everything shown comes from `player.now`, i.e. the bar that is audible right now. What is audible can
 be saved under a name and applied later, instantly, without asking Gentle Shell again. While a journey runs, a line
-shows its progress (`journey_line`), hidden otherwise. The `j` key opens a menu to restart, skip, or stop the journey.
+shows its progress (`journey_line`), hidden otherwise. The `j` key opens a menu to restart, skip, or stop the journey; `J` picks a journey to
+play (built-in or saved) or creates one from a description with Gentle Shell.
 """
 from __future__ import annotations
+
+import re
 
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.markup import escape
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.theme import Theme
-from textual.widgets import Footer, Header, Input, OptionList, Static
+from textual.widgets import Button, Footer, Header, Input, OptionList, Static
 from textual.widgets.option_list import Option
 from textual.worker import get_current_worker
 
 from .bridge import GentleShell, InterpretError, Usage
-from .journey import JourneySnapshot
+from .journey import BUILTIN, Journey, JourneySnapshot, JourneyStore
 from .player import Player
 from .presets import NAME_MAX, Preset, PresetError, PresetStore, normalize_name
 from .style import Style
@@ -280,7 +283,7 @@ class PresetPicker(ModalScreen[Preset | None]):
 class JourneyMenu(ModalScreen[str | None]):
     """Choose a journey control: restart, skip, or stop."""
 
-    BINDINGS = [Binding("escape", "action_cancel", "Cancel")]
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
     DEFAULT_CSS = """
     JourneyMenu { align: center middle; }
     JourneyMenu > Vertical { width: 60; height: auto; border: round $primary; padding: 0 1;
@@ -314,53 +317,111 @@ class JourneyMenu(ModalScreen[str | None]):
 
 
 
-class JourneyPromptModal(ModalScreen[dict | None]):
-    """Modal to create a journey from natural language."""
 
-    BINDINGS = [Binding("escape", "action_cancel", "Cancel")]
+def journey_file_name(name: str) -> str:
+    """A safe store name: lowercase letters, digits and dashes, so a generated name can never leave the store."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return slug[:NAME_MAX] or "journey"
+
+
+class JourneyPromptModal(ModalScreen[str | None]):
+    """Create a journey from a natural-language description; dismisses with the saved name.
+
+    Gentle Shell runs in a thread worker; on any error the modal stays open with the error and the input kept."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
     DEFAULT_CSS = """
     JourneyPromptModal { align: center middle; }
     JourneyPromptModal > Vertical { width: 70; height: auto; border: round $primary; padding: 1;
                                     background: $surface; }
     JourneyPromptModal .heading { color: $primary; text-style: bold; margin-bottom: 1; }
     JourneyPromptModal Input { margin-bottom: 1; }
+    JourneyPromptModal #journey-error { color: $error; }
     JourneyPromptModal #buttons { height: auto; margin-top: 1; }
     JourneyPromptModal Button { margin-right: 1; }
     """
+
+    def __init__(self, shell: GentleShell, store: JourneyStore):
+        super().__init__()
+        self.shell, self.store = shell, store
+        self.usage: Usage | None = None
 
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Static("Create a journey", classes="heading")
             yield Static("Describe the journey you want (e.g. 'calm morning rising to energetic peak')")
             yield Input(placeholder="Journey description", id="prompt")
+            yield Input(placeholder="Name (optional: the generated one otherwise)", id="name")
+            yield Static("", id="journey-error", markup=False)
             with Horizontal(id="buttons"):
                 yield Button("Create", id="create", variant="primary")
                 yield Button("Cancel", id="cancel")
 
+    def on_mount(self) -> None:
+        self.query_one("#prompt", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()   # never a mood request for the app below
+        self._create()
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "create":
-            prompt = self.query_one(Input).value.strip()
-            if prompt:
-                self.dismiss({"action": "create", "prompt": prompt})
+            self._create()
         elif event.button.id == "cancel":
             self.action_cancel()
 
+    def _create(self) -> None:
+        prompt = self.query_one("#prompt", Input).value.strip()
+        if not prompt:
+            return
+        self._show("Creating the journey with Gentle Shell…")
+        self._generate(prompt, self.query_one("#name", Input).value.strip())
+
+    def _show(self, message: str) -> None:
+        self.query_one("#journey-error", Static).update(message)
+
+    @work(thread=True, exclusive=True, group="journey-create")
+    def _generate(self, prompt: str, name: str) -> None:
+        worker = get_current_worker()
+        try:
+            data, usage = self.shell.journey_from_prompt(prompt)
+            journey = Journey.from_dict(data)
+        except (InterpretError, ValueError) as e:
+            if not worker.is_cancelled:
+                self.app.call_from_thread(self._show, f"Could not create the journey: {e}")
+            return
+        if worker.is_cancelled:
+            return
+        file_name = journey_file_name(name or str(data.get("name") or prompt))
+        if not self.store.save(file_name, journey):
+            self.app.call_from_thread(self._show, f"Could not save the journey: {self.store.error}")
+            return
+        self.usage = usage
+        self.app.call_from_thread(self.dismiss, file_name)
+
     def action_cancel(self) -> None:
+        self.workers.cancel_group(self, "journey-create")
         self.dismiss(None)
 
 
 class JourneyPickerModal(ModalScreen[str | None]):
-    """Modal to pick a journey (built-in or saved)."""
+    """Pick a journey: "create" first, then the built-ins, then the saved ones alphabetically.
 
-    BINDINGS = [Binding("escape", "action_cancel", "Cancel")]
+    Dismisses with "create", "builtin:<name>" or "saved:<name>"."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
     DEFAULT_CSS = """
     JourneyPickerModal { align: center middle; }
     JourneyPickerModal > Vertical { width: 70; height: auto; border: round $primary; padding: 1;
                                     background: $surface; }
     JourneyPickerModal .heading { color: $primary; text-style: bold; margin-bottom: 1; }
-    JourneyPickerModal OptionList { height: auto; max-height: 20; border: none; }
-    JourneyPickerModal OptionList:focus { background: $surface; }
+    JourneyPickerModal OptionList, JourneyPickerModal OptionList:focus { height: auto; max-height: 20;
+                                                                        border: none; background: $surface; }
     """
+
+    def __init__(self, store: JourneyStore, highlight: str | None = None):
+        super().__init__()
+        self.store, self.highlight = store, highlight
 
     def compose(self) -> ComposeResult:
         with Vertical():
@@ -368,18 +429,19 @@ class JourneyPickerModal(ModalScreen[str | None]):
             yield OptionList(id="journey-list")
 
     def on_mount(self) -> None:
-        from .journey import BUILTIN, JourneyStore
         options = self.query_one(OptionList)
+        options.add_option(Option("＋ Create from a description…", id="create"))
         for name, journey in BUILTIN.items():
-            options.add_option(f"[built-in] {name}: {journey.description}", id=f"builtin:{name}")
-        store = JourneyStore()
-        for saved_name, _ in store.list():
-            options.add_option(f"[saved] {saved_name}", id=f"saved:{saved_name}")
-        if options.option_count > 0:
-            options.highlighted = 0
-            options.focus()
+            options.add_option(Option(f"[built-in] {escape(name)}: {escape(journey.description)}",
+                                      id=f"builtin:{name}"))
+        for saved_name, _ in sorted(self.store.list(), key=lambda item: item[0]):
+            options.add_option(Option(f"[saved] {escape(saved_name)}", id=f"saved:{saved_name}"))
+        ids = [options.get_option_at_index(i).id for i in range(options.option_count)]
+        options.highlighted = ids.index(self.highlight) if self.highlight in ids else 0
+        options.focus()
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
         self.dismiss(event.option.id or None)
 
     def action_cancel(self) -> None:
@@ -412,6 +474,7 @@ class StreamApp(App):
         Binding("s", "save_preset", "Save"),
         Binding("p", "pick_preset", "Saved"),
         Binding("j", "journey_menu", "Journey"),
+        Binding("J", "journey_picker", "Journeys"),
         Binding("plus,equals_sign", "volume(5)", "Vol +5"),
         Binding("minus", "volume(-5)", "Vol -5"),
         Binding("up", "volume(1)", "Vol +1"),
@@ -572,6 +635,41 @@ class StreamApp(App):
                 self._status(f"[$error]Journey:[/] {escape(str(e))}")
 
         self.push_screen(JourneyMenu(), chosen)
+
+    def action_journey_picker(self, highlight: str | None = None) -> None:
+        store = JourneyStore()
+
+        def chosen(choice: str | None) -> None:
+            if not choice:
+                return
+            if choice == "create":
+                modal = JourneyPromptModal(self.shell, store)
+                self.push_screen(modal, lambda name: created(name, modal.usage))
+                return
+            kind, _, name = choice.partition(":")
+            journey = BUILTIN.get(name) if kind == "builtin" else store.get(name)
+            if journey is None:
+                self._status(f"[$error]Journey:[/] {escape(store.error or name)}")
+                return
+            try:
+                self.player.journey_start(journey.to_dict())
+            except (ValueError, ConnectionError) as e:
+                self._status(f"[$error]Journey:[/] {escape(str(e))}")
+                return
+            self._status(f"Journey [b]{escape(journey.title)}[/b] ({escape(name)}) starts at the next bar")
+            self._tick()
+
+        def created(name: str | None, usage: Usage | None) -> None:
+            if name is None:
+                return
+            cost = f" · {usage.format()}" if usage else ""
+            self._status(f"Saved journey “{escape(name)}”{cost}")
+            if usage:
+                self.session_usage = usage if self.session_usage is None else self.session_usage + usage
+                self._show_model()
+            self.action_journey_picker(f"saved:{name}")   # back to the picker, on the new journey
+
+        self.push_screen(JourneyPickerModal(store, highlight), chosen)
 
     # ------------------------------------------------------------ mood interpretation
     def on_input_submitted(self, event: Input.Submitted) -> None:

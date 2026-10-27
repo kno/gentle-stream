@@ -163,6 +163,7 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 | `s` | Save what is playing under a name; `Enter` saves (an existing name is replaced), `Esc` cancels |
 | `p` | Saved prompts: `Enter` applies one instantly, `d` or `Delete` removes it, `Esc` closes |
 | `j` | Journey menu: restart, skip or stop the running journey; `Enter` sends the command, `Esc` closes |
+| `J` | Journey picker: create one from a description (Gentle Shell), or play a built-in or saved journey; `Enter` picks, `Esc` closes |
 | `+` / `-` | Volume up / down by 5% |
 | `↑` / `↓` | Volume up / down by 1% |
 | `b` | Back: leave the app and keep the music playing in the background |
