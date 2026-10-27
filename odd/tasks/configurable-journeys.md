@@ -18,8 +18,8 @@ Objective: deliver PM-007 Journey files and PM-008 Journey controls on `feat/con
 |---|---|---|---|---|
 | T1 PM-007 journey file schema and CLI | S1-S4 | explore, implementation, focused verification | done | 8716405, 7fad3b9 |
 | T2 PM-007 independent verification | S1-S4 | verifier after T1 commit and correction | done | mvqfalnv-8-5fu2 |
-| T3 PM-008 journey controls | S5-S7 | exploration, test-first implementation, focused verification | pending | |
-| T4 PM-008 independent verification | S5-S7 | verifier after T3 commit | pending | |
+| T3 PM-008 journey controls | S5-S7 | exploration, test-first implementation, focused verification | done | 79a8b02 |
+| T4 PM-008 independent verification | S5-S7 | verifier after T3 commit | in progress | mvqixu7b-c-ajds |
 
 ## Log
 
@@ -31,4 +31,5 @@ Objective: deliver PM-007 Journey files and PM-008 Journey controls on `feat/con
 - L6: Full post-fix suite: 610 passed, 27 skipped, 3 teardown-only `ProcessLookupError` errors at `tests/test_daemon.py:108`, with no assertion failures. Native review was declined for this candidate at consent; repeat independent verification is in progress.
 - L7: Repeat verifier mvqfalnv-8-5fu2: S1-S3 PASS; S4 functional checks PASS with the known teardown flake, LSP UNVERIFIED because its scratch session had no LSP tool. The parent production LSP check was clean. PM-007 closed locally; no push requested.
 - L8 (user): "sigue con el siguiente punto"
-- L9 (user): Selected “Rechazar claramente” for skip at the final stage: exit 1 with `already at the final journey stage`; no journey change.
+- L9 (user): Selected "Rechazar claramente" for skip at the final stage: exit 1 with `already at the final journey stage`; no journey change.
+- L10: T3 complete (commit 79a8b02): engine controls, daemon protocol, CLI restart/skip subcommands, TUI `j` menu, docs updated. 629 PASS, 27 skipped, 0 assertion failures (3 teardown flakes). Independent verification in progress (mvqixu7b-c-ajds).
