@@ -179,7 +179,7 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 | `setup-samples` | Subcommand: download the FluidR3_GM soundfont once (see below) |
 | `ctl ACTION` | Subcommand: control the music playing in the background (see below) |
 | `render OUT.wav` | Subcommand: render music into a WAV file, without a player or an audio device (see below) |
-| `journey ACTION` | Subcommand: run a built-in journey in the background player (see below) |
+| `journey ACTION` | Subcommand: create, save and play journeys in the background player (see below) |
 
 <div align="right"><a href="#top">Back to top</a></div>
 
@@ -203,11 +203,14 @@ gentle-stream ctl stop     # ends the background player
 | `ctl play`, `pause`, `toggle`, `next`, `stop` | Nothing, or `gentle-stream: nothing is playing` on stderr | `0`, or `1` when nothing plays |
 | `ctl tempo BPM [--over SECONDS]` | Glide tempo in place (default 60 seconds) | `0`, or `1` when nothing plays |
 | `ctl glide FIELD=VALUE... [--over SECONDS]` | Glide `energy`, `brightness`, `space`, `swing`, `vinyl`, `lead_density` or `bpm` in place (default 60 seconds) | `0`; `1` when nothing plays or the player refuses; `2` for a malformed or discrete field |
-| `journey play NAME` | Run a built-in journey (see [Journeys](#journeys)); nothing on stdout | `0`; `1` when nothing plays or the name is unknown |
+| `journey play NAME\|FILE` | Run a built-in or saved journey (names ignore case) or a JSON file (see [Journeys](#journeys)); nothing on stdout | `0`; `1` when nothing plays or the name is unknown |
 | `journey restart` | Restart the running journey at its first stage on the next bar | `0`; `1` when nothing plays or no journey is running |
 | `journey skip` | Advance the running journey to its next stage on the next bar | `0`; `1` when nothing plays, no journey is running, or the journey has reached its final stage |
 | `journey stop` | End the journey, leaving the music as it is | `0`, or `1` when nothing plays |
-| `journey list` | The built-in journeys, one per line with a short description | `0` |
+| `journey list` | The built-in journeys, one per line with a short description, then the saved ones | `0` |
+| `journey create "DESCRIPTION" [--dry-run]` | Ask the model once (`--model`, `--gentle-shell` apply) for a journey: the normalized JSON on stdout, the token usage on stderr, then it starts; `--dry-run` only prints | `0`; `1` when the model fails, answers with no JSON object or an invalid journey, times out, or nothing plays |
+| `journey save NAME FILE\|--last` | Save a JSON file, or the last journey the player started, under `NAME`: `Saved journey "NAME"` (or `Replaced`) | `0`; `1` for a built-in name, an unreadable store, nothing playing, or no journey started yet |
+| `journey delete NAME` | Remove a saved journey: `Deleted journey "NAME"` | `0`; `1` when there is no saved journey with that name or it is a built-in |
 
 A glide changes the piece that is playing instead of starting a new one: the song form keeps going, and each bar takes the values at its start. Each field glides on its own (a second `glide` adds to or replaces per field), values are clamped like a mood's, and a new mood or `next` cancels every glide. Discrete fields (genre, key, mode, instruments, drums) only change with a new piece. Genres that pick something once per piece from the tempo (chiptune's arpeggio speed) keep the value the piece started with. If the background player is older than the command, `ctl` says so: run `gentle-stream ctl stop` and start again.
 
@@ -229,6 +232,17 @@ gentle-stream journey validate ./sunrise.json > normalized.json
 gentle-stream journey show ambient-to-synthwave > journey.json
 gentle-stream journey play ./sunrise.json
 gentle-stream journey stop             # the music stays where the journey left it
+```
+
+Describe one in words and keep the ones you like. `create` is the only command that calls a model; saved journeys live in `journeys.json` next to `presets.json` (`$XDG_CONFIG_HOME/gentle-stream/`, default `~/.config`), written atomically like the saved prompts, and play by name like the built-ins (whose names cannot be reused):
+
+```bash
+gentle-stream journey create "20-minute ambient to energetic 118 bpm synthwave, then keep it going"
+gentle-stream journey save "Morning run" --last
+gentle-stream journey play "morning run"
+gentle-stream journey create --dry-run "slow rainy evening" > rainy.json
+gentle-stream journey save "Rainy evening" rainy.json
+gentle-stream journey delete "Rainy evening"
 ```
 
 | Journey | Stages | End |
