@@ -22,12 +22,19 @@
 
 ## Tasks
 
-| Task | Spec | Route | Notes |
-| :--- | :--- | :--- | :--- |
-| T1 | S1-S2, S4 | `journey.py`, `test_journey.py` | Implement `shape()`, add `curve` field to `Stage`, update `to_dict/from_dict`, validation |
-| T2 | S3 | `engine.py` | Apply `shape()` in journey evaluation at next bar; update progress snapshot |
-| T3 | S5, S6 | `test_journey.py` | Property tests, demo/manual listening (render output) |
+| Task | Spec | Route | Status | Commit |
+| :--- | :--- | :--- | :--- | :--- |
+| T1 | S1-S2, S4 | `journey.py`, `test_journey.py` | done | 60253e8 |
+| T2 | S3 | `journey.py` (at method) | done | 60253e8 |
+| T3 | S5, S6 | `test_journey.py` | done (6 tests) | 60253e8 |
 
 ## Log
 
 - L1: User request "siguiente" → PM-009 start
+- L2: Implemented `shape()` function, `Stage.curve` field (default "linear"), validation for 6 curve types
+- L3: Updated `Journey.from_dict()` to read `curve` with fallback to "linear" + warning for unknown
+- L4: Updated `Journey.to_dict()` to serialize `curve` (omit if default)
+- L5: Modified `Journey.at()` to use `shape(stage.curve, progress)` for interpolation
+- L6: Added 6 curve tests: boundary conditions (0→1), monotonicity, ease-in < linear, from_dict/to_dict, fallback, interpolation effect
+- L7: Commit 60253e8; 76 total journey tests pass (99 with engine tests)
+- L8: PM-009 complete; ready for next feature (PM-010: natural-language journeys)
