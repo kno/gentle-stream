@@ -297,6 +297,8 @@ A stage can switch parts off and on with an optional `layers` block (`chords`, `
 {"name": "Bare", "seconds": 120, "layers": {"drums": false, "lead": false}}
 ```
 
+A stage that changes genre can ask for a gradual step with `"transition": {"bars": 8}` (1 to 32 bars): from the phrase where the step would happen, both genres play together and crossfade at equal power, through one master chain whose settings move from the old genre's to the new one's, and then the new piece carries on alone. `next` or a new mood during the crossfade drops the incoming piece.
+
 Drums can build with the journey. `"drums": "energy"` at the top of a journey maps the energy to a drum level (below 0.25 none, then soft, lofi, and busy from 0.75), and a stage's `"drums": "lofi"` names a level held from then on (it wins over the energy). The drums move one level per 4-bar phrase, never skipping one: `none → soft → lofi → busy`.
 
 A stage can also move the [binaural layer](#binaural) with an optional block, interpolated with the stage's curve like the other fields; a stage without one holds the values reached so far, and `level` 0 fades it out:

@@ -9,6 +9,9 @@ final values forever and `end="release"` hands the fields back to the music as t
 A stage may also switch parts off and on (`layers`, e.g. {"drums": false}): each stage's switches hold until a later
 stage changes them, every part starts on, and the engine applies a change on a 4-bar phrase boundary.
 
+A stage that changes genre may ask for a gradual step (`transition`, a number of bars): both genres then play
+together and crossfade over those bars instead of switching at once.
+
 Drums can follow the journey too: `drums="energy"` maps the energy to a level (`drums_for_energy`), and a stage's
 `drums` names one explicitly (held by later stages); the engine climbs or drops one level per 4-bar phrase.
 
@@ -45,6 +48,7 @@ ENDS = ("sustain", "release")
 BINAURAL_RANGES = {"carrier": CARRIER, "beat": BEAT, "level": (0.0, MAX_LEVEL)}
 LAYERS = ("chords", "bass", "drums", "lead", "counter")   # the parts a bar plan can hold (`BarPlan.layers`)
 DRUM_ENERGY = ((0.25, "none"), (0.5, "soft"), (0.75, "lofi"))   # below each energy, that drum level; then busy
+MAX_TRANSITION_BARS = 32
 
 
 def drums_for_energy(energy: float) -> str:
@@ -88,6 +92,7 @@ class Stage:
     binaural: Mapping[str, float] = MappingProxyType({})   # the binaural values reached by the end of the stage
     layers: Mapping[str, bool] = MappingProxyType({})     # parts switched on (True) or off (False) from this stage
     drums: str | None = None                              # a drum level from this stage on, None to keep the last
+    transition: int | None = None                         # bars over which a genre step crossfades, None: at once
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.seconds) or self.seconds <= 0:
@@ -116,10 +121,12 @@ class Stage:
         object.__setattr__(self, "layers", MappingProxyType(dict(self.layers)))
         if self.drums is not None and self.drums not in DRUMS:
             raise ValueError(f"stage {self.name!r}: drums must be one of {', '.join(DRUMS)}")
+        if self.transition is not None and not 1 <= self.transition <= MAX_TRANSITION_BARS:
+            raise ValueError(f"stage {self.name!r}: a transition lasts 1 to {MAX_TRANSITION_BARS} bars")
 
     def __hash__(self) -> int:
         return hash((self.name, self.seconds, self.genre, self.curve, frozenset(self.to.items()),
-                     frozenset(self.binaural.items()), frozenset(self.layers.items()), self.drums))
+                     frozenset(self.binaural.items()), frozenset(self.layers.items()), self.drums, self.transition))
 
 
 @dataclass(frozen=True)
@@ -160,6 +167,18 @@ def _binaural_values(data) -> dict[str, float] | None:
     if not isinstance(data, Mapping):
         return None
     return {name: float(data[name]) for name in BINAURAL_FIELDS if name in data}
+
+
+def _parse_transition(raw, number: int) -> int | None:
+    """A stage's crossfade length in bars, or None for a step at once."""
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise ValueError(f'stage {number}: "transition" must be an object')
+    bars = raw.get("bars")
+    if isinstance(bars, bool) or not isinstance(bars, int) or not 1 <= bars <= MAX_TRANSITION_BARS:
+        raise ValueError(f'stage {number}: "transition.bars" must be a whole number from 1 to {MAX_TRANSITION_BARS}')
+    return bars
 
 
 def _parse_drums(raw, number: int) -> str | None:
@@ -277,7 +296,8 @@ class Journey:
                     raise ValueError(f'stage {number}: "curve" must be a string')
             stages.append(Stage(stage_name, float(seconds), normalized, genre, curve,
                                 _parse_binaural(raw.get("binaural", {}), number, warnings),
-                                _parse_layers(raw.get("layers", {}), number), _parse_drums(raw.get("drums"), number)))
+                                _parse_layers(raw.get("layers", {}), number), _parse_drums(raw.get("drums"), number),
+                                _parse_transition(raw.get("transition"), number)))
         if total > 12 * 60 * 60:
             raise ValueError('combined stage duration must be at most 43200 seconds')
         journey_name = data.get("name", name)
@@ -311,6 +331,8 @@ class Journey:
                 stage_dict["layers"] = dict(s.layers)
             if s.drums is not None:
                 stage_dict["drums"] = s.drums
+            if s.transition is not None:
+                stage_dict["transition"] = {"bars": s.transition}
             stages_list.append(stage_dict)
         data = {"version": 1, "name": self.name, "title": self.title, "description": self.description,
                 "end": self.end, "stages": stages_list}

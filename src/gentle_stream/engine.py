@@ -29,7 +29,7 @@ player to pass along.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -40,7 +40,7 @@ from . import genres
 from . import samples as _samples
 from .binaural import Binaural, BinauralLayer, glide_seconds
 from .composer import Composer, harmonic_handoff
-from .genres.base import Piece
+from .genres.base import Genre, Master, Piece
 from .genres.lofi import Instruments  # noqa: F401  (re-exported: the procedural lo-fi voices)
 from .mastering import Compressor, ConvolutionReverb, procedural_ir, soft_clip
 from .style import DEFAULT, DRUMS, KEYS, Style
@@ -80,6 +80,33 @@ class _Running:
     start_sample: int
     start: dict[str, float]
     binaural_start: dict[str, float] | None = None   # where its binaural values start, when it owns the layer
+
+
+@dataclass
+class _Voice:
+    """One piece's playing state, as `_start_piece` sets it up; an incoming piece keeps its own while it crossfades."""
+    style: Style
+    genre: Genre
+    seed: int
+    rng: np.random.Generator
+    inst: object
+    ton: int
+    composer: Composer
+    piece: Piece
+    acc: np.ndarray
+    bar: int = 0
+
+
+def crossfade_gains(p: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(outgoing, incoming) gains `p` (0..1) of the way through an equal-power crossfade: their squares sum to 1,
+    so two unrelated pieces keep a steady loudness."""
+    return np.cos(p * np.pi / 2), np.sin(p * np.pi / 2)
+
+
+def _blend(a: Master, b: Master, p: float) -> Master:
+    """The master settings `p` (0..1) of the way from `a` to `b`."""
+    values = {f.name: (1 - p) * getattr(a, f.name) + p * getattr(b, f.name) for f in fields(Master)}
+    return Master(**{**values, "tone": int(round(values["tone"]))})
 
 
 class JourneyDriven(ValueError):
@@ -125,6 +152,8 @@ class Engine:
         self._binaural = BinauralLayer(sr)      # render thread only
         self._masked: frozenset[str] = frozenset()   # parts the journey switched off, changed on phrase boundaries
         self.layers: frozenset[str] = frozenset()    # the parts planned for the bar rendered last
+        self._incoming: _Voice | None = None   # the piece a genre-step transition crossfades in
+        self._fade = (0, 0)                     # (samples done, samples in all) of that crossfade
         self._driving: Journey | None = None    # the journey playing, as other threads may see it (under _lock)
         self._running: _Running | None = None   # the journey playing; render thread only
         self._snapshot: JourneySnapshot | None = None   # its progress at the bar rendered last
@@ -273,23 +302,37 @@ class Engine:
 
     # ------------------------------------------------------------ piece setup
     def _start_piece(self, style: Style, skip_intro: bool = False, motif: tuple | None = None) -> None:
-        """A new piece in `style`; `motif` is the previous piece's motif head, carried across a genre step."""
-        tempo_ratio = style.bpm / self.style.bpm if motif is not None else 1.0
-        self.style = style
+        """A new piece in `style`, at once; `motif` is the previous piece's motif head, carried across a genre step."""
+        self._incoming = None   # a new mood or "next" ends a crossfade: its incoming piece is dropped
+        self._use(self._voice(style, self._acc, skip_intro, motif))
         self.piece_seconds = 0.0
-        self.genre = genres.get(style.genre)
-        self.seed = int(self._root_rng.integers(2 ** 31))
-        self.rng = np.random.default_rng(self.seed)
-        self.inst = self.genre.instruments(self.rng, self.sr, self._sampled)
-        self.piece += 1
-        self.bar = 0
+
+    def _voice(self, style: Style, acc: np.ndarray, skip_intro: bool = False, motif: tuple | None = None) -> _Voice:
+        """Set up a piece in `style` that mixes into `acc`."""
+        tempo_ratio = style.bpm / self.style.bpm if motif is not None else 1.0
+        genre = genres.get(style.genre)
+        seed = int(self._root_rng.integers(2 ** 31))
+        rng = np.random.default_rng(seed)
+        inst = genre.instruments(rng, self.sr, self._sampled)
         ton = 48 + KEYS.index(style.key)
-        self.ton = ton - 12 if ton > 54 else ton
-        self.composer = Composer(style, self.seed, self.ton, self.genre.chord, skip_intro=skip_intro, motif=motif,
-                                 tempo_ratio=tempo_ratio)
-        self.section = self.composer.plan(0).section
-        self._piece = Piece(style, self.rng, self.inst, self.ton, self.sr, self._acc)
-        self.genre.start(self._piece)
+        ton = ton - 12 if ton > 54 else ton
+        composer = Composer(style, seed, ton, genre.chord, skip_intro=skip_intro, motif=motif, tempo_ratio=tempo_ratio)
+        piece = Piece(style, rng, inst, ton, self.sr, acc)
+        genre.start(piece)
+        return _Voice(style, genre, seed, rng, inst, ton, composer, piece, acc)
+
+    def _use(self, voice: _Voice) -> None:
+        """Make `voice` the piece playing, from its current bar."""
+        self.style, self.genre, self.seed, self.rng, self.inst = voice.style, voice.genre, voice.seed, voice.rng, voice.inst
+        self.ton, self.composer, self._piece, self._acc = voice.ton, voice.composer, voice.piece, voice.acc
+        self.piece += 1
+        self.bar = voice.bar
+        self.section = self.composer.plan(self.bar).section
+
+    @property
+    def crossfading(self) -> bool:
+        """Whether a genre-step transition plays two pieces together right now."""
+        return self._incoming is not None
 
     # ------------------------------------------------------------ rendering
     def render_bar(self) -> np.ndarray:
@@ -324,7 +367,7 @@ class Engine:
         target_genre = (running.journey.stages[int(stage_index)].genre
                         if running is not None and stage_index is not None else None)
         switch_genre = (target_genre is not None and target_genre != self.style.genre
-                        and self.bar > 0 and self.bar % 4 == 0)
+                        and self.bar > 0 and self.bar % 4 == 0 and self._incoming is None)
         if running is not None and journey is None and running.journey.end == "release" \
                 and t >= running.journey.seconds:   # its final values once more, then it lets go
             self._running = None
@@ -334,10 +377,16 @@ class Engine:
             self._start_piece(replace(style, **values))
         elif nxt:
             self._start_piece(replace(self.style.variation(self._root_rng), **values))
-        elif switch_genre and target_genre is not None:
+        elif switch_genre and target_genre is not None and stage_index is not None and running is not None:
             key, mode = harmonic_handoff(self.style.key, self.style.mode, genres.get(target_genre).modes)
-            self._start_piece(replace(self.style, genre=target_genre, key=key, mode=mode, **values), skip_intro=True,
-                              motif=self.composer.head)
+            stepped = replace(self.style, genre=target_genre, key=key, mode=mode, **values)
+            bars = running.journey.stages[int(stage_index)].transition
+            if bars is None:
+                self._start_piece(stepped, skip_intro=True, motif=self.composer.head)
+            else:   # both play from here; the outgoing piece leads until the crossfade ends
+                self._incoming = self._voice(stepped, np.zeros_like(self._acc), skip_intro=True,
+                                             motif=self.composer.head)
+                self._fade = (0, bars * int(round(self.bar_seconds * self.sr)))
         self._apply_glides()
         if journey is not None:   # starts here, at t = 0, from the values this bar already has
             playing = self._binaural.setting.to_dict() if self._binaural.active and self._binaural.setting else None
@@ -356,14 +405,15 @@ class Engine:
             self._masked = running.journey.masked_layers(t) if running is not None else frozenset()
             if running is not None and running.journey.drives_drums:
                 self._step_drums(running.journey.drums_at(t, self.style.energy))
-        if running is not None and (self.bar + 1) % 4 == 0:
+        if running is not None and (self.bar + 1) % 4 == 0 and self._incoming is None:
             self._prepare_genre_step(running, t + self.bar_seconds)
         self._schedule_bar()
         n = int(round(self.bar_seconds * self.sr))
-        out = self._acc[:n].copy()
-        self._acc[:-n] = self._acc[n:]
-        self._acc[-n:] = 0
-        out = self._master(out)
+        out = self._take(self._acc, n)
+        if self._incoming is not None:
+            out = self._crossfade(out, n)
+        else:
+            out = self._master(out)
         if running is not None and running.binaural_start is not None:   # head for the journey's end-of-bar values
             end = (self.samples_out + n - running.start_sample) / self.sr
             values = running.journey.binaural_at(end, running.binaural_start)
@@ -374,6 +424,10 @@ class Engine:
         self.samples_out += n
         self.piece_seconds += n / self.sr
         self._last_bar_start = bar_start
+        if self._incoming is not None and self._fade[0] >= self._fade[1]:   # the incoming piece takes over
+            self._use(self._incoming)
+            self._incoming = None
+            self.piece_seconds = self._fade[1] / self.sr
         self._rendered = (running.journey, (self.samples_out - running.start_sample) / self.sr) \
             if running is not None and self._running is running else None
         return out.astype(np.float32)
@@ -440,6 +494,36 @@ class Engine:
         _, _, values = running.journey.at(t, running.start)
         return {name: _bounded(name, value) for name, value in values.items()}
 
+    @staticmethod
+    def _take(acc: np.ndarray, n: int) -> np.ndarray:
+        """The next `n` samples of `acc`, shifting the rest (tails still ringing) forward."""
+        out = acc[:n].copy()
+        acc[:-n] = acc[n:]
+        acc[-n:] = 0
+        return out
+
+    def _crossfade(self, out: np.ndarray, n: int) -> np.ndarray:
+        """Mix the incoming piece's next bar into `out` with an equal-power crossfade, through the one master
+        chain, whose settings move from the outgoing genre's to the incoming one's over the transition."""
+        incoming = self._incoming
+        assert incoming is not None
+        synced = {name: getattr(self.style, name) for name in GLIDE_FIELDS}   # same tempo, energy and colour
+        synced["drums"] = self.style.drums
+        incoming.style = replace(incoming.style, **synced)
+        incoming.piece.style = replace(incoming.piece.style, **synced)
+        incoming.composer.style = replace(incoming.composer.style, **synced)
+        plan = incoming.composer.plan(incoming.bar)
+        if plan.layers & self._masked:
+            plan = replace(plan, layers=plan.layers - self._masked)
+        incoming.genre.schedule(incoming.piece, plan)
+        incoming.bar += 1
+        done, total = self._fade
+        g_out, g_in = crossfade_gains(np.clip((done + np.arange(n)) / total, 0.0, 1.0)[:, None])
+        mixed = out * g_out + self._take(incoming.acc, n) * g_in
+        self._fade = (done + n, total)
+        master = _blend(self.genre.master(self.style), incoming.genre.master(incoming.style), min(1.0, done / total))
+        return self._master(mixed, master)
+
     def _schedule_bar(self) -> None:
         p = self.composer.plan(self.bar)
         if p.layers & self._masked:
@@ -456,8 +540,10 @@ class Engine:
         k = min(n, span)
         return np.concatenate([np.linspace(prev, value, k, endpoint=False), np.full(n - k, value)])[:, None]
 
-    def _master(self, x: np.ndarray) -> np.ndarray:
-        m, n, sr = self.genre.master(self.style), len(x), self.sr
+    def _master(self, x: np.ndarray, m: Master | None = None) -> np.ndarray:
+        """`x` through the master chain, with the playing genre's settings unless `m` names others."""
+        m = m if m is not None else self.genre.master(self.style)
+        n, sr = len(x), self.sr
         span = int(RAMP * sr)
         # convolution reverb send (the music only; the tail rings on across bars and style changes)
         space = int(round(m.space * 10))

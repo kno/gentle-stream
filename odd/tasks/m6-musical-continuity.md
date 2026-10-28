@@ -25,7 +25,7 @@ time during it; no clicks at either end."
 | T2 PM-017 motif across stages | S2 | inline | `feat/motif-continuity` | done (PM-017 commit) |
 | T3 PM-018 layer entrances | S3 | inline | `feat/stage-layers` | done (PM-018 commit) |
 | T4 PM-019 drum ramp | S4 | inline | `feat/drum-ramp` | done (PM-019 commit) |
-| T5 PM-020 two-genre crossfade | S5 | inline | `feat/genre-crossfade` | pending |
+| T5 PM-020 two-genre crossfade | S5 | inline | `feat/genre-crossfade` | done (PM-020 commit) |
 | T6 PM-021 flagship journey | S6 | inline; listening review by the maintainer | `feat/flagship-journey` | pending |
 
 ## Log
@@ -52,3 +52,10 @@ time during it; no clicks at either end."
   now builds its drums with the energy (roadmap demo). JourneyStore renaming now uses `dataclasses.replace` so new
   Journey fields survive saving. Evidence: RED (drums_for_energy missing) -> 19 passed; mutation (jump straight to
   the target) -> RED. Full suite 924 passed, 27 skipped, 5 known daemon teardown errors; pyright clean.
+- L7: T5 design: `_start_piece` split into `_voice` (same RNG draw order, golden hashes unchanged) and `_use`; a
+  stage `transition: {"bars": N}` (1-32) starts an incoming `_Voice` with its own accumulator at the step's phrase,
+  synced to the outgoing tempo/energy/colour/drums each bar, mixed with `crossfade_gains` (cos/sin) through one
+  master chain blended per bar, promoted when the samples are done; `next`/new mood drop it. Evidence: RED 13 ->
+  14 passed (RMS within +-3 dB, no clicks, >4x real time, 8 bars). The +-3 dB criterion alone also passes a linear
+  fade, so an exact equal-power test was added (linear mutation -> RED). Full suite 938 passed, 27 skipped, 2 known
+  daemon teardown errors; pyright clean. Procedural backend only (the samples backend is not installed here).
