@@ -22,7 +22,7 @@ melody."
 | Task | Specs | Route | Branch | Commit |
 | :--- | :--- | :--- | :--- | :--- |
 | T1 PM-022 procedural wordless choir | S1 | inline | `feat/wordless-choir` | done (PM-022 commit) |
-| T2 PM-023 sampled choir | S2 | inline (FluidSynth tests skip without the soundfont) | `feat/sampled-choir` | pending |
+| T2 PM-023 sampled choir | S2 | inline (FluidSynth tests skip without the soundfont) | `feat/sampled-choir` | blocked: waiting for the user to install FluidSynth and the soundfont |
 | T3 PM-024 vocals in journeys and status | S3 | inline | `feat/vocal-status` | pending |
 | T4 PM-025 wordless vocal melody | S4 | inline | `feat/vocal-melody` | pending |
 | T5 PM-026 vocal harmonies | S5 | inline | `feat/vocal-harmonies` | pending |
@@ -39,3 +39,4 @@ melody."
   full scale with voice=1, old presets load with voice 0, prompt offers the field. The GLIDE_FIELDS set test was
   extended with `voice` (requested continuous field). Full non-slow suite 967 passed + that test; pyright clean.
   Not done: manual listening on ambient and lo-fi (roadmap manual check).
+- L4: FluidSynth library and soundfont are missing here; user chose "Lo instalo yo y me avisas" (they run `brew install fluid-synth` and `uv run gentle-stream setup-samples`, then PM-023 is implemented and verified).
