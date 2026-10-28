@@ -23,7 +23,7 @@ time during it; no clicks at either end."
 | :--- | :--- | :--- | :--- | :--- |
 | T1 PM-016 harmonic handoff | S1 | inline | `feat/harmonic-handoff` | done (PM-016 commit) |
 | T2 PM-017 motif across stages | S2 | inline | `feat/motif-continuity` | done (PM-017 commit) |
-| T3 PM-018 layer entrances | S3 | inline | `feat/stage-layers` | pending |
+| T3 PM-018 layer entrances | S3 | inline | `feat/stage-layers` | done (PM-018 commit) |
 | T4 PM-019 drum ramp | S4 | inline | `feat/drum-ramp` | pending |
 | T5 PM-020 two-genre crossfade | S5 | inline | `feat/genre-crossfade` | pending |
 | T6 PM-021 flagship journey | S6 | inline; listening review by the maintainer | `feat/flagship-journey` | pending |
@@ -42,3 +42,8 @@ time during it; no clicks at either end."
   hashes pass; head carried in scale steps (realised in E minor), augmented x2 above a 1.5 tempo ratio, kept through
   later cycles, carried by a journey genre step. Full suite 892 passed, 27 skipped, 5 known daemon teardown errors;
   pyright clean. Native review assess unavailable (package-local binary missing).
+- L5: T3 decision: `layers` switches hold across stages (like fields), every part starts on, unknown part names
+  and non-boolean switches reject the journey; masking only removes parts the composer planned. Evidence: RED
+  (LAYERS missing) -> 13 passed; mutations (apply off-boundary, no filtering) -> 4 RED each. The full suite caught a
+  broken f-string brace in the new prompt line (fixed, pinned by a prompt test). Full suite 905 passed, 27 skipped,
+  8 known daemon teardown errors; pyright clean.

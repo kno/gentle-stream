@@ -123,6 +123,8 @@ class Engine:
         self._binaural_queued = False           # a binaural setting waits for the next bar (under _lock)
         self._pending_binaural: tuple[Binaural | None, float] = (None, 0.0)   # the setting (None: off), glide
         self._binaural = BinauralLayer(sr)      # render thread only
+        self._masked: frozenset[str] = frozenset()   # parts the journey switched off, changed on phrase boundaries
+        self.layers: frozenset[str] = frozenset()    # the parts planned for the bar rendered last
         self._driving: Journey | None = None    # the journey playing, as other threads may see it (under _lock)
         self._running: _Running | None = None   # the journey playing; render thread only
         self._snapshot: JourneySnapshot | None = None   # its progress at the bar rendered last
@@ -350,6 +352,8 @@ class Engine:
         self._snapshot = (running.journey.snapshot(t, running.start, self.style.bpm, running.binaural_start)
                           if running is not None else None)
         bar_start = self.piece_seconds
+        if self.bar % 4 == 0:   # a phrase boundary: the parts the journey switches take effect here
+            self._masked = running.journey.masked_layers(t) if running is not None else frozenset()
         if running is not None and (self.bar + 1) % 4 == 0:
             self._prepare_genre_step(running, t + self.bar_seconds)
         self._schedule_bar()
@@ -426,7 +430,9 @@ class Engine:
 
     def _schedule_bar(self) -> None:
         p = self.composer.plan(self.bar)
-        self.section = p.section
+        if p.layers & self._masked:
+            p = replace(p, layers=p.layers - self._masked)
+        self.section, self.layers = p.section, p.layers
         self.genre.schedule(self._piece, p)
 
     def _glide(self, name: str, value: float, n: int, span: int) -> np.ndarray | float:

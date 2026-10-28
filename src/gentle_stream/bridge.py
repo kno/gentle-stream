@@ -235,7 +235,9 @@ Genres and tempo ranges:
 Fields and ranges: {ranges}
 Curves: {', '.join(CURVES)}. Ends: sustain or release. Stage seconds: 10-14400 each, 43200 total.
 Return only JSON with version, name, title, description, end, and stages. Each stage has name, seconds, to, and
-optional genre, curve and binaural; to contains fields only.
+optional genre, curve, layers and binaural; to contains fields only.
+Optional "layers" per stage switches parts off or on from that stage: {{"drums": false, "lead": true}};
+parts: chords, bass, drums, lead, counter; switches hold until a later stage changes them and land on 4-bar phrases.
 Optional "binaural" per stage, only when the request asks for it: carrier 40-1000 Hz, beat 0.5-40 Hz, level 0-0.08
 (a quiet tone on each ear, beat apart), reached by the end of the stage; level 0 fades it out. It is only a
 listening texture: never claim any effect on the listener (health, focus, sleep, mood or other).

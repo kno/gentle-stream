@@ -291,6 +291,12 @@ The tempo shows one value when the stage ends at the tempo it has (`100 bpm`), a
 
 `stage` counts from 1, `progress` is through the stage (0 to 1), `target_bpm` is the tempo at the end of the stage and `seconds_left` is `null` while sustaining. A journey that moves the binaural layer also reports `"binaural": {"carrier", "beat", "level"}` at the bar's start (`null` otherwise).
 
+A stage can switch parts off and on with an optional `layers` block (`chords`, `bass`, `drums`, `lead`, `counter`): drums can enter in stage 2 and the lead in stage 3. Every part starts on, each switch holds until a later stage changes it, and changes land on the next 4-bar phrase boundary; a part switched on still plays only where the song form gives it (no drums in an intro):
+
+```json
+{"name": "Bare", "seconds": 120, "layers": {"drums": false, "lead": false}}
+```
+
 A stage can also move the [binaural layer](#binaural) with an optional block, interpolated with the stage's curve like the other fields; a stage without one holds the values reached so far, and `level` 0 fades it out:
 
 ```json

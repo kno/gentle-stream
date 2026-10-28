@@ -6,6 +6,9 @@ stage does not name holds its value. `Journey.at` is pure: the engine evaluates 
 seconds since the journey started, and applies the values in place. After the last stage, `end="sustain"` holds the
 final values forever and `end="release"` hands the fields back to the music as they are.
 
+A stage may also switch parts off and on (`layers`, e.g. {"drums": false}): each stage's switches hold until a later
+stage changes them, every part starts on, and the engine applies a change on a 4-bar phrase boundary.
+
 A stage may also move the binaural layer (`binaural.Binaural`): its `binaural` block names the carrier, beat or
 level reached by its end, interpolated the same way, from the layer playing when the journey starts (silent when
 it is off). A journey that names any of them owns the layer while it runs; one that names none leaves it alone.
@@ -36,6 +39,7 @@ from .storage import write_json_atomic
 
 ENDS = ("sustain", "release")
 BINAURAL_RANGES = {"carrier": CARRIER, "beat": BEAT, "level": (0.0, MAX_LEVEL)}
+LAYERS = ("chords", "bass", "drums", "lead", "counter")   # the parts a bar plan can hold (`BarPlan.layers`)
 CURVES = ("linear", "ease-in", "ease-out", "ease-in-out", "exp", "step")
 
 
@@ -72,6 +76,7 @@ class Stage:
     genre: str | None = None
     curve: str = "linear"
     binaural: Mapping[str, float] = MappingProxyType({})   # the binaural values reached by the end of the stage
+    layers: Mapping[str, bool] = MappingProxyType({})     # parts switched on (True) or off (False) from this stage
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.seconds) or self.seconds <= 0:
@@ -94,10 +99,14 @@ class Stage:
             if not lo <= value <= hi:
                 raise ValueError(f"stage {self.name!r}: binaural {name} must be between {lo:g} and {hi:g}")
         object.__setattr__(self, "binaural", MappingProxyType(dict(self.binaural)))
+        unknown_layers = sorted(set(self.layers) - set(LAYERS))
+        if unknown_layers:
+            raise ValueError(f"stage {self.name!r}: unknown layer {unknown_layers[0]!r}: only {', '.join(LAYERS)}")
+        object.__setattr__(self, "layers", MappingProxyType(dict(self.layers)))
 
     def __hash__(self) -> int:
         return hash((self.name, self.seconds, self.genre, self.curve, frozenset(self.to.items()),
-                     frozenset(self.binaural.items())))
+                     frozenset(self.binaural.items()), frozenset(self.layers.items())))
 
 
 @dataclass(frozen=True)
@@ -138,6 +147,18 @@ def _binaural_values(data) -> dict[str, float] | None:
     if not isinstance(data, Mapping):
         return None
     return {name: float(data[name]) for name in BINAURAL_FIELDS if name in data}
+
+
+def _parse_layers(raw, number: int) -> dict[str, bool]:
+    """A stage's part switches; an unknown part or a value that is not true or false rejects the journey."""
+    if not isinstance(raw, Mapping):
+        raise ValueError(f'stage {number}: "layers" must be an object')
+    for name, on in raw.items():
+        if name not in LAYERS:
+            raise ValueError(f'stage {number}: unknown layer "{name}" (choose from {", ".join(LAYERS)})')
+        if not isinstance(on, bool):
+            raise ValueError(f'stage {number}: "layers.{name}" must be true or false')
+    return dict(raw)
 
 
 def _parse_binaural(raw, number: int, warnings: list[str]) -> dict[str, float]:
@@ -234,7 +255,8 @@ class Journey:
                 else:
                     raise ValueError(f'stage {number}: "curve" must be a string')
             stages.append(Stage(stage_name, float(seconds), normalized, genre, curve,
-                                _parse_binaural(raw.get("binaural", {}), number, warnings)))
+                                _parse_binaural(raw.get("binaural", {}), number, warnings),
+                                _parse_layers(raw.get("layers", {}), number)))
         if total > 12 * 60 * 60:
             raise ValueError('combined stage duration must be at most 43200 seconds')
         journey_name = data.get("name", name)
@@ -261,6 +283,8 @@ class Journey:
                 stage_dict["curve"] = s.curve
             if s.binaural:
                 stage_dict["binaural"] = dict(s.binaural)
+            if s.layers:
+                stage_dict["layers"] = dict(s.layers)
             stages_list.append(stage_dict)
         return {"version": 1, "name": self.name, "title": self.title, "description": self.description,
                 "end": self.end, "stages": stages_list}
@@ -275,6 +299,15 @@ class Journey:
         """The fields the journey owns: every field a stage names, in GLIDE_FIELDS order."""
         named = {name for stage in self.stages for name in stage.to}
         return tuple(name for name in GLIDE_FIELDS if name in named)
+
+    def masked_layers(self, t: float) -> frozenset[str]:
+        """The parts switched off at `t` seconds into the journey: every stage's switches up to the one playing."""
+        t = max(0.0, float(t))
+        index = min(bisect_right(self._ends, t), len(self.stages) - 1)
+        switches: dict[str, bool] = {}
+        for stage in self.stages[: index + 1]:
+            switches.update(stage.layers)
+        return frozenset(name for name, on in switches.items() if not on)
 
     @property
     def owns_binaural(self) -> bool:
