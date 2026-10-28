@@ -103,3 +103,4 @@ warning."
   added was dead code (the engine and the model both round bpm to 0.1), shown by a surviving mutation, and removed.
   RED 7 failed / 3 passed (those three pin behaviour that already held); GREEN 10; 6 mutations each fail tests.
 - L12: PM-035 full non-slow suite job-22 exited 0: 1292 passed, 3 deselected, 0 orphan daemons. T5 verified. M9 implemented; slow flagship tests run next.
+- L13: Slow flagship tests job-23: 3 passed, 0 orphan daemons (first run since M6). M9 closed; it is the last roadmap milestone (section 8 lists research only). Not done: listening to a real spoken phrase over the music, the FreePats choir.
