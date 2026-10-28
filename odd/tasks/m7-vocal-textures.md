@@ -29,6 +29,14 @@ melody."
 
 ## Log
 
+- L20: User chose "Dejarlas a la espera de M8 (recomendado)": keep the PM-025/026 code and tests, but melody mode only runs when the engine has a melodic voice (a future M8 voice pack). Until then the choir is always a pad, whatever `voice`, and the genre lead is never replaced. The gate lands on `feat/vocal-melody` and is merged (no rewrite) into `feat/vocal-harmonies`.
+
+- L19: Maintainer: 3b and 3c "demasiado metálicos ambos"; raw FluidSynth Choir Aahs an octave lower (stem 5, no processing) "si, aunque menos". Conclusion: the FluidR3_GM choir is itself metallic (looped GM samples; roadmap risk A5); skipping the attack (loop region only) and vibrato on a chorused sample make it worse. Samples exist every three semitones across the range, so it is not sample stretching. A real vocal melody needs better voice sources (M8). Decision on PM-025/026 pending.
+
+- L18: Maintainer (verbatim): "4 tiene como un ruido de fondo. 3 es la que más parece una voz, pero muy chillona en las notas altas". Direction: Choir Aahs read past its attack (stem 3); procedural aah with breath rejected. Measured cause of shrillness: register, not timbre: the composer's melody spans MIDI 65-89 (p10/p50/p90 71/79/85); the Choir Aahs spectral centroid stays 1.6-2.2 kHz across pitches. Two variants rendered: 3b an octave lower, 3c an octave lower plus 3.5 kHz low-pass. Awaiting the maintainer's pick.
+
+- L17: Maintainer listening (verbatim): "la melodía de melody.wav no parecen voces". Diagnosis: the sampled melody sings GM 53 Voice Oohs for the "o"/"u" vowels (flute-like in FluidR3_GM); GM 52 Choir Aahs has a 0.37 s attack to half level, longer than many melody notes (0.42-0.83 s); vibrato 18 cents from 300 ms is inaudible on short notes; no breath on melodic notes. Four melody-only comparison stems rendered by the untracked script `listen/compare_melody.py` (current sampled, current procedural, Choir Aahs read past its attack, procedural open "a" with 40-cent vibrato from 150 ms and onset breath). PM-025 acceptance reopened pending the maintainer's choice.
+
 - L16: Full non-slow suite job-11 exited 0: 1063 passed, 3 deselected. T5 verified. M7 implemented; pending: the maintainer's listening pass (choir pad, vocal melody, harmonies) and pushing the five M7 branches.
 
 - L15: PM-026 decisions: "high energy" = plan energy >= 0.7 for one part (the composer's COUNTER_ENERGY) and >= 0.9 for
