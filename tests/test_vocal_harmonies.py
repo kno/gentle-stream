@@ -83,7 +83,7 @@ def lead_plan(energy):
 @pytest.mark.parametrize("energy, parts", [(0.5, 0), (ONE_PART_ENERGY, 1), (TWO_PART_ENERGY, 2)])
 def test_the_singer_adds_quieter_panned_high_passed_harmony_voices(energy, parts):
     piece = FakePiece(Style(voice=0.8))
-    vocals.schedule(piece, lead_plan(energy), 0.8)  # type: ignore[arg-type]
+    vocals.schedule(piece, lead_plan(energy), 0.8, melodic=True)  # type: ignore[arg-type]
     melody = [c for c in piece.calls if c[2] == vocals.MELODY_PAN]
     harmony = [c for c in piece.calls if c[2] != vocals.MELODY_PAN]
     assert len(melody) == 3 and len(harmony) == 3 * parts
@@ -100,11 +100,11 @@ def test_every_harmony_note_and_no_melody_note_goes_through_the_high_pass(monkey
     real = vocals.hp
     monkeypatch.setattr(vocals, "hp", lambda x, f, sr: filtered.append(f) or real(x, f, sr))
     piece = FakePiece(Style(voice=0.8))
-    vocals.schedule(piece, lead_plan(TWO_PART_ENERGY), 0.8)  # type: ignore[arg-type]
+    vocals.schedule(piece, lead_plan(TWO_PART_ENERGY), 0.8, melodic=True)  # type: ignore[arg-type]
     assert filtered == [vocals.HARMONY_HIGHPASS] * 6   # 3 melody notes x 2 parts; the melody stays full range
 
 
 def test_without_the_lead_or_below_the_melody_threshold_no_harmony_sings():
     piece = FakePiece(Style(voice=0.4))
-    vocals.schedule(piece, lead_plan(1.0), 0.4)  # type: ignore[arg-type]
+    vocals.schedule(piece, lead_plan(1.0), 0.4, melodic=True)  # type: ignore[arg-type]
     assert all(c[2] in vocals.PANS for c in piece.calls)   # the pad only

@@ -29,6 +29,8 @@ melody."
 
 ## Log
 
+- L21: PM-025 gate (on feat/vocal-melody): `Engine.melodic_vocals` (False until an M8 voice pack provides a melodic voice) is passed to `vocals.instrumental_plan` and `vocals.schedule`; without it the genre keeps its lead and the choir pads at any `voice`. RED 5 failed -> GREEN 82 passed across the vocal test files; the PM-023 level test's melody case now enables the melodic voice explicitly (its melody-level mutation still fails a test). Removing the gate fails 3 tests. README states that melody mode waits for a voice pack.
+
 - L20: User chose "Dejarlas a la espera de M8 (recomendado)": keep the PM-025/026 code and tests, but melody mode only runs when the engine has a melodic voice (a future M8 voice pack). Until then the choir is always a pad, whatever `voice`, and the genre lead is never replaced. The gate lands on `feat/vocal-melody` and is merged (no rewrite) into `feat/vocal-harmonies`.
 
 - L19: Maintainer: 3b and 3c "demasiado metálicos ambos"; raw FluidSynth Choir Aahs an octave lower (stem 5, no processing) "si, aunque menos". Conclusion: the FluidR3_GM choir is itself metallic (looped GM samples; roadmap risk A5); skipping the attack (loop region only) and vibrato on a chorused sample make it worse. Samples exist every three semitones across the range, so it is not sample stretching. A real vocal melody needs better voice sources (M8). Decision on PM-025/026 pending.
