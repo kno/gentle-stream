@@ -199,11 +199,11 @@ gentle-stream ctl stop     # ends the background player
 
 | Command | Output | Exit code |
 | :--- | :--- | :--- |
-| `ctl status` | One JSON line (`journey` is the running journey's progress, or `null`); just `{"running": false}` when nothing plays | `0` |
+| `ctl status` | One JSON line (`journey` is the running journey's progress, or `null`; `binaural` the binaural setting, or `null`); just `{"running": false}` when nothing plays | `0` |
 | `ctl play`, `pause`, `toggle`, `next`, `stop` | Nothing, or `gentle-stream: nothing is playing` on stderr | `0`, or `1` when nothing plays |
 | `ctl tempo BPM [--over SECONDS]` | Glide tempo in place (default 60 seconds) | `0`, or `1` when nothing plays |
 | `ctl glide FIELD=VALUE... [--over SECONDS]` | Glide `energy`, `brightness`, `space`, `swing`, `vinyl`, `lead_density` or `bpm` in place (default 60 seconds) | `0`; `1` when nothing plays or the player refuses; `2` for a malformed or discrete field |
-| `ctl binaural on [--carrier HZ] [--beat HZ] [--level L]`, `ctl binaural off` | Add or remove the binaural texture from the next bar (see [Binaural](#binaural)); nothing on stdout | `0`; `1` when nothing plays; `2` for a value out of range or options with `off` |
+| `ctl binaural on [--carrier HZ] [--beat HZ] [--level L] [--over SECONDS]`, `ctl binaural set ... [--over SECONDS]`, `ctl binaural off` | Fade the binaural texture in or out, or glide it to new values (see [Binaural](#binaural)); nothing on stdout | `0`; `1` when nothing plays or `set` finds it off; `2` for a value out of range, options with `off`, or `set` without one |
 | `journey play NAME\|FILE` | Run a built-in or saved journey (names ignore case) or a JSON file (see [Journeys](#journeys)); nothing on stdout | `0`; `1` when nothing plays or the name is unknown |
 | `journey restart` | Restart the running journey at its first stage on the next bar | `0`; `1` when nothing plays or no journey is running |
 | `journey skip` | Advance the running journey to its next stage on the next bar | `0`; `1` when nothing plays, no journey is running, or the journey has reached its final stage |
@@ -226,8 +226,9 @@ The player listens on a Unix socket in a private directory (`$XDG_RUNTIME_DIR/ge
 An optional listening texture under the music, best with headphones: a quiet sine on each ear, the left one half the beat below the carrier and the right one half the beat above it. gentle-stream makes no claim about any effect it may have. It is off by default.
 
 ```bash
-gentle-stream ctl binaural on --carrier 200 --beat 6 --level 0.05   # 197 Hz left, 203 Hz right
-gentle-stream ctl binaural off
+gentle-stream ctl binaural on --carrier 200 --beat 6 --level 0.05   # fades in: 197 Hz left, 203 Hz right
+gentle-stream ctl binaural set --beat 10 --over 30                  # glides to 195 / 205 Hz over 30 seconds
+gentle-stream ctl binaural off                                      # fades out
 ```
 
 | Option | Range | Default |
@@ -236,7 +237,7 @@ gentle-stream ctl binaural off
 | `--beat HZ` | 0.5–40 (the difference between the ears) | 6 |
 | `--level L` | 0–0.08 (each tone's amplitude) | 0.05 |
 
-The layer is added after the master chain, so no reverb, tape wow, tone filter or compressor touches it, and the music's ceiling (0.9) plus the highest level stays below full scale. A new setting keeps both tones running without a jump; turning it on starts from silence and turning it off stops it at once (smooth fades come later). `next` crossfades over about 80 ms, during which the layer's level dips briefly, without a click. The player state reports it as `binaural` (`{"carrier", "beat", "level"}` or `null`).
+The layer is added after the master chain, so no reverb, tape wow, tone filter or compressor touches it, and the music's ceiling (0.9) plus the highest level stays below full scale. Turning it on fades it in from silence over 2 seconds and turning it off fades it out the same way. While it plays, `on` with new values or `set` (only the values given) glides there over `--over` seconds (default 60, `0` changes at the next bar): the frequencies move smoothly, never the phase, so the tones never jump. `next` crossfades over about 80 ms, during which the layer's level dips briefly, without a click. The app shows `Binaural: 200 Hz carrier · 6 Hz beat · 5% · headphones recommended` under the journey line while it is on, and `ctl status` reports `binaural` as `{"carrier", "beat", "level"}` (where it is heading) or `null`.
 
 <div align="right"><a href="#top">Back to top</a></div>
 

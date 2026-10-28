@@ -20,10 +20,13 @@ key kept in a 0600 file. Messages are JSON (never pickle), one request and one r
                                      "no journey called ..."} listing the built-ins)
     {"cmd": "journey_last"}          -> {"ok": true, "journey": {...} | null} (last started journey)
     {"cmd": "journey_stop"}          (leaves the music as it is; fine when no journey runs)
-    {"cmd": "binaural", "on": true, "carrier": 200, "beat": 6, "level": 0.05}
+    {"cmd": "binaural", "on": true, "carrier": 200, "beat": 6, "level": 0.05, "seconds": 30}
                                      (the binaural layer from the next bar, see binaural.Binaural; omitted values
-                                     take the defaults; {"on": false} removes it; "binaural" in the state is the
-                                     setting of the bar rendered last, or null)
+                                     take the defaults; it fades in when off and glides over "seconds", default 0,
+                                     when on; {"on": false} fades it out; "binaural" in the state is the setting
+                                     it is heading to, or null)
+    {"cmd": "binaural_set", "beat": 10, "seconds": 30}
+                                     (glide only the given carrier, beat or level; refused while the layer is off)
     {"cmd": "stop"}                  -> {"ok": true}, then the process exits and every connection sees EOF
     anything else                    -> {"ok": false, "error": "..."}
 
@@ -181,6 +184,16 @@ def _binaural(request):
     return Binaural.from_dict(values)
 
 
+def _binaural_change(current, request):
+    """`current` with the carrier, beat or level a `binaural_set` request names; a bad value rejects it."""
+    from .binaural import Binaural
+
+    values = {name: _finite(request[name], name) for name in ("carrier", "beat", "level") if name in request}
+    if not values:
+        raise ValueError("binaural_set needs carrier, beat or level")
+    return Binaural.from_dict({**current.to_dict(), **values})
+
+
 def handle(player, request) -> dict:
     """Run one request against the player; bad requests get an error answer, never an exception."""
     from .style import Style
@@ -222,7 +235,13 @@ def handle(player, request) -> dict:
         elif cmd == "journey_stop":
             player.engine.stop_journey()
         elif cmd == "binaural":
-            player.engine.queue_binaural(_binaural(request))
+            player.engine.queue_binaural(_binaural(request), _seconds(request) if "seconds" in request else 0.0)
+        elif cmd == "binaural_set":
+            current = player.engine.binaural
+            if current is None:
+                return {"ok": False, "error": "binaural is off; turn it on first"}
+            changed = _binaural_change(current, request)
+            player.engine.queue_binaural(changed, _seconds(request) if "seconds" in request else 0.0)
         elif cmd == "journey_restart":
             player.engine.restart_journey()
         elif cmd == "journey_skip":

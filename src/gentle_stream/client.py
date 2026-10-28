@@ -168,6 +168,8 @@ class PlayerClient:
         # an older background player (still running after an upgrade) does not report these: show zero
         self.elapsed_seconds = float(state.get("elapsed_seconds", 0.0))
         self.cycle_remaining_seconds = float(state.get("cycle_remaining_seconds", 0.0))
+        binaural = state.get("binaural")   # an older player does not report it: off
+        self.binaural = Binaural.from_dict(binaural) if isinstance(binaural, dict) else None
 
     def _control(self, cmd: str, **args) -> None:
         try:
@@ -225,12 +227,17 @@ class PlayerClient:
     def journey_skip(self) -> None:
         self._control("journey_skip")
 
-    def binaural(self, setting: Binaural | None) -> None:
-        """Add the binaural layer with `setting` from the next bar; None removes it."""
+    def set_binaural(self, setting: Binaural | None, seconds: float = 0.0) -> None:
+        """Head for `setting` from the next bar, gliding over `seconds` when the layer plays (it fades in when off);
+        None fades it out."""
         if setting is None:
             self._control("binaural", on=False)
         else:
-            self._control("binaural", on=True, **setting.to_dict())
+            self._control("binaural", on=True, seconds=float(seconds), **setting.to_dict())
+
+    def glide_binaural(self, values: dict[str, float], seconds: float = 0.0) -> None:
+        """Glide only the given carrier, beat or level over `seconds`; the player refuses while the layer is off."""
+        self._control("binaural_set", seconds=float(seconds), **values)
 
     def set_volume(self, volume: float) -> None:
         self._control("set_volume", volume=float(volume))

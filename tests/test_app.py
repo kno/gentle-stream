@@ -808,3 +808,33 @@ def test_pm012_in_process_player_starts_a_journey_object():
     player.engine.queue_journey = queued.append
     player.journey_start(BUILTIN["warm-up"].to_dict())
     assert queued == [BUILTIN["warm-up"]]
+
+
+# ------------------------------------------------------------ PM-014: binaural status line
+@pytest.mark.parametrize("setting, line", [
+    (None, ""),
+    ((200, 6, 0.05), "Binaural: 200 Hz carrier · 6 Hz beat · 5% · headphones recommended"),
+    ((432.5, 7.5, 0.045), "Binaural: 432.5 Hz carrier · 7.5 Hz beat · 4.5% · headphones recommended"),
+], ids=["off", "defaults", "fractions"])
+def test_pm014_binaural_line(setting, line):
+    from gentle_stream.app import binaural_line
+    from gentle_stream.binaural import Binaural
+
+    assert binaural_line(Binaural(*setting) if setting else None) == line
+
+
+@pytest.mark.asyncio
+async def test_pm014_the_binaural_line_appears_only_while_it_is_on():
+    from gentle_stream.binaural import Binaural
+
+    app, player = make_app(FakeShell())
+    async with app.run_test() as pilot:
+        await pilot.pause(0.2)
+        assert text(app, "#binaural") == "" and not app.query_one("#binaural").display
+        player.engine.queue_binaural(Binaural(200, 6, 0.05))
+        await pilot.pause(0.2)
+        assert text(app, "#binaural") == "Binaural: 200 Hz carrier · 6 Hz beat · 5% · headphones recommended"
+        assert app.query_one("#binaural").display
+        player.engine.queue_binaural(None)
+        await pilot.pause(0.2)
+        assert text(app, "#binaural") == "" and not app.query_one("#binaural").display

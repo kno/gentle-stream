@@ -374,8 +374,9 @@ def test_ctl_controls_a_running_player(runtime, capsys):
     assert (code, err) == (0, "") and out.endswith("\n") and out.count("\n") == 1
     assert json.loads(out) == {"running": True, "playing": True, "name": "Café Night", "genre": "jazz",
                                "mood": "late café", "bpm": player.bpm, "target_bpm": player.target_bpm,
-                               "journey": None}
-    assert list(json.loads(out)) == ["running", "playing", "name", "genre", "mood", "bpm", "target_bpm", "journey"]
+                               "journey": None, "binaural": None}
+    assert list(json.loads(out)) == ["running", "playing", "name", "genre", "mood", "bpm", "target_bpm", "journey",
+                                     "binaural"]
     assert run_ctl(capsys, "pause") == (0, "", "")
     assert json.loads(run_ctl(capsys, "status")[1])["playing"] is False
     assert run_ctl(capsys, "toggle") == (0, "", "")
@@ -642,3 +643,46 @@ def test_handle_binaural_rejects_bad_requests_and_keeps_the_setting(request_, er
     assert handle(player, request_) == {"ok": False, "error": error}
     player.engine.render_bar()
     assert state(player)["binaural"] == {"carrier": 300.0, "beat": 8.0, "level": 0.04}
+
+
+# ------------------------------------------------------------ PM-014: binaural_set
+def test_handle_binaural_set_glides_only_the_given_values():
+    from gentle_stream.daemon import handle, state
+
+    player = fake_player()
+    handle(player, {"cmd": "binaural", "on": True, "carrier": 300, "beat": 8, "level": 0.04})
+    assert handle(player, {"cmd": "binaural_set", "beat": 10, "seconds": 30})["ok"]
+    assert state(player)["binaural"] == {"carrier": 300.0, "beat": 10.0, "level": 0.04}
+
+
+def test_handle_binaural_on_glides_when_it_is_already_on():
+    from gentle_stream.daemon import handle, state
+
+    player = fake_player()
+    handle(player, {"cmd": "binaural", "on": True})
+    assert handle(player, {"cmd": "binaural", "on": True, "carrier": 400, "seconds": 20})["ok"]
+    assert state(player)["binaural"] == {"carrier": 400.0, "beat": 6.0, "level": 0.05}
+
+
+@pytest.mark.parametrize("request_, error", [
+    ({"cmd": "binaural_set", "beat": 41}, "bad request: beat must be between 0.5 and 40 Hz"),
+    ({"cmd": "binaural_set"}, "bad request: binaural_set needs carrier, beat or level"),
+    ({"cmd": "binaural_set", "beat": 10, "seconds": 4000}, "bad request: seconds must be between 0 and 3600"),
+    ({"cmd": "binaural", "on": True, "seconds": -1}, "bad request: seconds must be between 0 and 3600"),
+], ids=["out-of-range", "nothing", "seconds", "on-seconds"])
+def test_handle_binaural_set_rejects_bad_requests_and_keeps_the_setting(request_, error):
+    from gentle_stream.daemon import handle, state
+
+    player = fake_player()
+    handle(player, {"cmd": "binaural", "on": True, "carrier": 300, "beat": 8, "level": 0.04})
+    assert handle(player, request_) == {"ok": False, "error": error}
+    assert state(player)["binaural"] == {"carrier": 300.0, "beat": 8.0, "level": 0.04}
+
+
+def test_handle_binaural_set_while_off_is_refused():
+    from gentle_stream.daemon import handle, state
+
+    player = fake_player()
+    assert handle(player, {"cmd": "binaural_set", "beat": 10}) == {"ok": False,
+                                                                   "error": "binaural is off; turn it on first"}
+    assert state(player)["binaural"] is None

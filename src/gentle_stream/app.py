@@ -23,6 +23,7 @@ from textual.widgets import Button, Footer, Header, Input, OptionList, Static
 from textual.widgets.option_list import Option
 from textual.worker import get_current_worker
 
+from .binaural import Binaural
 from .bridge import GentleShell, InterpretError, Usage
 from .journey import BUILTIN, JourneySnapshot, JourneyStore, JourneyStoreError
 from .player import Player
@@ -91,6 +92,15 @@ def journey_line(snap: JourneySnapshot | None, into_bar: float = 0.0) -> str:
     left = "sustaining" if snap.seconds_left is None else f"{format_time(snap.seconds_left - into_bar)} left"
     return (f"Journey: {snap.title} · stage {snap.stage}/{snap.stages} \"{snap.stage_name}\" · "
             f"{round(snap.progress * 100)}% · {tempo} · {left}")
+
+
+def binaural_line(setting: Binaural | None) -> str:
+    """`Binaural: 200 Hz carrier · 6 Hz beat · 5% · headphones recommended`, or "" when the layer is off."""
+    if setting is None:
+        return ""
+    level = round(setting.level * 100, 1)
+    return (f"Binaural: {setting.carrier:g} Hz carrier · {setting.beat:g} Hz beat · {level:g}% · "
+            "headphones recommended")
 
 
 class Spectrum(Static):
@@ -451,7 +461,7 @@ class StreamApp(App):
     #title { text-style: bold; color: $primary; }
     #details, #model { color: $text-muted; }
     #mood-line { color: $accent; text-style: italic; }
-    #journey { color: $secondary; }
+    #journey, #binaural { color: $secondary; }
     #spectrum { height: 1fr; min-height: 5; margin: 1 0; }
     #state { color: $text-muted; }
     #status { margin-top: 1; }
@@ -493,6 +503,7 @@ class StreamApp(App):
             yield Static(id="details")
             yield Static(id="mood-line")
             yield Static(id="journey", markup=False)
+            yield Static(id="binaural", markup=False)
             yield Spectrum(self.player, id="spectrum")
             yield Static(id="state")
             yield Static(id="model")
@@ -509,6 +520,7 @@ class StreamApp(App):
             "details": self.query_one("#details", Static),
             "mood-line": self.query_one("#mood-line", Static),
             "journey": self.query_one("#journey", Static),
+            "binaural": self.query_one("#binaural", Static),
             "state": self.query_one("#state", Static),
             "model": self.query_one("#model", Static),
             "status": self.query_one("#status", Static),
@@ -542,6 +554,9 @@ class StreamApp(App):
         journey = journey_line(now.journey, max(0.0, p.elapsed_seconds - now.start_seconds))
         w["journey"].update(journey)
         w["journey"].display = bool(journey)
+        binaural = binaural_line(p.binaural)
+        w["binaural"].update(binaural)
+        w["binaural"].display = bool(binaural)
         state = "[b $success]▶ Playing[/]" if p.playing else "[b $warning]⏸ Paused[/]"
         elapsed, remaining = format_time(p.elapsed_seconds), format_time(p.cycle_remaining_seconds)
         w["state"].update(f"{state} · piece {now.piece} · bar {now.bar + 1} · "

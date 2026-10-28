@@ -430,7 +430,8 @@ def test_ctl_status_reports_the_running_journey(runtime, capsys):
     assert main(["journey", "play", "warm-up"]) == 0
     wait_for(lambda: status()["journey"] is not None)
     state = status()
-    assert list(state) == ["running", "playing", "name", "genre", "mood", "bpm", "target_bpm", "journey"]
+    assert list(state) == ["running", "playing", "name", "genre", "mood", "bpm", "target_bpm", "journey",
+                           "binaural"]
     journey = state["journey"]
     assert (journey["name"], journey["title"], journey["stage"], journey["stages"], journey["stage_name"]) == (
         "warm-up", "Warm-up", 1, 4, "Settle")
@@ -642,9 +643,9 @@ def test_ctl_binaural_without_a_player_says_nothing_is_playing(runtime, capsys):
 
 
 @pytest.mark.parametrize("argv, message", [
-    (["ctl", "binaural"], "binaural requires on or off"),
-    (["ctl", "binaural", "loud"], "binaural requires on or off"),
-    (["ctl", "binaural", "on", "off"], "binaural requires on or off"),
+    (["ctl", "binaural"], "binaural requires on, off or set"),
+    (["ctl", "binaural", "loud"], "binaural requires on, off or set"),
+    (["ctl", "binaural", "on", "off"], "binaural requires on, off or set"),
     (["ctl", "binaural", "off", "--level", "0.05"], "binaural off takes no --carrier, --beat or --level"),
     (["ctl", "binaural", "on", "--carrier", "39"], "invalid binaural setting: carrier must be between 40 and 1000 Hz"),
     (["ctl", "binaural", "on", "--beat", "50"], "invalid binaural setting: beat must be between 0.5 and 40 Hz"),
@@ -665,7 +666,7 @@ def test_ctl_binaural_tells_how_to_restart_an_older_player(monkeypatch, capsys):
     from gentle_stream import client
 
     class OldPlayer:
-        def binaural(self, setting):
+        def set_binaural(self, setting, seconds):
             raise client.PlayerError("bad request: unknown command 'binaural'")
 
         def detach(self):
@@ -675,3 +676,57 @@ def test_ctl_binaural_tells_how_to_restart_an_older_player(monkeypatch, capsys):
     assert main(["ctl", "binaural", "on"]) == 1
     assert capsys.readouterr() == ("", "gentle-stream: the running player is older than this gentle-stream; "
                                        "run `gentle-stream ctl stop` and start again\n")
+
+
+# ------------------------------------------------------------ PM-014: ctl binaural set, ctl status
+def test_ctl_binaural_set_glides_only_the_given_values(runtime, capsys):  # noqa: F811
+    from gentle_stream import client
+    from tests.test_daemon import wait_for
+
+    client.ensure()
+    assert main(["ctl", "binaural", "on", "--carrier", "300", "--beat", "8", "--level", "0.04"]) == 0
+    assert main(["ctl", "binaural", "set", "--beat", "10", "--over", "30"]) == 0
+    assert capsys.readouterr() == ("", "")
+    wait_for(lambda: player_state()["binaural"] == {"carrier": 300.0, "beat": 10.0, "level": 0.04})
+
+
+def test_ctl_binaural_set_needs_the_layer_on(runtime, capsys):  # noqa: F811
+    from gentle_stream import client
+
+    assert main(["ctl", "binaural", "set", "--beat", "10"]) == 1
+    assert capsys.readouterr() == ("", "gentle-stream: nothing is playing\n")
+    client.ensure()
+    assert main(["ctl", "binaural", "set", "--beat", "10"]) == 1
+    assert capsys.readouterr() == ("", "gentle-stream: binaural is off; turn it on first\n")
+
+
+@pytest.mark.parametrize("argv, message", [
+    (["ctl", "binaural", "set"], "binaural set requires --carrier, --beat or --level"),
+    (["ctl", "binaural", "set", "--beat", "50"], "invalid binaural setting: beat must be between 0.5 and 40 Hz"),
+    (["ctl", "binaural", "set", "--beat", "10", "--over", "4000"], "--over must be between 0 and 3600 seconds"),
+    (["ctl", "binaural", "on", "--over", "-1"], "--over must be between 0 and 3600 seconds"),
+], ids=["set-nothing", "set-out-of-range", "set-over", "on-over"])
+def test_ctl_binaural_set_rejects_bad_arguments_before_contacting_the_player(argv, message, capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        main(argv)
+    out, err = capsys.readouterr()
+    assert exit_info.value.code == 2 and out == ""
+    assert err.startswith("usage: ") and err.endswith(f"gentle-stream ctl: error: {message}\n")
+
+
+def test_ctl_status_reports_the_binaural_setting(runtime, capsys):  # noqa: F811
+    import json
+
+    from gentle_stream import client
+    from tests.test_daemon import wait_for
+
+    client.ensure()
+    assert main(["ctl", "status"]) == 0
+    assert json.loads(capsys.readouterr().out)["binaural"] is None
+    assert main(["ctl", "binaural", "on"]) == 0
+
+    def reported():
+        main(["ctl", "status"])
+        return json.loads(capsys.readouterr().out)["binaural"] == {"carrier": 200.0, "beat": 6.0, "level": 0.05}
+
+    wait_for(reported)

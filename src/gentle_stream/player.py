@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .binaural import Binaural
 from .composer import cycle_position
 from .engine import Engine
 from .journey import Journey, JourneySnapshot
@@ -135,6 +136,11 @@ class Player:
     def journey_stop(self) -> None:
         """Stop the running journey at the next rendered bar."""
         self.engine.stop_journey()
+
+    @property
+    def binaural(self) -> Binaural | None:
+        """The binaural setting the layer is heading to, or None when it is off."""
+        return self.engine.binaural
 
     def next(self) -> None:
         """A new piece with the same mood, right away: its first bar is rendered now and crossfaded over the
