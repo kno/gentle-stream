@@ -11,10 +11,14 @@ play (built-in or saved) or creates one from a description with Gentle Shell.
 """
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
+
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.containers import Horizontal, Vertical
 from textual.markup import escape
 from textual.screen import ModalScreen
@@ -28,6 +32,7 @@ from .bridge import GentleShell, InterpretError, Usage
 from .journey import BUILTIN, JourneySnapshot, JourneyStore, JourneyStoreError
 from .player import Player
 from .presets import NAME_MAX, Preset, PresetError, PresetStore, normalize_name
+from .recorder import RecordError
 from .style import Style
 
 DEFAULT_MODEL_LABEL = "Gentle Shell default"
@@ -215,6 +220,70 @@ class SaveDialog(ModalScreen[str | None]):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+
+class RecordDialog(ModalScreen[str | None]):
+    """Record the session into a WAV file; Enter starts (the player checks the file), Esc cancels."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    DEFAULT_CSS = """
+    RecordDialog { align: center middle; }
+    RecordDialog > Vertical { width: 80; height: auto; border: round $primary; padding: 0 1; background: $surface; }
+    RecordDialog .heading { color: $primary; text-style: bold; }
+    RecordDialog #record-status { color: $text-muted; }
+    RecordDialog Input { border: round $panel; background: $surface; }
+    RecordDialog Input:focus { border: round $primary; }
+    """
+
+    def __init__(self, player):
+        super().__init__()
+        self.player = player
+
+    def compose(self) -> ComposeResult:
+        proposed = Path.home() / f"gentle-stream-{datetime.now():%Y%m%d-%H%M%S}.wav"
+        with Vertical():
+            yield Static("Record the session", classes="heading")
+            yield Input(str(proposed), placeholder="FILE.wav", id="record-path")
+            yield Static("Everything you hear is saved until you press r again · Enter to start · Esc to cancel",
+                         id="record-status")
+
+    def on_mount(self) -> None:
+        self.query_one(Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        from .client import PlayerError
+
+        event.stop()  # otherwise it bubbles to the app and is taken as a mood
+        path = str(Path(event.value.strip()).expanduser().resolve())
+        try:
+            self.player.record_start(path)
+        except (RecordError, PlayerError) as e:
+            self.query_one("#record-status", Static).update(f"[$error]{escape(str(e))}[/]")
+            return
+        self.dismiss(path)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class GentleCommands(Provider):
+    """The command palette (ctrl+p): every action of the app, found by name."""
+
+    async def discover(self) -> Hits:
+        for title, help_text, action in StreamApp.palette_actions():
+            yield DiscoveryHit(title, self._run(action), help=help_text)
+
+    async def search(self, query: str) -> Hits:
+        matcher = self.matcher(query)
+        for title, help_text, action in StreamApp.palette_actions():
+            score = matcher.match(title)
+            if score > 0:
+                yield Hit(score, matcher.highlight(title), self._run(action), help=help_text)
+
+    def _run(self, action: str):
+        async def run() -> None:
+            await self.app.run_action(action)
+        return run
 
 
 class PresetPicker(ModalScreen[Preset | None]):
@@ -474,6 +543,7 @@ class StreamApp(App):
     #mood { dock: bottom; margin: 0 1 1 1; border: round $panel; background: $surface; }
     #mood:focus { border: round $primary; }
     """
+    COMMANDS = App.COMMANDS | {GentleCommands}
     BINDINGS = [
         Binding("space", "toggle", "Play/Pause"),
         Binding("n", "next", "Next"),
@@ -483,6 +553,7 @@ class StreamApp(App):
         Binding("p", "pick_preset", "Saved"),
         Binding("j", "journey_menu", "Journey"),
         Binding("J", "journey_picker", "Journeys"),
+        Binding("r", "record", "Record"),
         Binding("plus,equals_sign", "volume(5)", "Vol +5"),
         Binding("minus", "volume(-5)", "Vol -5"),
         Binding("up", "volume(1)", "Vol +1"),
@@ -569,8 +640,10 @@ class StreamApp(App):
         w["vocals"].display = now.style.voice > 0
         state = "[b $success]▶ Playing[/]" if p.playing else "[b $warning]⏸ Paused[/]"
         elapsed, remaining = format_time(p.elapsed_seconds), format_time(p.cycle_remaining_seconds)
+        recording = p.recording
+        rec = f" · [b $error]● REC[/] {format_time(recording[1])}" if recording is not None else ""
         w["state"].update(f"{state} · piece {now.piece} · bar {now.bar + 1} · "
-                          f"{elapsed} · -{remaining} · vol {round(p.volume * 100)}%")
+                          f"{elapsed} · -{remaining} · vol {round(p.volume * 100)}%{rec}")
 
     def _show_model(self) -> None:
         session = f" · session: {self.session_usage.format()}" if self.session_usage else ""
@@ -611,6 +684,39 @@ class StreamApp(App):
         self.push_screen(ModelPicker(self.shell), chosen)
 
     # ------------------------------------------------------------ saved prompts
+    @staticmethod
+    def palette_actions() -> list[tuple[str, str, str]]:
+        """(title, help, action) of every action, for the command palette: all of them, keyed or not."""
+        return [
+            ("Play / pause", "Pause or resume the music (space)", "toggle"),
+            ("Next piece", "A new piece with the same mood (n)", "next"),
+            ("Describe a mood", "Type a feeling, a concept or a place (/)", "focus_mood"),
+            ("Pick the model", "The model Gentle Shell uses for moods (m)", "pick_model"),
+            ("Save what is playing", "Save the prompt and style under a name (s)", "save_preset"),
+            ("Saved prompts", "Play or delete a saved prompt (p)", "pick_preset"),
+            ("Journey controls", "Restart, skip a stage or stop the journey (j)", "journey_menu"),
+            ("Journeys", "Pick, create or play a journey (J)", "journey_picker"),
+            ("Volume up", "Five steps louder (+)", "volume(5)"),
+            ("Volume down", "Five steps quieter (-)", "volume(-5)"),
+            ("Record the session", "Start or stop recording what you hear into a WAV file (r)", "record"),
+            ("Back", "Leave the app, the music keeps playing (b)", "back"),
+            ("Quit", "Leave the app and stop the music (q)", "quit"),
+        ]
+
+    def action_record(self) -> None:
+        """Start recording (asks for the file) or stop and say where it was saved."""
+        if self.player.recording is not None:
+            saved = self.player.record_stop()
+            if saved is not None:
+                self._status(f"Saved {format_time(saved[1])} to {escape(str(saved[0]))}")
+            return
+
+        def started(path: str | None) -> None:
+            if path is not None:
+                self._status(f"Recording to {escape(path)} · r to stop")
+
+        self.push_screen(RecordDialog(self.player), started)
+
     def action_save_preset(self) -> None:
         style = self.player.now.style  # what is audible, captured before the dialog opens
 

@@ -554,7 +554,7 @@ def test_state_reports_no_journey_as_null_after_the_existing_keys():
 
     state = daemon.state(fake_player())
     assert state["journey"] is None
-    assert list(state)[-4:] == ["bpm", "target_bpm", "journey", "binaural"]   # new keys come last
+    assert list(state)[-5:] == ["bpm", "target_bpm", "journey", "binaural", "recording"]   # new keys come last
 
 
 def test_state_reports_the_journey_snapshot_of_the_audible_bar():

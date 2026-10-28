@@ -17,6 +17,7 @@ from .binaural import Binaural
 from .composer import cycle_position
 from .engine import Engine
 from .journey import Journey, JourneySnapshot
+from .recorder import Recorder, RecordError
 from .style import Style
 
 RAMP_SECONDS = 0.03
@@ -81,6 +82,7 @@ class Player:
         self._window = np.hanning(SPECTRUM_SIZE).astype(np.float32)
         self._shown = np.zeros(0)        # last spectrum() result, for the gentle fall
         self.now = NowPlaying(engine.style, engine.piece, 0, 0.0)
+        self._recorder: Recorder | None = None   # the session recording, fed by the audio callback
 
     # ------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -103,6 +105,29 @@ class Player:
             self._stream.close()
         if self._producer.is_alive():
             self._producer.join(timeout=5)
+        self.record_stop()   # a recording in progress is saved and closed
+
+    # ------------------------------------------------------------ recording
+    def record_start(self, path, force: bool = False) -> None:
+        """Record what the device is given into the WAV at `path` from the next audio block; RecordError when a
+        recording runs, the path is not a .wav in an existing folder, or the file exists without `force`."""
+        if self._recorder is not None:
+            raise RecordError(f"already recording to {self._recorder.path}")
+        self._recorder = Recorder(path, self.engine.sr, force)
+
+    def record_stop(self):
+        """Stop recording: (path, seconds) of the saved file, or None when nothing was recording."""
+        recorder, self._recorder = self._recorder, None
+        if recorder is None:
+            return None
+        recorder.stop()
+        return recorder.path, recorder.seconds
+
+    @property
+    def recording(self):
+        """(path, seconds so far) while recording, else None."""
+        recorder = self._recorder
+        return (recorder.path, recorder.seconds) if recorder is not None else None
 
     # ------------------------------------------------------------ controls
     def play(self) -> None:
@@ -288,10 +313,13 @@ class Player:
 
     def _callback(self, outdata, frames, time_info, status) -> None:
         target = self.volume if self.playing else 0.0
+        recorder = self._recorder
         if self._gain == 0.0 and target == 0.0 and not self.playing:
             outdata[:] = 0
             self.level = 0.0
             self._tail[:] = 0
+            if recorder is not None:
+                recorder.feed(outdata)
             return
         audio = self._pull(frames)
         self._wake.set()
@@ -301,6 +329,8 @@ class Player:
         gain = (self._gain + np.sign(diff) * steps).astype(np.float32)
         self._gain = float(gain[-1]) if abs(gain[-1] - target) > 1e-6 else target
         outdata[:] = audio * gain[:, None]
+        if recorder is not None:   # a copy into a queue: never waits for the disk
+            recorder.feed(outdata)
         mono = outdata.mean(axis=1)
         self.level = float(np.sqrt(np.mean(mono ** 2)))
         n = min(frames, SPECTRUM_SIZE)

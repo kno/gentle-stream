@@ -15,6 +15,10 @@ CONTROLS = """controls:
   m        choose the model Gentle Shell uses
   s        save what is playing under a name (prompt and style)
   p        saved prompts: Enter applies one instantly, d deletes it
+  j        journey menu: restart, skip a stage or stop the running journey
+  J        journeys: create one from a description, or play a built-in or saved one
+  r        record the session into a WAV file; r again stops and saves it
+  ctrl+p   command palette: every action, found by typing its name
   + / -    volume up / down by 5%
   ↑ / ↓    volume up / down by 1%
   b        back: leave the app, the music keeps playing
@@ -139,6 +143,40 @@ def _journey_edit(prompt: str, *, model: str | None, gentle_shell: str, yes: boo
         print(f"gentle-stream: {OLDER_PLAYER if 'unknown command' in str(e) else e}", file=sys.stderr)
         return 1
     print(f'Edited journey "{edited.title or edited.name}"')
+    player.detach()
+    return 0
+
+
+def record(action: str, file: str | None, force: bool) -> int:
+    """`ctl record start FILE [--force]` / `ctl record stop`: record what the background player plays."""
+    from .client import NoPlayer, PlayerError, PlayerGone, connect
+
+    try:
+        player = connect()
+    except NoPlayer:
+        print("gentle-stream: nothing is playing", file=sys.stderr)
+        return 1
+    except PlayerError as e:
+        print(f"gentle-stream: {e}", file=sys.stderr)
+        return 1
+    try:
+        if action == "start" and file is not None:
+            path = str(Path(file).expanduser().resolve())   # the player runs from /: send an absolute path
+            player.record_start(path, force)
+            print(f"Recording to {path}")
+        else:
+            saved = player.record_stop()
+            if saved is None:
+                print("gentle-stream: not recording", file=sys.stderr)
+                return 1
+            seconds = round(float(saved[1]))
+            print(f"Saved {seconds // 60}:{seconds % 60:02d} to {saved[0]}")
+    except PlayerGone:
+        print("gentle-stream: nothing is playing", file=sys.stderr)
+        return 1
+    except PlayerError as e:
+        print(f"gentle-stream: {OLDER_PLAYER if 'unknown command' in str(e) else e}", file=sys.stderr)
+        return 1
     player.detach()
     return 0
 
@@ -610,10 +648,11 @@ def main(argv: list[str] | None = None) -> int:
                                      help=f"the pack to install: {', '.join(VOICE_CATALOG)}")
     ctl_parser = sub.add_parser("ctl", help="control the music playing in the background")
     ctl_parser.add_argument("action", choices=("play", "pause", "toggle", "next", "stop", "status", "tempo",
-                                               "glide", "binaural", "say"))
+                                               "glide", "binaural", "say", "record"))
     ctl_parser.add_argument("args", nargs="*", metavar="ARG",
                             help="tempo: BPM; glide: FIELD=VALUE...; binaural: on, off or set; say: TEXT (spoken "
-                                 "over the music from the next phrase boundary)")
+                                 "over the music from the next phrase boundary); record: start FILE.wav or stop")
+    ctl_parser.add_argument("--force", action="store_true", help="record start: replace an existing file")
     ctl_parser.add_argument("--over", type=float, default=60.0, metavar="SECONDS",
                             help="tempo, glide, binaural on/set while it plays: seconds to reach the target, 0-3600 "
                                  "(default: 60)")
@@ -686,6 +725,13 @@ def main(argv: list[str] | None = None) -> int:
         say_flags = (args.voice, args.rate, args.effect)
         if args.action != "say" and (any(v is not None for v in say_flags) or args.list_voices):
             ctl_parser.error("--voice, --rate and --effect are only for say")
+        if args.action != "record" and args.force:
+            ctl_parser.error("--force is only for record")
+        if args.action == "record":
+            if not (args.args[:1] == ["stop"] and len(args.args) == 1
+                    or args.args[:1] == ["start"] and len(args.args) == 2):
+                ctl_parser.error("record requires start FILE or stop")
+            return record(args.args[0], args.args[1] if len(args.args) == 2 else None, args.force)
         if args.action == "binaural":
             request, seconds = _binaural_args(ctl_parser, args)
             return ctl("binaural", seconds=seconds, binaural_request=request)

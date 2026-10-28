@@ -169,6 +169,8 @@ class PlayerClient:
         # an older background player (still running after an upgrade) does not report these: show zero
         self.elapsed_seconds = float(state.get("elapsed_seconds", 0.0))
         self.cycle_remaining_seconds = float(state.get("cycle_remaining_seconds", 0.0))
+        recording = state.get("recording")   # an older player does not report it: not recording
+        self.recording = (recording["path"], float(recording["seconds"])) if isinstance(recording, dict) else None
         binaural = state.get("binaural")   # an older player does not report it: off
         self.binaural = Binaural.from_dict(binaural) if isinstance(binaural, dict) else None
 
@@ -214,6 +216,20 @@ class PlayerClient:
     def journey_start(self, journey: dict) -> None:
         """Run a normalized journey object."""
         self._control("journey_start", journey=journey)
+
+    def record_start(self, path: str, force: bool = False) -> None:
+        """Record the session into the WAV at the absolute `path`; PlayerError when the player refuses."""
+        self._round_trip("record_start", path=path, force=force)
+
+    def record_stop(self) -> tuple[str, float] | None:
+        """Stop recording: (path, seconds) of the saved file, or None when nothing was recording."""
+        try:
+            saved = self._round_trip("record_stop")["recorded"]
+        except PlayerError as e:
+            if str(e) == "not recording":
+                return None
+            raise
+        return saved["path"], float(saved["seconds"])
 
     def journey_current(self) -> dict | None:
         """The journey the player is running (its last rendered bar's), or None."""

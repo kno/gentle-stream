@@ -141,10 +141,15 @@ def state(player, bands: int = 0) -> dict:
         "target_bpm": player.engine.target_bpm,
         "journey": now.journey.to_dict() if now.journey is not None else None,
         "binaural": player.engine.binaural.to_dict() if player.engine.binaural is not None else None,
+        "recording": _recording(player.recording),
     }
     if bands > 0:
         out["spectrum"] = [round(float(v), 4) for v in player.spectrum_levels(min(bands, MAX_BANDS))]
     return out
+
+
+def _recording(info) -> dict | None:
+    return {"path": str(info[0]), "seconds": round(float(info[1]), 3)} if info is not None else None
 
 
 def _finite(value, what: str) -> float:
@@ -234,6 +239,25 @@ def handle(player, request) -> dict:
                 if name not in BUILTIN:
                     return {"ok": False, "error": unknown_journey(name)}
                 player.engine.queue_journey(BUILTIN[name])
+        elif cmd == "record_start":
+            from pathlib import Path
+
+            from .recorder import RecordError
+
+            path = request["path"]
+            if not isinstance(path, str):
+                raise TypeError("path must be a string")
+            if not Path(path).is_absolute():   # the player runs from /: a relative path would land there
+                return {"ok": False, "error": "the path must be absolute"}
+            try:
+                player.record_start(path, bool(request.get("force", False)))
+            except RecordError as e:
+                return {"ok": False, "error": str(e)}
+        elif cmd == "record_stop":
+            saved = player.record_stop()
+            if saved is None:
+                return {"ok": False, "error": "not recording"}
+            return {"ok": True, "state": state(player), "recorded": _recording(saved)}
         elif cmd == "journey_current":
             current = player.engine.journey
             return {"ok": True, "journey": current.to_dict() if current is not None else None}

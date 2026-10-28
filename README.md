@@ -164,6 +164,8 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 | `p` | Saved prompts: `Enter` applies one instantly, `d` or `Delete` removes it, `Esc` closes |
 | `j` | Journey menu: restart, skip or stop the running journey; `Enter` sends the command, `Esc` closes |
 | `J` | Journey picker: create one from a description (Gentle Shell), or play a built-in or saved journey; `Enter` picks, `Esc` closes |
+| `r` | Record the session: asks for a WAV file (a dated one in your home folder is proposed), then saves everything you hear until you press `r` again; the state line shows `● REC` and the length |
+| `ctrl+p` | Command palette: every action of the app, keyed or not, found by typing part of its name |
 | `+` / `-` | Volume up / down by 5% |
 | `↑` / `↓` | Volume up / down by 1% |
 | `b` | Back: leave the app and keep the music playing in the background |
@@ -204,6 +206,7 @@ gentle-stream ctl stop     # ends the background player
 | `ctl tempo BPM [--over SECONDS]` | Glide tempo in place (default 60 seconds) | `0`, or `1` when nothing plays |
 | `ctl glide FIELD=VALUE... [--over SECONDS]` | Glide `energy`, `brightness`, `space`, `swing`, `vinyl`, `lead_density`, `voice` or `bpm` in place (default 60 seconds) | `0`; `1` when nothing plays or the player refuses; `2` for a malformed or discrete field |
 | `ctl say TEXT [--voice NAME] [--rate WPM] [--effect dry\|radio\|space]` | Speak TEXT (at most 200 characters) over the music from the next phrase boundary, the music ducked 3 dB; `ctl say --list-voices` lists the system voices | `0` (an unknown voice falls back to the default with a warning); `1` when nothing plays, no text-to-speech program is found, or it fails; `2` without TEXT or with a rate outside 80-400 |
+| `ctl record start FILE.wav [--force]` / `ctl record stop` | Record exactly what the background player plays (volume and pauses included) into a 16-bit stereo WAV, until `stop` or until the player stops; an existing file needs `--force` | `0`; `1` when nothing plays, a recording is running, the folder does not exist, the file exists without `--force`, or (stop) nothing records; `2` for a malformed command |
 | `ctl binaural on [--carrier HZ] [--beat HZ] [--level L] [--over SECONDS]`, `ctl binaural set ... [--over SECONDS]`, `ctl binaural off` | Fade the binaural texture in or out, or glide it to new values (see [Binaural](#binaural)); nothing on stdout | `0`; `1` when nothing plays or `set` finds it off; `2` for a value out of range, options with `off`, or `set` without one |
 | `journey play NAME\|FILE` | Run a built-in or saved journey (names ignore case) or a JSON file (see [Journeys](#journeys)); nothing on stdout | `0`; `1` when nothing plays or the name is unknown |
 | `journey restart` | Restart the running journey at its first stage on the next bar | `0`; `1` when nothing plays or no journey is running |
