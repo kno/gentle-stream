@@ -14,6 +14,7 @@ import sys
 import tempfile
 import threading
 import time
+from contextlib import suppress
 from pathlib import Path
 
 import numpy as np
@@ -105,7 +106,9 @@ def runtime(monkeypatch):
         finally:
             for pid in pids:
                 if alive(pid):
-                    os.kill(pid, signal.SIGKILL)
+                    # The daemon can exit between the probe and the signal.
+                    with suppress(ProcessLookupError):
+                        os.kill(pid, signal.SIGKILL)
             shutil.rmtree(root, ignore_errors=True)
 
 
