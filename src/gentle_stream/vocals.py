@@ -5,6 +5,10 @@ Each voice is procedural, no download: a band-limited saw source shaped by three
 cached by (midi, duration, vowel, rate) like the genres' own voices. The engine schedules the choir after the genre
 through `Piece.add`, before the master chain, so the genre's room and reverb carry it; with `voice` 0 it never runs.
 
+With the soundfont installed (`setup-samples`) the choir sings FluidR3_GM instead (`choir_program`): Choir Aahs
+or Voice Oohs, following the vowel, in the acoustic genres and Synth Voice in the synth ones, each scaled so its
+reference note has the procedural voice's level; without it the procedural voice sings.
+
 The choir keeps its own voice-leading centre in the piece's state, so the genre's chord voicing and the random draws
 of the music stay exactly as they are. The vowel follows the section: "a" where the melody plays, "o" in the intro,
 the breakdown and the release.
@@ -17,6 +21,7 @@ import numpy as np
 
 from .composer import BarPlan, Chord
 from .genres.base import Piece
+from .samples import Program, SampleInstruments
 from .synth import SR, adsr, bp, mtof, osc
 
 # vowel -> (F1, F2, F3) in Hz; each formant's band-pass width and gain below
@@ -28,6 +33,9 @@ CENTRE = 67                 # where its voicing starts, G4
 GAIN = 0.12                 # each choir voice's level at voice=1
 RELEASE = 0.4               # seconds a note rings past its length
 PANS = (-0.35, 0.0, 0.35)
+SYNTH_GENRES = ("synthwave", "electro", "electrohouse", "dubstep", "chiptune")
+CHOIR_AAHS, VOICE_OOHS, SYNTH_VOICE = 52, 53, 54   # General MIDI programs, 0-based
+VELOCITY = 0.8
 
 
 @lru_cache(maxsize=512)
@@ -46,6 +54,24 @@ def sung(midi: int, seconds: float, vowel: str, sr: int = SR) -> np.ndarray:
     x = (voice + breath) * env
     peak = float(np.abs(x).max())
     return x / peak if peak > 0 else x
+
+
+@lru_cache(maxsize=8)
+def reference_rms(sr: int = SR) -> float:
+    """RMS over the first half second of the procedural voice's reference note (middle C, 1 s, "a"): the level a
+    sampled choir's reference note is scaled to (`Program.rms`)."""
+    x = sung(60, 1.0, "a", sr)
+    return float(np.sqrt(np.mean(np.square(x[: int(0.5 * sr)]))))
+
+
+@lru_cache(maxsize=16)
+def choir_program(genre: str, vowel: str, sr: int = SR) -> Program:
+    """The FluidR3_GM program a genre's choir sings on `vowel`, level-matched to the procedural voice."""
+    if genre in SYNTH_GENRES:
+        program = SYNTH_VOICE
+    else:
+        program = CHOIR_AAHS if vowel == "a" else VOICE_OOHS
+    return Program(program, velocity=(50, 100), tail=RELEASE, rms=reference_rms(sr))
 
 
 def _voicing(chord: Chord, ton: int, key_offset: int, center: float) -> list[int]:
@@ -78,11 +104,15 @@ def choir_notes(plan: BarPlan, ton: int, center: float | None) -> tuple[list[tup
     return notes, center
 
 
-def schedule(piece: Piece, plan: BarPlan, voice: float) -> None:
-    """Add the choir's notes for `plan`'s bar to `piece` at `voice` (0-1)."""
+def schedule(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstruments | None = None) -> None:
+    """Add the choir's notes for `plan`'s bar to `piece` at `voice` (0-1), sung by `sampled` when it is there."""
     notes, piece.state["choir_center"] = choir_notes(plan, piece.ton, piece.state.get("choir_center"))
     vowel = "a" if plan.section in ("A", "B", "A'", "B'") else "o"
     beat = 60.0 / piece.style.bpm
     for i, (midi, start, beats) in enumerate(notes):
         seconds = max(0.25, round(beats * beat * 4) / 4)           # quarter-second buckets keep the cache small
-        piece.add(sung(midi, seconds, vowel, piece.sr), start * beat, PANS[i % len(PANS)], GAIN * voice)
+        if sampled is not None:
+            note = sampled.play(choir_program(piece.style.genre, vowel, piece.sr), midi, seconds, VELOCITY)
+        else:
+            note = sung(midi, seconds, vowel, piece.sr)
+        piece.add(note, start * beat, PANS[i % len(PANS)], GAIN * voice)

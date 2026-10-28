@@ -111,3 +111,56 @@ def test_the_mood_prompt_offers_the_voice_field():
     from gentle_stream.bridge import PROMPT
 
     assert '"voice": 0-1' in PROMPT and "wordless" in PROMPT
+
+
+# ------------------------------------------------------------ PM-023: the sampled choir
+from gentle_stream import samples  # noqa: E402
+
+REAL = samples.soundfont_path()
+needs_sf2 = pytest.mark.skipif(REAL is None or samples.load_renderer(REAL) is None,
+                               reason="FluidR3_GM or FluidSynth not installed (gentle-stream setup-samples)")
+
+
+@pytest.mark.parametrize("genre, vowel, program", [
+    ("lofi", "a", 52), ("ambient", "a", 52), ("jazz", "o", 53), ("rock", "o", 53),
+    ("synthwave", "a", 54), ("electro", "o", 54), ("electrohouse", "a", 54), ("dubstep", "a", 54),
+    ("chiptune", "o", 54), ("cumbia", "a", 52),
+])
+def test_acoustic_genres_sing_choir_aahs_or_voice_oohs_and_synth_genres_synth_voice(genre, vowel, program):
+    from gentle_stream.vocals import choir_program
+
+    assert choir_program(genre, vowel).program == program
+
+
+def choir_level(genre, sampled, voice=0.6, bars=12):
+    """RMS (dB) of the choir alone: the same engine with and without it, subtracted."""
+    with_choir = Engine(Style(genre=genre, voice=voice), seed=3, samples=sampled)
+    without = Engine(Style(genre=genre, voice=0.0), seed=3, samples=sampled)
+    x = np.concatenate([with_choir.render_bar().astype(float) - without.render_bar().astype(float)
+                        for _ in range(bars)])
+    return 20 * np.log10(np.sqrt(np.mean(np.square(x))))
+
+
+@needs_sf2
+@pytest.mark.parametrize("genre", ["lofi", "ambient", "synthwave"])
+def test_the_sampled_choir_matches_the_procedural_level_within_3_db(genre):
+    assert abs(choir_level(genre, True) - choir_level(genre, False)) <= 3.0
+
+
+@needs_sf2
+@pytest.mark.parametrize("name", genres.NAMES)
+def test_the_sampled_choir_renders_in_every_genre(name, monkeypatch):
+    from gentle_stream import vocals
+
+    monkeypatch.setattr(vocals, "sung", lambda *a, **k: pytest.fail("the procedural voice ran"))
+    e = Engine(Style(genre=name, voice=1.0), seed=3, samples=True)
+    assert e.vocals_backend == "sampled"
+    x = np.concatenate([e.render_bar() for _ in range(4)])
+    assert np.all(np.isfinite(x)) and np.abs(x).max() < 1.0
+
+
+def test_without_the_soundfont_the_choir_falls_back_to_the_procedural_voice():
+    e = Engine(Style(voice=1.0), seed=3, samples=False)
+    assert e.vocals_backend == "procedural"
+    x = np.concatenate([e.render_bar() for _ in range(2)])
+    assert np.all(np.isfinite(x))

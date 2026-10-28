@@ -331,6 +331,11 @@ class Engine:
         self.section = self.composer.plan(self.bar).section
 
     @property
+    def vocals_backend(self) -> str:
+        """Who sings the choir: "sampled" (FluidR3_GM) when the soundfont is in use, else "procedural"."""
+        return "sampled" if self._sampled is not None else "procedural"
+
+    @property
     def crossfading(self) -> bool:
         """Whether a genre-step transition plays two pieces together right now."""
         return self._incoming is not None
@@ -518,7 +523,7 @@ class Engine:
             plan = replace(plan, layers=plan.layers - self._masked)
         incoming.genre.schedule(incoming.piece, plan)
         if incoming.style.voice > 0:
-            vocals.schedule(incoming.piece, plan, incoming.style.voice)
+            vocals.schedule(incoming.piece, plan, incoming.style.voice, self._sampled)
         incoming.bar += 1
         done, total = self._fade
         g_out, g_in = crossfade_gains(np.clip((done + np.arange(n)) / total, 0.0, 1.0)[:, None])
@@ -534,7 +539,7 @@ class Engine:
         self.section, self.layers = p.section, p.layers
         self.genre.schedule(self._piece, p)
         if self.style.voice > 0:   # the wordless choir, in every genre (off: nothing runs, nothing changes)
-            vocals.schedule(self._piece, p, self.style.voice)
+            vocals.schedule(self._piece, p, self.style.voice, self._sampled)
 
     def _glide(self, name: str, value: float, n: int, span: int) -> np.ndarray | float:
         """`value`, or an (n, 1) ramp to it over the first `span` samples when it changed since the last bar."""

@@ -223,14 +223,14 @@ The player listens on a Unix socket in a private directory (`$XDG_RUNTIME_DIR/ge
 
 ## Vocals
 
-A wordless choir can sing under any genre: a soft "aah" pad on the upper tones of each chord, voice-led from chord to chord, carried by the genre's own room and reverb. It is procedural (no download) and has no words. `voice` (0 to 1, default 0) sets its level; it glides like the other continuous fields and a mood can ask for it:
+A wordless choir can sing under any genre: a soft "aah" pad on the upper tones of each chord, voice-led from chord to chord, carried by the genre's own room and reverb. It has no words and works procedurally without a download. With FluidSynth and FluidR3_GM installed (`gentle-stream setup-samples`), it uses Choir Aahs or Voice Oohs for acoustic genres and Synth Voice for synthwave, electro, electrohouse, dubstep and chiptune. The sampled voices are level-matched to the procedural reference through `Program.rms`; without the soundfont, the procedural choir remains available. `voice` (0 to 1, default 0) sets its level; it glides like the other continuous fields and a mood can ask for it:
 
 ```bash
 gentle-stream ctl glide voice=0.6 --over 30
 gentle-stream --mood "ambient with ethereal wordless choir"
 ```
 
-The vowel follows the song form: "aah" where the melody plays, "ooh" in the intro, breakdown and release. Each voice is a band-limited source through three vowel formants (around 800, 1200 and 2500 Hz for "aah"), with a vibrato that enters after the onset and a little breath. With `voice` at 0 nothing of it runs, so the music is exactly as before; saved prompts from before it load with `voice` 0.
+The vowel follows the song form: "aah" where the melody plays, "ooh" in the intro, breakdown and release. Each procedural voice is a band-limited source through three vowel formants (around 800, 1200 and 2500 Hz for "aah"), with a vibrato that enters after the onset and a little breath. With `voice` at 0 nothing of it runs, so the music is exactly as before; saved prompts from before it load with `voice` 0.
 
 <div align="right"><a href="#top">Back to top</a></div>
 

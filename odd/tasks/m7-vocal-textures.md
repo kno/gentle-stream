@@ -22,12 +22,19 @@ melody."
 | Task | Specs | Route | Branch | Commit |
 | :--- | :--- | :--- | :--- | :--- |
 | T1 PM-022 procedural wordless choir | S1 | inline | `feat/wordless-choir` | done (PM-022 commit) |
-| T2 PM-023 sampled choir | S2 | inline (FluidSynth tests skip without the soundfont) | `feat/sampled-choir` | blocked: waiting for the user to install FluidSynth and the soundfont |
+| T2 PM-023 sampled choir | S2 | inline | `feat/sampled-choir` | verified; implementation in PM-023 work-unit commit (parent `ca1601f`) |
 | T3 PM-024 vocals in journeys and status | S3 | inline | `feat/vocal-status` | pending |
 | T4 PM-025 wordless vocal melody | S4 | inline | `feat/vocal-melody` | pending |
 | T5 PM-026 vocal harmonies | S5 | inline | `feat/vocal-harmonies` | pending |
 
 ## Log
+
+- L8: Full non-slow suite job-4 exited 0: 1021 passed, 3 deselected. Separate teardown fix committed as ca1601f. PM-023 work-unit boundary is fffd942..HEAD on feat/sampled-choir, excluding the isolated teardown commit; earlier M6/M7 work belongs to preceding stack branches, not this review slice. Native assessment unavailable (package-local-binary-missing); no review approval claimed. PM-023 focused tests and Pyright passed; slow tests excluded. T2 verified; T3 is next.
+
+- L7: User authorized fixing the teardown separately: "do it". Added a deterministic fixture regression for a daemon exiting between the liveness probe and SIGKILL, alongside normal cleanup coverage. RED: 1 failed, 1 passed; GREEN: 2 passed. Cleanup now suppresses only ProcessLookupError from SIGKILL, leaving production daemon code unchanged. Full non-slow suite job-4 running; separate cleanup commit pending successful verification.
+
+- L5: User confirmed installation: "ya está instalado y ejecutado el setup-samples". FluidR3_GM renderer loaded successfully. PM-023 focused checks: 53 passed; sampled/procedural level differences measured from -0.2 to -1.6 dB across five genres. A +12 dB mutation caused all three level tests to fail and was removed. Pyright exited 0 with no errors or warnings.
+- L6: Full non-slow suite (job-2) exited 1: 1019 passed, 3 deselected, six teardown errors from ProcessLookupError at tests/test_daemon.py:108. No clean full-suite result; PM-023 remains open pending the user's decision on addressing this previously observed teardown problem. README describes sampled selection and procedural fallback. Slow tests were excluded. No PM-023 commit or push yet.
 
 - L1: User request: "lo he escuchado y suena bien, sube las ramas, sigue con el roadmap" (M6 closed, M7 next).
 - L2: PM-022 decision: the choir keeps its own voice-leading centre (`piece.state`), so the genre's voicing and every
