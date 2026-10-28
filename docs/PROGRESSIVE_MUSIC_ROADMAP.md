@@ -980,6 +980,97 @@ source, and nothing without a verified redistributable license is fetched by gen
 
 ---
 
+### Milestone M10 — Open sessions, and everything from the TUI
+
+Added after M9 (2026-10-28). Rule for this milestone and every later one: **anything the command line can do, the
+TUI can do too.** A parity table in the README lists every CLI command and its TUI action, and a test fails when a
+command has no TUI action. Frequent actions keep a key; every action is in Textual's command palette (`ctrl+p`), so
+the footer does not grow with each feature.
+
+#### PM-036 — Record the session
+
+- **User value:** `gentle-stream ctl record start FILE.wav` / `ctl record stop` (and a TUI action) saves exactly what
+  played, with every mood, glide, journey edit and phrase, instead of re-rendering.
+- **Scope:** the player tees the audio it hands to the device into a 16-bit stereo WAV written by a writer thread
+  (never the audio callback); `ctl status` and the TUI show the file and its length while recording; stopping the
+  player closes the file; refuses an existing file unless `--force`.
+- **Acceptance criteria:** the file's samples equal the samples given to the device (fake stream); the audio callback
+  never blocks on disk (a slow writer drops nothing and delays nothing); stop, crash or `ctl stop` leave a valid WAV.
+
+#### PM-037 — Open-ended stages
+
+- **User value:** a stage with `"seconds": "open"` lasts until you move on (`journey skip`, `journey edit`, or the
+  TUI), for sessions of unknown length.
+- **Scope:** an open stage holds its end values once reached (its ramp length is `"ramp"` seconds, default 120);
+  later stages wait; `seconds_left` is unknown while an open stage plays; the NL prompt may use it when asked "until I
+  stop".
+- **Acceptance criteria:** an open stage never ends by itself; skip moves to the next stage from the bar after; the
+  status shows "open" instead of a time left; files without open stages are unchanged.
+
+#### PM-038 — Point-list curves
+
+- **User value:** shape a stage's ramp freely: `"curve": [[0, 0], [0.3, 0.8], [1, 1]]` (progress, fraction).
+- **Scope:** a point list (2 to 16 points, both axes 0-1, x increasing, starting at 0,0 and ending at 1,1) next to the
+  named curves; linear between points; the NL prompt may use it.
+- **Acceptance criteria:** values match the polyline exactly at and between points; invalid lists are refused with
+  the offending point; named curves are unchanged.
+
+#### PM-039 — Journeys from the TUI
+
+- **User value:** everything `journey` does on the command line, from the TUI: edit the running journey in words
+  (with the stage diff and a confirm), save the last journey under a name, delete or show a saved one, load and
+  validate a JSON file.
+- **Scope:** the journey menu (`j`) and picker (`J`) gain Edit, Save as, Delete, Show and Open file; the diff and
+  warnings appear in the dialog; the same functions the CLI uses.
+- **Acceptance criteria:** each action has a Textual pilot test that checks the player or the store afterwards; the
+  edit dialog shows the same diff as `journey edit` and applies only after confirming.
+
+#### PM-040 — Live controls from the TUI
+
+- **User value:** glide tempo, energy, brightness, space, swing, vinyl, melody density and voice from the TUI, as `ctl
+  tempo` and `ctl glide` do, over a chosen time.
+- **Scope:** a controls dialog (`c`): one row per continuous field with its value, a target and `--over` seconds;
+  fields a journey drives are shown as driven and cannot be changed (the same refusal as the CLI).
+- **Acceptance criteria:** a glide set in the dialog reaches the engine as the same `queue_glide` call the CLI makes;
+  journey-driven fields are refused with the CLI's message.
+
+#### PM-041 — Binaural from the TUI
+
+- **User value:** turn the binaural layer on and off and change carrier, beat and level from the TUI (`b` today
+  leaves the app, so the key is `B`).
+- **Scope:** a dialog with on/off, the three values with their ranges, and the glide time; refused while a journey
+  owns the layer, with the CLI's message; no claims about effects, as everywhere else.
+- **Acceptance criteria:** the dialog's requests equal the CLI's (`binaural`, `binaural_set`); ranges are enforced
+  before sending.
+
+#### PM-042 — Spoken phrases from the TUI
+
+- **User value:** say a phrase from the TUI, choosing voice (from the system list), rate and effect.
+- **Scope:** a say dialog; the voice list comes from `speech.voices()`; warnings (unknown voice) and errors (no
+  backend) shown in the dialog.
+- **Acceptance criteria:** the request equals `ctl say`'s with the same options; a failure leaves the music untouched
+  and is shown.
+
+#### PM-043 — Voices and samples from the TUI
+
+- **User value:** add, list and remove voice packs, install the FreePats choir and the FluidR3_GM soundfont from the
+  TUI, with progress.
+- **Scope:** a voices dialog (license and attribution per pack, the active one marked); installs run in a worker with
+  a progress bar; the same functions as `voices`, `setup-voices` and `setup-samples`.
+- **Acceptance criteria:** the store and caches end up exactly as with the CLI; a failed install leaves nothing
+  behind and shows why; the UI stays responsive during a download (fake download in tests).
+
+#### PM-044 — Render and the parity guard
+
+- **User value:** render the current style or a journey to a WAV from the TUI; and a guarantee that new CLI commands
+  come with their TUI action.
+- **Scope:** a render dialog (length, seed, procedural, journey) running in a worker; the README parity table; a test
+  that walks the argument parser and fails for any command or `ctl` action missing from the parity map.
+- **Acceptance criteria:** the dialog's file equals `gentle-stream render` with the same options (same seed, same
+  bytes); removing an entry from the parity map fails the guard test.
+
+---
+
 ## 5. Value delivery milestones
 
 | Milestone | Deliverables | User-visible result | Demonstration | Cumulative effort | Remaining limitations |
