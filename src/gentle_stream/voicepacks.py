@@ -6,6 +6,9 @@ A voice pack is a folder with a `pack.json` and one WAV file per recorded note, 
     {"name": "My Choir", "license": "CC0-1.0", "source": "my own recordings", "attribution": "Me",
      "redistributable": true, "root_note_from_filename": true, "vowel": "a", "melody": false}
 
+A pack can also be a SoundFont: `"sf2": "voices.sf2"` (relative to the folder, or absolute) with an optional
+`"bank"` and `"program"` (default 0), rendered by FluidSynth (the `samples` extra) instead of WAV files.
+
 `license` is required (a pack without one is refused); `melody: true` lets the choir sing the vocal melody with it
 (PM-025), a listening decision left to whoever adds the pack. Packs are registered by path in
 `$XDG_CONFIG_HOME/gentle-stream/voices.json`, never copied, and the last one added is the choir's voice.
@@ -21,12 +24,13 @@ import json
 import logging
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
 from scipy.io import wavfile
 
+from . import samples
 from .storage import write_json_atomic
 from .synth import SR
 
@@ -36,6 +40,9 @@ MAX_SHIFT = 4                      # semitones a recording is resampled without 
 ATTACK = 0.005                     # seconds: no click at the start of a recording
 RELEASE = 0.4                      # seconds a note rings past its length (as the choir's other voices)
 VERSION = 1
+SF2_VELOCITY = 80                  # MIDI velocity of SF2 notes and of the reference note they are level-matched by
+SF2_NEEDS = ("FluidSynth is needed for SF2 voice packs (install the FluidSynth library and the samples extra: "
+             "uv sync --extra samples)")
 UNSUPPORTED = (".flac", ".ogg", ".mp3", ".aif", ".aiff", ".m4a", ".opus")
 NOTE = re.compile(r"^([A-Ga-g])([#b]?)(-?\d+)")
 PITCH_CLASS = {"c": 0, "d": 2, "e": 4, "f": 5, "g": 7, "a": 9, "b": 11}
@@ -65,6 +72,16 @@ class Pack:
     vowel: str | None = None
     melody: bool = False
     notes: dict[int, Path] = field(default_factory=dict)   # recorded MIDI note -> WAV file
+    sf2: Path | None = None                                 # an SF2 pack: its SoundFont, bank and program
+    bank: int = 0
+    program: int = 0
+
+
+def _whole(data: dict, key: str, hi: int, manifest: Path) -> int:
+    value = data.get(key, 0)
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= hi:
+        raise PackError(f'{manifest}: "{key}" must be a whole number from 0 to {hi}')
+    return value
 
 
 def load_pack(folder: Path | str) -> Pack:
@@ -84,6 +101,24 @@ def load_pack(folder: Path | str) -> Pack:
     license_ = data.get("license")
     if not isinstance(license_, str) or not license_.strip():
         raise PackError(f'{manifest} has no "license": every voice pack must say how its recordings may be used')
+    def text(key: str) -> str:
+        return " ".join(str(data.get(key) or "").split())
+
+    vowel = data.get("vowel")
+    base = Pack(name=text("name")[:40] or folder.name, path=folder, license=license_.strip(), source=text("source"),
+                attribution=text("attribution"), redistributable=data.get("redistributable") is True,
+                vowel=vowel if isinstance(vowel, str) and vowel else None, melody=data.get("melody") is True)
+    if "sf2" in data:
+        sf2 = Path(str(data["sf2"])).expanduser()
+        sf2 = sf2 if sf2.is_absolute() else folder / sf2
+        if sf2.suffix.lower() != ".sf2":
+            raise PackError(f'{manifest}: "sf2" must be an .sf2 file ({sf2.name})')
+        if not sf2.is_file():
+            raise PackError(f"{manifest}: no such SF2 file: {sf2}")
+        bank, program = _whole(data, "bank", 16383, manifest), _whole(data, "program", 127, manifest)
+        if samples.fluidsynth_module() is None:
+            raise PackError(SF2_NEEDS)
+        return replace(base, sf2=sf2, bank=bank, program=program)
     if data.get("root_note_from_filename", True) is not True:
         raise PackError(f'{manifest}: only "root_note_from_filename": true is supported (name each file by its note)')
     for f in sorted(folder.iterdir()):
@@ -99,14 +134,7 @@ def load_pack(folder: Path | str) -> Pack:
             continue
     if not notes:
         raise PackError(f"{folder} has no note-named WAV files (name them by their note, e.g. A3.wav)")
-    def text(key: str) -> str:
-        return " ".join(str(data.get(key) or "").split())
-
-    vowel = data.get("vowel")
-    return Pack(name=text("name")[:40] or folder.name, path=folder, license=license_.strip(), source=text("source"),
-                attribution=text("attribution"), redistributable=data.get("redistributable") is True,
-                vowel=vowel if isinstance(vowel, str) and vowel else None, melody=data.get("melody") is True,
-                notes=notes)
+    return replace(base, notes=notes)
 
 
 def read_wav(path: Path) -> tuple[np.ndarray, int]:
@@ -135,7 +163,8 @@ class PackVoice:
         self._cache: dict[tuple[int, float], np.ndarray] = {}
         self._reported: set[int] = set()
         self._level: float | None = None
-        self.low, self.high = min(pack.notes), max(pack.notes)
+        self._renderer: samples.Renderer | None = None   # an SF2 pack's FluidSynth, loaded on the first note
+        self.low, self.high = (min(pack.notes), max(pack.notes)) if pack.notes else (0, 127)
 
     def _recording(self, root: int) -> tuple[np.ndarray, int]:
         if root not in self._recordings:
@@ -166,7 +195,21 @@ class PackVoice:
                             "it may sound unnatural", self.pack.name, midi, abs(shift), root)
         return root, shift
 
+    def _render_sf2(self, midi: int, seconds: float) -> np.ndarray:
+        assert self.pack.sf2 is not None
+        if self._renderer is None:
+            self._renderer = samples.load_renderer(self.pack.sf2, self.sr)
+            if self._renderer is None:
+                raise PackError(SF2_NEEDS)
+        from .vocals import reference_rms
+        p = samples.Program(self.pack.program, self.pack.bank, velocity=(SF2_VELOCITY, SF2_VELOCITY), tail=RELEASE,
+                            rms=reference_rms(self.sr))
+        x = self._renderer.note(0, p.bank, p.program, midi, SF2_VELOCITY, seconds, RELEASE)
+        return samples._finish(x, self.sr) * samples._program_level(self._renderer, self.sr, p)
+
     def _render(self, midi: int, seconds: float) -> np.ndarray:
+        if self.pack.sf2 is not None:
+            return self._render_sf2(midi, seconds)
         root, shift = self.source(midi)
         x, file_sr = self._recording(root)
         rate = 2 ** (shift / 12) * file_sr / self.sr        # recording samples per output sample
@@ -194,13 +237,12 @@ class PackVoice:
         return self._level
 
     def note(self, midi: int, seconds: float) -> np.ndarray:
-        """`midi` sung for `seconds` (quarter-second buckets) plus a release, peak at most 1."""
+        """`midi` sung for `seconds` (quarter-second buckets) plus a release, level-matched by RMS (not peak-limited:
+        a recorded choir peaks higher than the built-in voice at the same loudness, as the soundfont's notes do)."""
         seconds = max(0.25, round(seconds * 4) / 4)
         key = (int(midi), seconds)
         if key not in self._cache:
-            y = self._render(int(midi), seconds)
-            peak = float(np.abs(y).max()) if len(y) else 0.0
-            self._cache[key] = y / peak if peak > 1.0 else y
+            self._cache[key] = self._render(int(midi), seconds)
             if len(self._cache) > 512:
                 self._cache.pop(next(iter(self._cache)))
         return self._cache[key]
@@ -317,5 +359,8 @@ def voices_command(action: str, target: str | None = None) -> int:
             parts.append(f"by {loaded.attribution}")
         if loaded.source:
             parts.append(f"source: {loaded.source}")
+        if loaded.sf2 is not None:
+            bank = f"bank {loaded.bank} " if loaded.bank else ""
+            parts.append(f"{loaded.sf2.name} {bank}program {loaded.program}")
         print(f"{mark} {loaded.name} · {' · '.join(parts)} · {folder}")
     return 0

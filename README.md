@@ -259,6 +259,8 @@ gentle-stream voices remove "My Choir"       # the built-in choir sings again
 
 A pack without a `license` is refused. WAV files may be 8/16/24/32-bit or float, mono or stereo, at any sample rate; FLAC, OGG and other compressed formats are refused with "unsupported format: convert to WAV". Each note is sung by the nearest recording, resampled to pitch: up to four semitones from a recording the shift is exact; a note outside the recorded range is folded by octaves into it, and a note further from every recording takes the smallest shift that keeps it in tune. Both are reported once in the player log, since resampling also moves the formants. Recordings are level-matched to the built-in choir. The pack is used by the background player and by `render` (`--procedural` ignores it); a pack that no longer loads is reported and the built-in choir sings.
 
+A pack can also be a SoundFont: instead of WAV files, its manifest names an `.sf2` (relative to the folder, or absolute) and optionally a `bank` and `program` (default 0), for example `"sf2": "choir.sf2", "program": 52`. FluidSynth renders it (install the FluidSynth library and the `samples` extra; without them `voices add` answers "FluidSynth is needed for SF2 voice packs"). The SoundFont loads on the first note the choir sings, once per file, and its middle C is level-matched to the built-in choir; `voices list` shows the file and program.
+
 Add `"melody": true` to a pack's manifest to let it sing the vocal melody and its harmonies too. Decide that by ear: only voices that sound natural on a melody should have it.
 
 ## Binaural

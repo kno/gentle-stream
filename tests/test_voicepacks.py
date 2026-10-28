@@ -112,7 +112,7 @@ def test_16_and_24_bit_float_mono_and_stereo_wavs_load(tmp_path, dtype, channels
     pack = load_pack(make_pack(tmp_path / f"{dtype}{channels}", dtype=dtype, channels=channels))
     assert sorted(pack.notes) == [57, 69]
     x = voicepacks.PackVoice(pack).note(57, 1.0)
-    assert x.ndim == 1 and np.isfinite(x).all() and 0 < np.abs(x).max() <= 1.0
+    assert x.ndim == 1 and np.isfinite(x).all() and np.abs(x).max() > 0
 
 
 # ------------------------------------------------------------ pitch

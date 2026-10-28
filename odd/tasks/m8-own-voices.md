@@ -22,7 +22,7 @@ idempotent)."
 | Task | Specs | Route | Branch | Commit |
 | :--- | :--- | :--- | :--- | :--- |
 | T1 PM-027 WAV voice packs with licensing | S1 | inline | `feat/voice-packs` | done (PM-027 commit; base `d839203`) |
-| T2 PM-028 SF2 voice packs | S2 | inline (FluidSynth installed) | `feat/sf2-voice-packs` | pending |
+| T2 PM-028 SF2 voice packs | S2 | inline (FluidSynth installed) | `feat/sf2-voice-packs` | done (PM-028 commit; base `3438b79`) |
 | T3 PM-029 SFZ subset | S3 | inline | `feat/sfz-voice-packs` | pending |
 | T4 PM-030 `setup-voices` for a CC0 pack | S4 | inline; needs network to inspect the archive (A6) | `feat/setup-voices` | pending |
 
@@ -50,3 +50,15 @@ idempotent)."
   rate conversion, FLAC/OGG refusal, attribution listing, octave folding) each fail tests. Ruff/Pyright clean on new
   code; existing files keep their previous ruff findings count.
 - L5: PM-027 full non-slow suite job-14 exited 0: 1117 passed, 3 deselected, 0 orphan daemons. T1 verified.
+- L6: PM-028: `pack.json` with `"sf2"` (relative to the pack or absolute), `"bank"` 0-16383 and `"program"` 0-127
+  (default 0); license rules unchanged. FluidSynth availability is checked when the pack loads (`voices add`, the
+  player), without loading the SoundFont: "FluidSynth is needed for SF2 voice packs (install the FluidSynth library and
+  the samples extra: uv sync --extra samples)". The renderer loads lazily on the first note through the shared
+  `samples.load_renderer` (one per file). Notes render at a fixed `SF2_VELOCITY` 80, the same velocity the reference
+  note used by `samples._program_level` is measured at. RED 11 failed / 1 passed (the license rule already held).
+  While matching levels I found that PM-027's `note()` peak-limited each note to 1 after RMS matching, which made a
+  recorded choir 3.75 dB quieter; removed (the choir's 0.12 gain and the master limiter handle peaks, as for the
+  soundfont's own notes). Measured SF2 program 52: middle C 0.0 dB, other notes -3.5..+2.6 dB (the instrument's own
+  variation). GREEN 63 voice-pack tests; mutations (FluidSynth check, requested program, relative path, bank/program
+  range, level matching) each fail tests. Ruff/Pyright clean.
+- L7: PM-028 full non-slow suite job-15 exited 0: 1129 passed, 3 deselected, 0 orphan daemons. T2 verified.
