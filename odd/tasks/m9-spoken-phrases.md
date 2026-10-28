@@ -21,7 +21,7 @@ warning."
 | :--- | :--- | :--- | :--- | :--- |
 | T1 PM-031 TTS phrase layer | S1 | inline | `feat/tts-phrases` | done (PM-031 commit; base `f821ace`) |
 | T2 PM-032 phrases in journeys | S2 | inline | `feat/journey-phrases` | done (PM-032 commit; base `2141704`) |
-| T3 PM-033 voice characteristics | S3 | inline | `feat/speech-voices` | pending |
+| T3 PM-033 voice characteristics | S3 | inline | `feat/speech-voices` | done (PM-033 commit; base `f496ba4`) |
 | T4 PM-034 natural-language journey edit | S4 | inline | `feat/journey-edit` | pending |
 | T5 PM-035 moods inside a journey | S5 | inline | `feat/journey-moods` | pending |
 
@@ -59,3 +59,18 @@ warning."
   mutation (interval, repeats, stage reset, never speaks, shared rng, daemon prerender, phrases saved, stage index)
   fails tests. 24 tests pass; ruff/pyright clean (journey.py keeps its 9 pre-existing TRY004).
 - L6: User: "sube y sigue": M8 branches and feat/tts-phrases pushed to fork (no PRs). PM-032 full non-slow suite job-19 exited 0: 1228 passed, 3 deselected, 0 orphan daemons. T2 verified.
+- L7: PM-033: `ctl say --voice/--rate/--effect`, `ctl say --list-voices` (no player). say: `-v NAME -r WPM`; espeak-ng:
+  `-v CODE -s WPM`, each a separate argument after the fixed ones, text still on stdin. Voices: `say -v ?` parsed
+  as name (spaces allowed) and locale; `espeak-ng --voices` as language code and name; matched without case; an
+  unknown voice is dropped before the program runs and a warning travels back in the player's answer and is printed
+  to stderr (exit 0). Rate 80-400 wpm (usage error in the CLI, SpeechError in render). Effects dry, radio (band
+  300-3400 Hz twice, tanh saturation), space (`mastering.procedural_ir` at 0.7, one channel, 0.6 send: the master
+  reverb's impulse used as a send on the voice; the voice is mixed after the master chain so it cannot ride the
+  music's own send). Caching split: `_speak` keeps the program's output per (text, voice, rate), `render` the
+  processed clip per effect, so changing only the effect never reruns the program; `speech.clear_cache()` clears
+  both. RED ImportError. My own test errors fixed: the fake signal had no in-band content (radio test meaningless),
+  and the effect cache count. Real `say` check: Samantha resolves from "samantha", all three effects render (space
+  adds ~2.2 s), and a WavFileWarning appeared on every say WAV (an extra chunk); `read_clip` now silences only that
+  warning (RED/GREEN with a crafted WAV). 33 tests; 9 mutations (flags per program, case, unknown voice passed,
+  rate check, space, radio, daemon resolution, names with spaces) each fail tests. Ruff/Pyright clean.
+- L8: PM-033 full non-slow suite job-20 exited 0: 1261 passed, 3 deselected, 0 orphan daemons. T3 verified.

@@ -203,7 +203,7 @@ gentle-stream ctl stop     # ends the background player
 | `ctl play`, `pause`, `toggle`, `next`, `stop` | Nothing, or `gentle-stream: nothing is playing` on stderr | `0`, or `1` when nothing plays |
 | `ctl tempo BPM [--over SECONDS]` | Glide tempo in place (default 60 seconds) | `0`, or `1` when nothing plays |
 | `ctl glide FIELD=VALUE... [--over SECONDS]` | Glide `energy`, `brightness`, `space`, `swing`, `vinyl`, `lead_density`, `voice` or `bpm` in place (default 60 seconds) | `0`; `1` when nothing plays or the player refuses; `2` for a malformed or discrete field |
-| `ctl say TEXT` | Speak TEXT (at most 200 characters) over the music from the next phrase boundary, the music ducked 3 dB | `0`; `1` when nothing plays, no text-to-speech program is found, or it fails; `2` without TEXT |
+| `ctl say TEXT [--voice NAME] [--rate WPM] [--effect dry\|radio\|space]` | Speak TEXT (at most 200 characters) over the music from the next phrase boundary, the music ducked 3 dB; `ctl say --list-voices` lists the system voices | `0` (an unknown voice falls back to the default with a warning); `1` when nothing plays, no text-to-speech program is found, or it fails; `2` without TEXT or with a rate outside 80-400 |
 | `ctl binaural on [--carrier HZ] [--beat HZ] [--level L] [--over SECONDS]`, `ctl binaural set ... [--over SECONDS]`, `ctl binaural off` | Fade the binaural texture in or out, or glide it to new values (see [Binaural](#binaural)); nothing on stdout | `0`; `1` when nothing plays or `set` finds it off; `2` for a value out of range, options with `off`, or `set` without one |
 | `journey play NAME\|FILE` | Run a built-in or saved journey (names ignore case) or a JSON file (see [Journeys](#journeys)); nothing on stdout | `0`; `1` when nothing plays or the name is unknown |
 | `journey restart` | Restart the running journey at its first stage on the next bar | `0`; `1` when nothing plays or no journey is running |
@@ -283,6 +283,15 @@ gentle-stream ctl say "Keep going"
 ```
 
 The phrase is spoken by the system's text-to-speech program, `say` on macOS or `espeak-ng` on Linux (install it with your package manager); without one, the command answers "no text-to-speech backend found". The player renders it before answering, so a failure is reported and the music is left exactly as it was. The phrase starts on the next phrase boundary (every four bars), centred and level-normalised, and the music dips 3 dB under it with 50 ms ramps in and out. Phrases asked for in a row play one after another, each on its own boundary. The text is given to the program on its standard input, never as an argument, and generated audio stays on your machine.
+
+A phrase can choose how it sounds:
+
+```bash
+gentle-stream ctl say --list-voices                                   # the system voices (no player needed)
+gentle-stream ctl say "Almost there" --voice Samantha --rate 180 --effect space
+```
+
+`--voice` names a system voice, matched without case (`say -v` on macOS; on Linux an `espeak-ng` language code such as `es` or `en-us`); an unknown voice is spoken in the default voice and the command prints a warning. `--rate` is words per minute, 80 to 400 (the voice's own rate by default). `--effect` is `dry` (default), `radio` (the telephone band, 300 to 3400 Hz, lightly saturated) or `space` (the procedural room impulse the master chain's reverb uses, as a send on the voice, so the phrase rings on after it ends). The options reach the program as separate arguments; the text still goes on its standard input.
 
 ## Binaural
 

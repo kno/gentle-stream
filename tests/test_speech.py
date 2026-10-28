@@ -40,7 +40,7 @@ def tts(tmp_path, monkeypatch):
     bin_dir, log = tmp_path / "bin", tmp_path / "tts.log"
     bin_dir.mkdir()
     monkeypatch.setenv("PATH", str(bin_dir))
-    speech.render.cache_clear()
+    speech.clear_cache()
 
     def install(*names):
         for name in names:
@@ -50,7 +50,7 @@ def tts(tmp_path, monkeypatch):
         return log
 
     yield install
-    speech.render.cache_clear()
+    speech.clear_cache()
 
 
 def calls(log):
@@ -107,7 +107,7 @@ def test_clips_are_level_normalised_and_never_loud(tts):
     tts("say")
     clip = speech.render("Keep going")                   # a quiet tone: normalised up to the target RMS
     assert np.sqrt(np.mean(clip ** 2)) == pytest.approx(speech.SPEECH_RMS, rel=0.02)
-    speech.render.cache_clear()
+    speech.clear_cache()
     loud = speech.normalise(np.r_[np.ones(10), np.zeros(SR)])   # one spike: the peak limit wins over the RMS
     assert np.abs(loud).max() == pytest.approx(speech.SPEECH_PEAK)
 
@@ -210,11 +210,12 @@ class FakeClient:
     def __init__(self, error=None):
         self.said, self.error, self.detached = [], error, False
 
-    def say(self, text):
+    def say(self, text, voice=None, rate=None, effect="dry"):
         from gentle_stream.client import PlayerError
         if self.error:
             raise PlayerError(self.error)
-        self.said.append(text)
+        self.said.append((text, voice, rate, effect))
+        return []
 
     def detach(self):
         self.detached = True
@@ -225,7 +226,7 @@ def test_ctl_say_sends_the_whole_text(monkeypatch, capsys):
     fake = FakeClient()
     monkeypatch.setattr(client, "connect", lambda: fake)
     assert main(["ctl", "say", "Keep", "going"]) == 0
-    assert fake.said == ["Keep going"] and fake.detached
+    assert fake.said == [("Keep going", None, None, "dry")] and fake.detached   # no options: the defaults
     assert capsys.readouterr() == ("", "")
 
 

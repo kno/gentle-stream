@@ -77,6 +77,20 @@ def setup_samples() -> int:
     return 0
 
 
+def list_voices() -> int:
+    """`ctl say --list-voices`: the system voices, one per line; no player needed."""
+    from .speech import SpeechError, voices
+
+    try:
+        found = voices()
+    except SpeechError as e:
+        print(f"gentle-stream: {e}", file=sys.stderr)
+        return 1
+    for name, language in found:
+        print(f"{name}  {language}")
+    return 0
+
+
 def setup_voices(key: str) -> int:
     from . import voicesetup
     from .samples import SetupError
@@ -112,9 +126,9 @@ OLDER_PLAYER = ("the running player is older than this gentle-stream; run `gentl
 
 def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
         fields: dict[str, float] | None = None, binaural_request: tuple[str, dict[str, float]] | None = None,
-        text: str | None = None) -> int:
+        text: str | None = None, say_options: dict | None = None) -> int:
     """`binaural_request` is (on|off|set, the --carrier/--beat/--level given) for `ctl binaural`; `text` the
-    phrase of `ctl say`."""
+    phrase of `ctl say` and `say_options` its voice, rate and effect."""
     from .client import NoPlayer, PlayerError, PlayerGone, connect
 
     try:
@@ -164,7 +178,8 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
             return 1
     elif action == "say" and text is not None:   # main() has already required TEXT
         try:
-            player.say(text)
+            for warning in player.say(text, **(say_options or {})):
+                print(f"gentle-stream: warning: {warning}", file=sys.stderr)
         except PlayerGone:
             print("gentle-stream: nothing is playing", file=sys.stderr)
             return 1
@@ -540,6 +555,15 @@ def main(argv: list[str] | None = None) -> int:
                             help="binaural on/set: the difference between the ears, 0.5-40 Hz (default: 6)")
     ctl_parser.add_argument("--level", type=float, metavar="L",
                             help="binaural on/set: the level of each tone, 0-0.08 (default: 0.05)")
+    from .speech import EFFECTS, RATES
+
+    ctl_parser.add_argument("--voice", metavar="NAME", help="say: a system voice (see --list-voices; an unknown one "
+                                                           "falls back to the default with a warning)")
+    ctl_parser.add_argument("--rate", type=int, metavar="WPM",
+                            help=f"say: words per minute, {RATES[0]}-{RATES[1]} (default: the voice's own)")
+    ctl_parser.add_argument("--effect", choices=EFFECTS, default=None,
+                            help="say: dry (default), radio (telephone band) or space (reverb)")
+    ctl_parser.add_argument("--list-voices", action="store_true", help="say: list the system voices and exit")
     render_parser = sub.add_parser("render", help="render music into a 16-bit stereo WAV file (no audio device)",
                                    description="Render music offline with the engine alone into a WAV file.")
     render_parser.add_argument("out", metavar="OUT.wav", help="the WAV file to write")
@@ -587,15 +611,23 @@ def main(argv: list[str] | None = None) -> int:
         "target", metavar="NAME")
     args = ap.parse_args(argv)
     if args.command == "ctl":
+        say_flags = (args.voice, args.rate, args.effect)
+        if args.action != "say" and (any(v is not None for v in say_flags) or args.list_voices):
+            ctl_parser.error("--voice, --rate and --effect are only for say")
         if args.action == "binaural":
             request, seconds = _binaural_args(ctl_parser, args)
             return ctl("binaural", seconds=seconds, binaural_request=request)
         if args.action == "say":
             if any(value is not None for value in (args.carrier, args.beat, args.level)):
                 ctl_parser.error("--carrier, --beat and --level are only for binaural")
+            if args.list_voices:
+                return list_voices()
             if not args.args:
                 ctl_parser.error("say requires TEXT")
-            return ctl("say", text=" ".join(args.args))
+            if args.rate is not None and not RATES[0] <= args.rate <= RATES[1]:
+                ctl_parser.error(f"--rate must be {RATES[0]} to {RATES[1]} words per minute")
+            options = {"voice": args.voice, "rate": args.rate, "effect": args.effect or "dry"}
+            return ctl("say", text=" ".join(args.args), say_options=options)
         return ctl(args.action, *_ctl_args(ctl_parser, args))
     if args.command == "journey":
         return journey_command(args.journey_action, getattr(args, "name", None),
