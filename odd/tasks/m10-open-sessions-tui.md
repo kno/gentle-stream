@@ -34,3 +34,4 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
   volume, moods, model, presets, journey create/pick/restart/skip/stop; it lacks tempo/glide, binaural, say, journey
   edit/save/delete/show/validate, voices, setup-voices, setup-samples, render (and the new record). UX: frequent
   actions keep a key, every action goes into Textual's command palette (Textual 8.2.8 has it built in).
+- L3: User chose "Teclas para lo frecuente + paleta (recomendado)": frequent actions keep a key, every action is in the command palette (ctrl+p).
