@@ -17,7 +17,7 @@ from typing import Callable
 
 import numpy as np
 
-from .style import MODES, PROGRESSIONS, Style
+from .style import KEYS, MODES, PROGRESSIONS, Style
 
 RHYTHMS = (((0, 1.5), (1.5, .5), (2, 2)), ((0.5, 1), (1.5, 1), (2.5, 1.5)), ((0, 1), (1, 1), (2, .5), (2.5, 1.5)),
            ((0, 3), (3, 1)), ((1, .5), (1.5, .5), (2, 2)), ((0, 2), (2.5, .5), (3, 1)))
@@ -34,6 +34,20 @@ LIFT_CHANCE = 0.5
 CADENCES = {"minor": (4, 5), "major": (4, 5), "dorian": (4, 5), "phrygian": (7, 2), "lydian": (5, 2),
             "mixolydian": (4, 7)}
 RAISED = ("minor", "dorian")   # these borrow the major dominant (raised leading tone) at cadences
+
+
+def harmonic_handoff(key: str, mode: str, modes: tuple[str, ...]) -> tuple[str, str]:
+    """The (key, mode) a genre step lands on: unchanged when the target genre plays `mode`, otherwise the first of
+    its `modes` (the most typical first) that shares the notes of `key` `mode`, on its tonic within that collection.
+    Every mode here is diatonic, so the collection is always shared and the step is 0 on the circle of fifths."""
+    if mode in modes:
+        return key, mode
+    notes = {(KEYS.index(key) + step) % 12 for step in MODES[mode]}
+    for target in modes:
+        for tonic in range(12):
+            if {(tonic + step) % 12 for step in MODES[target]} == notes:
+                return KEYS[tonic], target
+    return key, modes[0]   # unreachable with diatonic modes: keep the key centre
 
 
 def _plays(lead_density: float) -> tuple[int, ...]:
@@ -155,6 +169,13 @@ class Composer:
             layers.add("counter")
         return BarPlan(bar, b.section, b.section_bar, energy, b.chord, b.passing, b.key_offset,
                        frozenset(layers), b.melody, counter, self._bass(bar, b, nxt, energy))
+
+    def pivot(self, bar: int, semitones: int) -> None:
+        """Prepare a key change after `bar`: its passing chord becomes the dominant seventh of the key `semitones`
+        above this piece's tonic, whatever lift the bar carries."""
+        self.plan(bar)
+        b = self._bars[bar]
+        b.passing = self._dominant7(7 + semitones - b.key_offset)
 
     def _energy(self, base: float) -> float:
         return float(min(1.0, base * (0.5 + self.style.energy)))

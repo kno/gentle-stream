@@ -39,7 +39,7 @@ import numpy as np
 from . import genres
 from . import samples as _samples
 from .binaural import Binaural, BinauralLayer, glide_seconds
-from .composer import Composer
+from .composer import Composer, harmonic_handoff
 from .genres.base import Piece
 from .genres.lofi import Instruments  # noqa: F401  (re-exported: the procedural lo-fi voices)
 from .mastering import Compressor, ConvolutionReverb, procedural_ir, soft_clip
@@ -329,8 +329,9 @@ class Engine:
             self._start_piece(replace(style, **values))
         elif nxt:
             self._start_piece(replace(self.style.variation(self._root_rng), **values))
-        elif switch_genre:
-            self._start_piece(replace(self.style, genre=target_genre, **values), skip_intro=True)
+        elif switch_genre and target_genre is not None:
+            key, mode = harmonic_handoff(self.style.key, self.style.mode, genres.get(target_genre).modes)
+            self._start_piece(replace(self.style, genre=target_genre, key=key, mode=mode, **values), skip_intro=True)
         self._apply_glides()
         if journey is not None:   # starts here, at t = 0, from the values this bar already has
             playing = self._binaural.setting.to_dict() if self._binaural.active and self._binaural.setting else None
@@ -345,6 +346,8 @@ class Engine:
         self._snapshot = (running.journey.snapshot(t, running.start, self.style.bpm, running.binaural_start)
                           if running is not None else None)
         bar_start = self.piece_seconds
+        if running is not None and (self.bar + 1) % 4 == 0:
+            self._prepare_genre_step(running, t + self.bar_seconds)
         self._schedule_bar()
         n = int(round(self.bar_seconds * self.sr))
         out = self._acc[:n].copy()
@@ -399,6 +402,15 @@ class Engine:
         self.style = replace(self.style, **values)
         self._piece.style = replace(self._piece.style, **values)
         self.composer.style = replace(self.composer.style, **values)
+
+    def _prepare_genre_step(self, running: _Running, t: float) -> None:
+        """When the journey's stage at `t` (the end of the bar about to render, a phrase boundary) steps to another
+        genre, end this bar on the pivot dominant of the key the step lands on (see `harmonic_handoff`)."""
+        target = running.journey.stages[running.journey.at(t, running.start)[0]].genre
+        if target is None or target == self.style.genre:
+            return
+        key, _ = harmonic_handoff(self.style.key, self.style.mode, genres.get(target).modes)
+        self.composer.pivot(self.bar, (KEYS.index(key) - KEYS.index(self.style.key)) % 12)
 
     def _journey_values(self, running: _Running | None, t: float) -> dict[str, float]:
         """The values of `running` (the journey playing) for the bar about to render, `t` seconds into it; empty
