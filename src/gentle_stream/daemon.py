@@ -342,7 +342,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         factory = _stream_factory()
-        player = Player(Engine(), **({"stream_factory": factory} if factory else {}))
+        from .voicepacks import active_voice
+
+        player = Player(Engine(voices=active_voice()), **({"stream_factory": factory} if factory else {}))
     except Exception as e:
         report({"error": f"cannot start the player: {e}", "audio": False})
         return 1

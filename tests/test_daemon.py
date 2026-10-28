@@ -90,6 +90,7 @@ def runtime(monkeypatch):
     root = Path(tempfile.mkdtemp(prefix="gs-", dir="/tmp"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(root))
     monkeypatch.setenv("XDG_CACHE_HOME", str(root / "cache"))     # no soundfont: fast procedural instruments
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(root / "config"))   # no voice pack, no saved prompts of the user
     monkeypatch.setenv("PYTHONPATH", REPO)                          # the daemon imports FakeAudio from here
     monkeypatch.setenv("GENTLE_STREAM_AUDIO_FACTORY", "tests.test_daemon:FakeAudio")
     run = root / "gentle-stream"

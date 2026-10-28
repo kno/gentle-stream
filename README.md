@@ -232,7 +232,7 @@ gentle-stream --mood "ambient with ethereal wordless choir"
 
 Journeys can bring the choir in and out with a stage target such as `"to": {"voice": 0.5}`. While audible, the TUI shows `Vocals: choir (sampled) · 50%` (or `procedural`); it hides the line at zero. `gentle-stream ctl status` includes a `vocals` object with `backend` and the audible `level` from 0 to 1. When attached to an older daemon without vocal status, the backend is reported as `unknown`.
 
-The choir can also sing the melody, but that mode waits for a voice that sings melodies convincingly: the General MIDI choirs and the procedural voice sound metallic or flute-like on a melody, so until a voice pack provides one (planned for a later milestone) the choir stays a pad at any `voice` and the genre keeps its lead. With such a voice, at `voice >= 0.5` and when the lead layer plays, the singer replaces the genre's instrumental lead with the composer's wordless melody. Connected notes up to four semitones apart glide over 90 ms; larger intervals and notes after rests start at their target pitch. Short overlapping releases provide legato, and vibrato enters after 300 ms and grows on long notes. The vowel alternates between "o" and "u" every four bars within a section. Sampled melodies retain the soundfont timbre through variable-rate playback; without samples the same articulation uses a procedural formant voice.
+The choir can also sing the melody, but that mode waits for a voice that sings melodies convincingly: the General MIDI choirs and the procedural voice sound metallic or flute-like on a melody, so until a voice pack marked `"melody": true` provides one (see [Voice packs](#voice-packs)) the choir stays a pad at any `voice` and the genre keeps its lead. With such a voice, at `voice >= 0.5` and when the lead layer plays, the singer replaces the genre's instrumental lead with the composer's wordless melody. Connected notes up to four semitones apart glide over 90 ms; larger intervals and notes after rests start at their target pitch. Short overlapping releases provide legato, and vibrato enters after 300 ms and grows on long notes. The vowel alternates between "o" and "u" every four bars within a section. Sampled melodies retain the soundfont timbre through variable-rate playback; without samples the same articulation uses a procedural formant voice.
 
 With a melodic voice, at high section energy the singer is doubled by harmony parts: one from energy 0.7 (where the counter-melody also enters), two from 0.9, never more. Each harmony note keeps the melody's rhythm and is a chord tone of the chord sounding at its beat, a third or sixth below the voice above when the chord offers one, so the parts move with the melody and never double it at the unison or octave. The parts sit left and right of the melody, quieter, and high-passed at 180 Hz so they do not cloud the mix.
 
@@ -241,6 +241,25 @@ Otherwise the choir is a pad. Its vowel follows the song form: "aah" where the m
 <div align="right"><a href="#top">Back to top</a></div>
 
 <div align="center"><img src="https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/rose.png" width="28" alt="" /></div>
+
+### Voice packs
+
+The choir can sing your own recordings instead of its built-in voices. A voice pack is a folder of WAV files named by their note (`A3.wav`, `C#4.wav`, `Bb2-soft.wav`: the note starts the name) plus a `pack.json` that says where the recordings come from and how they may be used:
+
+```json
+{"name": "My Choir", "license": "CC0-1.0", "source": "my own recordings", "attribution": "Me",
+ "redistributable": true, "root_note_from_filename": true}
+```
+
+```bash
+gentle-stream voices add ~/voices/my-choir   # validate, register by path (never copied), make it the choir
+gentle-stream voices list                    # every pack with its license and attribution; * marks the active one
+gentle-stream voices remove "My Choir"       # the built-in choir sings again
+```
+
+A pack without a `license` is refused. WAV files may be 8/16/24/32-bit or float, mono or stereo, at any sample rate; FLAC, OGG and other compressed formats are refused with "unsupported format: convert to WAV". Each note is sung by the nearest recording, resampled to pitch: up to four semitones from a recording the shift is exact; a note outside the recorded range is folded by octaves into it, and a note further from every recording takes the smallest shift that keeps it in tune. Both are reported once in the player log, since resampling also moves the formants. Recordings are level-matched to the built-in choir. The pack is used by the background player and by `render` (`--procedural` ignores it); a pack that no longer loads is reported and the built-in choir sings.
+
+Add `"melody": true` to a pack's manifest to let it sing the vocal melody and its harmonies too. Decide that by ear: only voices that sound natural on a melody should have it.
 
 ## Binaural
 
@@ -469,6 +488,7 @@ All music is generated: the composer builds every melody, counter-melody, bass l
 | [`src/gentle_stream/composer.py`](src/gentle_stream/composer.py) | Song form, harmony, motif development, counter-melody, bass |
 | [`src/gentle_stream/engine.py`](src/gentle_stream/engine.py) | Bar-by-bar rendering and the master chain |
 | [`src/gentle_stream/mastering.py`](src/gentle_stream/mastering.py) | Procedural impulse response, convolution reverb, bus compressor, soft clip |
+| [`src/gentle_stream/voicepacks.py`](src/gentle_stream/voicepacks.py) | Voice packs: manifests, WAV loading, pitch mapping and the registry |
 | [`src/gentle_stream/vocals.py`](src/gentle_stream/vocals.py) | The wordless choir: formant voices and their voicing |
 | [`src/gentle_stream/binaural.py`](src/gentle_stream/binaural.py) | The optional binaural layer: settings and the phase-continuous sine pair |
 | [`src/gentle_stream/player.py`](src/gentle_stream/player.py) | Real-time playback, buffering, crossfades, spectrum |

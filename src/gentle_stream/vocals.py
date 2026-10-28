@@ -5,7 +5,8 @@ Each voice is procedural, no download: a band-limited saw source shaped by three
 cached by (midi, duration, vowel, rate) like the genres' own voices. The engine schedules the choir after the genre
 through `Piece.add`, before the master chain, so the genre's room and reverb carry it; with `voice` 0 it never runs.
 
-With the soundfont installed (`setup-samples`) the choir sings FluidR3_GM instead (`choir_program`): Choir Aahs
+An active voice pack (`gentle-stream voices add`, `voicepacks.py`) sings it before anything else. Otherwise, with
+the soundfont installed (`setup-samples`) the choir sings FluidR3_GM instead (`choir_program`): Choir Aahs
 or Voice Oohs, following the vowel, in the acoustic genres and Synth Voice in the synth ones, each scaled so its
 reference note has the procedural voice's level; without it the procedural voice sings.
 
@@ -24,6 +25,7 @@ from .composer import BarPlan, Chord, Note
 from .genres.base import Piece
 from .samples import Program, SampleInstruments
 from .synth import SR, adsr, bp, hp, mtof, osc
+from .voicepacks import PackVoice
 
 # vowel -> (F1, F2, F3) in Hz; each formant's band-pass width and gain below
 FORMANTS = {"a": (800, 1200, 2500), "o": (500, 850, 2400), "u": (350, 650, 2300)}
@@ -76,6 +78,16 @@ def reference_rms(sr: int = SR) -> float:
     sampled choir's reference note is scaled to (`Program.rms`)."""
     x = sung(60, 1.0, "a", sr)
     return float(np.sqrt(np.mean(np.square(x[: int(0.5 * sr)]))))
+
+
+Singer = SampleInstruments | PackVoice   # who sings the choir instead of the procedural voice
+
+
+def _play(singer: Singer, genre: str, vowel: str, midi: int, seconds: float, sr: int) -> np.ndarray:
+    """One note from a voice pack (PM-027) or from the soundfont's choir program for `genre` and `vowel`."""
+    if isinstance(singer, PackVoice):
+        return singer.note(midi, seconds)
+    return singer.play(choir_program(genre, vowel, sr), midi, seconds, VELOCITY)
 
 
 @lru_cache(maxsize=16)
@@ -146,7 +158,7 @@ def melody_rms(sr: int = SR) -> float:
 
 
 def melodic_note(midi: int, seconds: float, vowel: str, previous: int | None, genre: str,
-                 sampled: SampleInstruments | None = None, sr: int = SR) -> np.ndarray:
+                 sampled: Singer | None = None, sr: int = SR) -> np.ndarray:
     """An articulated vowel: 90 ms close-note glide, delayed 18-cent vibrato, and a short legato release.
 
     Sampled voices retain their soundfont timbre via variable-rate playback of an isolated sustained note.
@@ -162,7 +174,7 @@ def melodic_note(midi: int, seconds: float, vowel: str, previous: int | None, ge
     rate = 2 ** (cents / 1200)
     if sampled is not None:
         # Sustain beyond the largest possible playback offset; our envelope owns note-off.
-        source = sampled.play(choir_program(genre, vowel, sr), midi, (seconds + tail) * 1.3 + 0.1, VELOCITY)
+        source = _play(sampled, genre, vowel, midi, (seconds + tail) * 1.3 + 0.1, sr)
         positions = np.concatenate(([0.0], np.cumsum(rate[:-1])))
         x = np.interp(positions, np.arange(len(source)), source)
     else:
@@ -208,7 +220,7 @@ def harmony_parts(plan: BarPlan, ton: int, limit: int = 2) -> list[tuple[Note, .
 
 
 def _sing(piece: Piece, line, key: str, vowel: str, bar: int, pan: float, gain: float,
-          sampled: SampleInstruments | None, highpass: int = 0) -> None:
+          sampled: Singer | None, highpass: int = 0) -> None:
     """One vocal line in the bar, gliding between connected close notes (state kept under `key`)."""
     beat = 60 / piece.style.bpm
     previous = piece.state.get(key)
@@ -224,7 +236,7 @@ def _sing(piece: Piece, line, key: str, vowel: str, bar: int, pan: float, gain: 
     piece.state[key] = previous if line else None
 
 
-def _melody(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstruments | None) -> None:
+def _melody(piece: Piece, plan: BarPlan, voice: float, sampled: Singer | None) -> None:
     vowel = ("o", "u")[(plan.section_bar // 4) % 2]
     _sing(piece, plan.melody, "vocal_previous", vowel, plan.bar, MELODY_PAN, 0.2 * voice, sampled)
     parts = harmony_parts(plan, piece.ton)
@@ -234,7 +246,7 @@ def _melody(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstrument
               HARMONY_HIGHPASS)
 
 
-def schedule(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstruments | None = None,
+def schedule(piece: Piece, plan: BarPlan, voice: float, sampled: Singer | None = None,
              melodic: bool = False) -> None:
     """Sing the melody when a melodic voice is available (`melodic`), `voice` >= MELODY_VOICE and the lead plays;
     otherwise sing the choir pad."""
@@ -249,7 +261,7 @@ def schedule(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstrumen
     for i, (midi, start, beats) in enumerate(notes):
         seconds = max(0.25, round(beats * beat * 4) / 4)           # quarter-second buckets keep the cache small
         if sampled is not None:
-            note = sampled.play(choir_program(piece.style.genre, vowel, piece.sr), midi, seconds, VELOCITY)
+            note = _play(sampled, piece.style.genre, vowel, midi, seconds, piece.sr)
         else:
             note = sung(midi, seconds, vowel, piece.sr)
         piece.add(note, start * beat, PANS[i % len(PANS)], GAIN * voice)

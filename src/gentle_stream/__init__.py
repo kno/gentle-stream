@@ -378,7 +378,9 @@ def render(out: str, seconds: float, seed: int | None, genre: str | None, mood_f
     if genre is not None:
         style = replace(style, genre=genre)
     seed = secrets.randbelow(2 ** 31) if seed is None else seed   # printed, so any render can be repeated
-    engine = Engine(style, seed=seed, samples=not procedural)
+    from .voicepacks import active_voice
+
+    engine = Engine(style, seed=seed, samples=not procedural, voices=None if procedural else active_voice())
     if journey_name is not None:
         engine.queue_journey(BUILTIN[journey_name])
     frames = max(1, int(round(seconds * engine.sr)))   # any length above 0 writes at least one frame
@@ -524,6 +526,16 @@ def main(argv: list[str] | None = None) -> int:
     create_parser = journey_sub.add_parser("create", help="create a journey from a text prompt")
     create_parser.add_argument("prompt", metavar="PROMPT", help="a text description of the journey you want")
     create_parser.add_argument("--dry-run", action="store_true", help="print without starting")
+    voices_parser = sub.add_parser("voices", help="add, list, and remove voice packs the choir sings",
+                                   description="Voice packs: folders of note-named WAV recordings with a pack.json "
+                                               "that states their license. The last pack added is the choir's "
+                                               "voice; packs are registered by path, never copied.")
+    voices_sub = voices_parser.add_subparsers(dest="voices_action", metavar="action", required=True)
+    voices_sub.add_parser("add", help="register a pack folder and make it the choir's voice").add_argument(
+        "target", metavar="FOLDER")
+    voices_sub.add_parser("list", help="list packs with their license and attribution (* the active one)")
+    voices_sub.add_parser("remove", help="unregister a pack; the built-in choir sings again").add_argument(
+        "target", metavar="NAME")
     args = ap.parse_args(argv)
     if args.command == "ctl":
         if args.action == "binaural":
@@ -535,6 +547,10 @@ def main(argv: list[str] | None = None) -> int:
                               prompt=getattr(args, "prompt", None), model=args.model,
                               gentle_shell=args.gentle_shell, dry_run=getattr(args, "dry_run", False),
                               source=getattr(args, "file", None), last=getattr(args, "last", False))
+    if args.command == "voices":
+        from .voicepacks import voices_command
+
+        return voices_command(args.voices_action, getattr(args, "target", None))
     if args.command == "render":
         from .style import genre_names
 

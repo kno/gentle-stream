@@ -39,6 +39,7 @@ import numpy as np
 from . import genres
 from . import samples as _samples
 from . import vocals
+from .voicepacks import PackVoice
 from .binaural import Binaural, BinauralLayer, glide_seconds
 from .composer import Composer, harmonic_handoff
 from .genres.base import Genre, Master, Piece
@@ -134,10 +135,13 @@ class Engine:
     HEADROOM = 24.0  # seconds of scheduling buffer: longest bar plus the longest note tail
 
     def __init__(self, style: Style = DEFAULT, seed: int | None = None, sr: int = SR,
-                 samples: bool | str | Path = True):
+                 samples: bool | str | Path = True, voices: PackVoice | None = None):
         """`samples`: True uses the installed soundfont when FluidSynth is available, a path uses that soundfont,
-        False keeps the procedural instruments. Anything unavailable falls back to procedural."""
+        False keeps the procedural instruments. Anything unavailable falls back to procedural. `voices`: a voice pack
+        (`voicepacks.active_voice`) the choir sings; the engine never reads the registry itself."""
         self.sr = sr
+        self._voices = voices
+        self.melodic_vocals = voices is not None and voices.pack.melody
         sf2 = _samples.soundfont_path() if samples is True else (Path(samples) if samples else None)
         renderer = _samples.load_renderer(sf2, sr) if sf2 is not None else None
         self._sampled = _samples.SampleInstruments(renderer, np.random.default_rng(0), sr) if renderer else None
@@ -330,12 +334,20 @@ class Engine:
         self.bar = voice.bar
         self.section = self.composer.plan(self.bar).section
 
-    # whether a voice that can sing melodies is available (an M8 voice pack); the GM and procedural voices only pad
+    # whether a voice that can sing melodies is available: a voice pack marked `"melody": true`; the GM and
+    # procedural voices only pad
     melodic_vocals: bool = False
 
     @property
+    def _singer(self):
+        return self._voices if self._voices is not None else self._sampled
+
+    @property
     def vocals_backend(self) -> str:
-        """Who sings the choir: "sampled" (FluidR3_GM) when the soundfont is in use, else "procedural"."""
+        """Who sings the choir: "pack: NAME" (a voice pack), "sampled" (FluidR3_GM) when the soundfont is in use,
+        else "procedural"."""
+        if self._voices is not None:
+            return f"pack: {self._voices.pack.name}"
         return "sampled" if self._sampled is not None else "procedural"
 
     @property
@@ -526,7 +538,7 @@ class Engine:
             plan = replace(plan, layers=plan.layers - self._masked)
         incoming.genre.schedule(incoming.piece, vocals.instrumental_plan(plan, incoming.style.voice, self.melodic_vocals))
         if incoming.style.voice > 0:
-            vocals.schedule(incoming.piece, plan, incoming.style.voice, self._sampled, self.melodic_vocals)
+            vocals.schedule(incoming.piece, plan, incoming.style.voice, self._singer, self.melodic_vocals)
         incoming.bar += 1
         done, total = self._fade
         g_out, g_in = crossfade_gains(np.clip((done + np.arange(n)) / total, 0.0, 1.0)[:, None])
@@ -542,7 +554,7 @@ class Engine:
         self.section, self.layers = p.section, p.layers
         self.genre.schedule(self._piece, vocals.instrumental_plan(p, self.style.voice, self.melodic_vocals))
         if self.style.voice > 0:   # the wordless choir, in every genre (off: nothing runs, nothing changes)
-            vocals.schedule(self._piece, p, self.style.voice, self._sampled, self.melodic_vocals)
+            vocals.schedule(self._piece, p, self.style.voice, self._singer, self.melodic_vocals)
 
     def _glide(self, name: str, value: float, n: int, span: int) -> np.ndarray | float:
         """`value`, or an (n, 1) ramp to it over the first `span` samples when it changed since the last bar."""
