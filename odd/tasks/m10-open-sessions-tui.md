@@ -18,7 +18,7 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
 | T2 PM-037 open-ended stages | S2 | inline | `feat/open-stages` | done (PM-037 commit; base `4347a90`) |
 | T3 PM-038 point-list curves | S3 | inline | `feat/point-curves` | done (PM-038 commit; base `10c82c5`) |
 | T4 PM-039 journeys from the TUI | S4, S0 | inline | `feat/tui-journeys` | done (PM-039 commit; base `a886ff7`) |
-| T5 PM-040 live controls from the TUI | S5, S0 | inline | `feat/tui-controls` | pending |
+| T5 PM-040 live controls from the TUI | S5, S0 | inline | `feat/tui-controls` | done (PM-040 commit; base `a5b5c64`) |
 | T6 PM-041 binaural from the TUI | S6, S0 | inline | `feat/tui-binaural` | pending |
 | T7 PM-042 spoken phrases from the TUI | S7, S0 | inline | `feat/tui-say` | pending |
 | T8 PM-043 voices and samples from the TUI | S8, S0 | inline | `feat/tui-voices` | pending |
@@ -90,3 +90,12 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
   test was added. 12 tests; 6 real mutations fail tests (one control was unreachable by design). Three new RUF012
   (dialog BINDINGS) follow the file's convention.
 - L11: PM-039 suite job-28: 1365 passed, 3 deselected, 0 test daemons. T4 verified.
+- L12: PM-040. `c` opens ControlsModal: one compact row per GLIDE_FIELDS field with its audible value, "over"
+  seconds (default 60, 0-3600 like `--over`), fields the running journey owns locked and marked "(journey)". Apply
+  sends only the changed fields in one `player.glide(fields, over)`, i.e. the engine's `queue_glide` as `ctl glide`
+  does (and `ctl tempo` for bpm); invalid numbers and out-of-range "over" stay in the dialog; the engine's
+  JourneyDriven refusal is shown with the CLI's message. The in-process Player gains `glide` and `tempo` (only the
+  daemon client had them). First layout used 3-line inputs and did not fit an 80x24 terminal (Apply off screen);
+  compact rows fix it. RED ImportError; GREEN 9; 5 mutations each fail tests.
+- L13: PM-040 suite job-29 failed one test that predates M10: tests/test_main.py journey list counted the user's real saved journey "Desayuno" (created in the app at 16:11, not by any test: the string is in no file of the repo). Many tests did not isolate XDG_CONFIG_HOME. New tests/conftest.py gives every test a private empty config dir by default (tests that set their own still override); the failing test passes with the user's file present. Separate commit. The user's file was only read, never written. Rerun job-30 (test_tui_binaural.py, the PM-041 RED, excluded).
+- L14: Rerun job-30: 1374 passed, 3 deselected, 0 test daemons (PM-041 RED file excluded). Isolation committed separately. T5 verified.

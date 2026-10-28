@@ -164,6 +164,7 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 | `p` | Saved prompts: `Enter` applies one instantly, `d` or `Delete` removes it, `Esc` closes |
 | `j` | Journey menu: restart, skip a stage or stop the running journey, edit it in words (the model's answer is shown as the same stage diff as `journey edit`, applied only when you press Apply) or save it, with its edits, under a name; `Enter` picks, `Esc` closes |
 | `J` | Journey picker: create one from a description (Gentle Shell), play a built-in or saved journey, `v` shows one as JSON, `d` deletes a saved one, or open a JSON file (validated, with its warnings) to play or save; `Enter` picks, `Esc` closes |
+| `c` | Live controls: tempo, energy, brightness, space, swing, vinyl, melody density and voice with their values; change any of them and Apply glides the changed ones over the given seconds (0 to 3600, default 60), as `ctl tempo` and `ctl glide` do; fields the running journey drives are marked (journey) and locked |
 | `r` | Record the session: asks for a WAV file (a dated one in your home folder is proposed), then saves everything you hear until you press `r` again; the state line shows `● REC` and the length |
 | `ctrl+p` | Command palette: every action of the app, keyed or not, found by typing part of its name |
 | `+` / `-` | Volume up / down by 5% |

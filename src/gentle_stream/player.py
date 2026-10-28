@@ -142,6 +142,14 @@ class Player:
     def set_volume(self, volume: float) -> None:
         self.volume = float(np.clip(volume, 0, 1))
 
+    def glide(self, fields: dict[str, float], seconds: float) -> None:
+        """Glide continuous style fields in place, as the background player's `glide` (`ctl glide`)."""
+        self.engine.queue_glide(fields, seconds)
+
+    def tempo(self, bpm: float, seconds: float) -> None:
+        """Glide the tempo in place, as the background player's `tempo` (`ctl tempo`)."""
+        self.engine.queue_tempo(bpm, seconds)
+
     def set_style(self, style: Style) -> None:
         """The new style starts at the next rendered bar, after the audio already buffered."""
         self.engine.queue_style(style)

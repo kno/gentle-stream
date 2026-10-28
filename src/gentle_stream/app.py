@@ -645,6 +645,101 @@ class JourneyShowModal(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class ControlsModal(ModalScreen[dict | None]):
+    """Live controls (PM-040): every continuous field with its value; Apply glides the changed ones over `over`
+    seconds, as `ctl glide` does. Fields the running journey drives are shown and cannot be changed."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    DEFAULT_CSS = """
+    ControlsModal { align: center middle; }
+    ControlsModal > Vertical { width: 64; height: auto; border: round $primary; padding: 0 1; background: $surface; }
+    ControlsModal .heading { color: $primary; text-style: bold; }
+    ControlsModal .row { height: 1; }
+    ControlsModal .row Static { width: 22; }
+    ControlsModal .row Input { width: 1fr; }
+    ControlsModal #control-status { color: $text-muted; }
+    ControlsModal #buttons { height: auto; }
+    ControlsModal Button { margin-right: 1; }
+    """
+
+    def __init__(self, player, style: Style, driven: tuple[str, ...]):
+        super().__init__()
+        self.player, self.style, self.driven = player, style, driven
+
+    def compose(self) -> ComposeResult:
+        from .engine import GLIDE_FIELDS
+
+        with Vertical():
+            yield Static("Live controls", classes="heading")
+            for name, (lo, hi) in GLIDE_FIELDS.items():
+                with Horizontal(classes="row"):
+                    label = f"{name}{' (journey)' if name in self.driven else ''}"
+                    yield Static(label, markup=False)
+                    yield Input(f"{getattr(self.style, name):g}", id=f"control-{name}", placeholder=f"{lo:g}-{hi:g}",
+                                disabled=name in self.driven, compact=True)
+            with Horizontal(classes="row"):
+                yield Static("over (s)")
+                yield Input("60", id="control-over", placeholder="0-3600", compact=True)
+            note = "Fields marked (journey) are driven by the journey. " if self.driven else ""
+            yield Static(f"{note}Changed fields glide to their new values over the given seconds.",
+                         id="control-status", markup=False)
+            with Horizontal(id="buttons"):
+                yield Button("Apply", id="apply", variant="primary")
+                yield Button("Cancel", id="cancel")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()   # never a mood request for the app below
+        self._apply()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "apply":
+            self._apply()
+        else:
+            self.action_cancel()
+
+    def _apply(self) -> None:
+        import math
+
+        from .client import PlayerError
+        from .engine import GLIDE_FIELDS
+
+        status = self.query_one("#control-status", Static)
+        fields: dict[str, float] = {}
+        for name in GLIDE_FIELDS:
+            box = self.query_one(f"#control-{name}", Input)
+            if box.disabled:
+                continue
+            try:
+                value = float(box.value)
+            except ValueError:
+                status.update(f"{name} must be a number")
+                return
+            if not math.isfinite(value):
+                status.update(f"{name} must be a number")
+                return
+            if abs(value - getattr(self.style, name)) > 1e-9:
+                fields[name] = value
+        try:
+            over = float(self.query_one("#control-over", Input).value)
+        except ValueError:
+            over = -1.0
+        if not (math.isfinite(over) and 0 <= over <= 3600):
+            status.update("over must be between 0 and 3600 seconds")
+            return
+        if not fields:
+            self.dismiss({})
+            return
+        try:
+            self.player.glide(fields, over)
+        except (ValueError, PlayerError) as e:   # a journey drives a field: the CLI's message
+            status.update(str(e))
+            return
+        self.dismiss({"fields": fields, "over": over})
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class JourneyPickerModal(ModalScreen[str | None]):
     """Pick a journey: "create" first, then the built-ins, then the saved ones alphabetically, then "open" (a file);
     `v` shows the highlighted one, `d` deletes a saved one.
@@ -751,6 +846,7 @@ class StreamApp(App):
         Binding("j", "journey_menu", "Journey"),
         Binding("J", "journey_picker", "Journeys"),
         Binding("r", "record", "Record"),
+        Binding("c", "controls", "Controls"),
         Binding("plus,equals_sign", "volume(5)", "Vol +5"),
         Binding("minus", "volume(-5)", "Vol -5"),
         Binding("up", "volume(1)", "Vol +1"),
@@ -898,10 +994,24 @@ class StreamApp(App):
             ("Open a journey file", "Validate a JSON journey file, then play or save it (J)", "journey_open"),
             ("Volume up", "Five steps louder (+)", "volume(5)"),
             ("Volume down", "Five steps quieter (-)", "volume(-5)"),
+            ("Live controls", "Glide tempo, energy, brightness, space, swing, vinyl, melody density or voice (c)",
+             "controls"),
             ("Record the session", "Start or stop recording what you hear into a WAV file (r)", "record"),
             ("Back", "Leave the app, the music keeps playing (b)", "back"),
             ("Quit", "Leave the app and stop the music (q)", "quit"),
         ]
+
+    def action_controls(self) -> None:
+        """Glide the continuous fields, as `ctl tempo` and `ctl glide` do."""
+        current = self.player.journey_current()
+        driven = Journey.from_dict(current).fields if current is not None else ()
+
+        def applied(result: dict | None) -> None:
+            if result:
+                changes = ", ".join(f"{name} {value:g}" for name, value in result["fields"].items())
+                self._status(f"Gliding {escape(changes)} over {result['over']:g} s")
+
+        self.push_screen(ControlsModal(self.player, self.player.now.style, driven), applied)
 
     def action_record(self) -> None:
         """Start recording (asks for the file) or stop and say where it was saved."""
