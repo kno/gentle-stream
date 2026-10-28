@@ -578,6 +578,33 @@ def map_position(old: Journey, t: float, new: Journey) -> float:
     return min(t, new.seconds)
 
 
+def clock(seconds: float) -> str:
+    """`m:ss`, or "open" for an endless length."""
+    if not math.isfinite(seconds):
+        return "open"
+    total = max(0, round(seconds))
+    return f"{total // 60}:{total % 60:02d}"
+
+
+def edit_preview(current: Journey, stage: int, progress: float, edited: Journey) -> tuple[str, list[str]]:
+    """What `journey edit` shows (PM-034/039), from the snapshot's `stage` (from 1) and `progress` in `current`:
+    (the position as told to the model, the lines: header, one per stage, where the listener lands)."""
+    playing = current.stages[stage - 1]
+    into = progress * playing.span
+    t = (current._ends[stage - 2] if stage > 1 else 0.0) + into
+    position = (f'stage {stage} of {len(current.stages)} "{playing.name}", {clock(into)} into its '
+                f"{clock(playing.seconds)} ({clock(t)} into the journey)")
+    new_t = map_position(current, t, edited)
+    index = edited.stage_index(new_t)
+    new_into = new_t - (edited._ends[index - 1] if index else 0.0)
+    header = (f'Journey "{current.title or current.name}" ({len(current.stages)} stages, {clock(current.seconds)}) '
+              f'-> "{edited.title or edited.name}" ({len(edited.stages)} stages, {clock(edited.seconds)})')
+    landing = (f'Position: "{playing.name}" {clock(into)} in ({clock(t)}) -> '
+               f'"{edited.stages[index].name}" {clock(new_into)} in ({clock(new_t)})')
+    lines = [header, *stage_diff(current, edited), landing]
+    return position, lines
+
+
 def _number(value: float) -> str:
     return f"{value:g}"
 

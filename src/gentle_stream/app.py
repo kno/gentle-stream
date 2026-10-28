@@ -19,7 +19,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.command import DiscoveryHit, Hit, Hits, Provider
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.markup import escape
 from textual.screen import ModalScreen
 from textual.theme import Theme
@@ -29,7 +29,14 @@ from textual.worker import get_current_worker
 
 from .binaural import Binaural
 from .bridge import GentleShell, InterpretError, Usage
-from .journey import BUILTIN, JourneySnapshot, JourneyStore, JourneyStoreError
+from .journey import (
+    BUILTIN,
+    Journey,
+    JourneySnapshot,
+    JourneyStore,
+    JourneyStoreError,
+    edit_preview,
+)
 from .player import Player
 from .presets import NAME_MAX, Preset, PresetError, PresetStore, normalize_name
 from .recorder import RecordError
@@ -203,13 +210,13 @@ class SaveDialog(ModalScreen[str | None]):
     SaveDialog Input:focus { border: round $primary; }
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, heading: str = "Save what is playing"):
         super().__init__()
-        self.initial = name
+        self.initial, self.heading = name, heading
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("Save what is playing", classes="heading")
+            yield Static(self.heading, classes="heading")
             yield Input(self.initial, placeholder="Name", max_length=NAME_MAX, id="save-name")
             yield Static("Enter to save · Esc to cancel", id="save-status")
 
@@ -384,7 +391,7 @@ class JourneyMenu(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Static("Journey", classes="heading")
-            yield Static("Restart · Skip stage · Stop", id="journey-status")
+            yield Static("Restart · Skip stage · Stop · Edit with words · Save as", id="journey-status")
             yield OptionList(id="journey-options")
 
     def on_mount(self) -> None:
@@ -393,6 +400,8 @@ class JourneyMenu(ModalScreen[str | None]):
             Option("Restart", id="restart"),
             Option("Skip stage", id="skip"),
             Option("Stop", id="stop"),
+            Option("Edit with words…", id="edit"),
+            Option("Save as…", id="save"),
         ])
         options.highlighted = 0
         options.focus()
@@ -486,12 +495,164 @@ class JourneyPromptModal(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class JourneyPickerModal(ModalScreen[str | None]):
-    """Pick a journey: "create" first, then the built-ins, then the saved ones alphabetically.
-
-    Dismisses with "create", "builtin:<name>" or "saved:<name>"."""
+class JourneyEditModal(ModalScreen[Journey | None]):
+    """Edit the running journey in words (PM-039): the model's answer is shown as `journey edit` shows it (stage diff,
+    where the listener lands) and dismissed with the edited journey only when Apply is pressed."""
 
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    DEFAULT_CSS = """
+    JourneyEditModal { align: center middle; }
+    JourneyEditModal > Vertical { width: 90; height: auto; border: round $primary; padding: 1; background: $surface; }
+    JourneyEditModal .heading { color: $primary; text-style: bold; margin-bottom: 1; }
+    JourneyEditModal #edit-diff { margin: 1 0; }
+    JourneyEditModal #buttons { height: auto; }
+    JourneyEditModal Button { margin-right: 1; }
+    """
+
+    def __init__(self, shell: GentleShell, current: dict, snap: JourneySnapshot):
+        super().__init__()
+        self.shell, self.current, self.snap = shell, current, snap
+        self.edited: Journey | None = None
+        self.usage: Usage | None = None
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static("Edit the running journey", classes="heading")
+            yield Input(placeholder="What to change, e.g. 'make the build-up five minutes longer'", id="edit-prompt")
+            yield Static("Enter asks the model; nothing changes until you press Apply", id="edit-diff", markup=False)
+            with Horizontal(id="buttons"):
+                yield Button("Apply", id="apply", variant="primary", disabled=True)
+                yield Button("Cancel", id="cancel")
+
+    def on_mount(self) -> None:
+        self.query_one(Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        request = event.value.strip()
+        if request:
+            self.edited = None
+            self.query_one("#apply", Button).disabled = True
+            self.query_one("#edit-diff", Static).update("Asking the model…")
+            self._ask(request)
+
+    @work(thread=True, exclusive=True, group="journey-edit")
+    def _ask(self, request: str) -> None:
+        current = Journey.from_dict(self.current)
+        position, _ = edit_preview(current, self.snap.stage, self.snap.progress, current)
+        try:
+            edited, usage = self.shell.journey_edit(self.current, position, request)
+        except (InterpretError, ValueError) as e:
+            self.app.call_from_thread(self._show, str(e), None)
+            return
+        self.usage = usage
+        lines = edit_preview(current, self.snap.stage, self.snap.progress, edited)[1]
+        self.app.call_from_thread(self._show, "\n".join(lines), edited)
+
+    def _show(self, message: str, edited: Journey | None) -> None:
+        self.edited = edited
+        self.query_one("#edit-diff", Static).update(message)
+        self.query_one("#apply", Button).disabled = edited is None
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "apply" and self.edited is not None:
+            self.dismiss(self.edited)
+        elif event.button.id == "cancel":
+            self.action_cancel()
+
+    def action_cancel(self) -> None:
+        self.workers.cancel_group(self, "journey-edit")
+        self.dismiss(None)
+
+
+class JourneyFileModal(ModalScreen[tuple[Journey, list[str]] | None]):
+    """Open a JSON journey file (PM-039): validated and normalized as `journey validate` does; errors stay here."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    DEFAULT_CSS = """
+    JourneyFileModal { align: center middle; }
+    JourneyFileModal > Vertical { width: 80; height: auto; border: round $primary; padding: 0 1; background: $surface; }
+    JourneyFileModal .heading { color: $primary; text-style: bold; }
+    JourneyFileModal #journey-file-status { color: $text-muted; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static("Open a journey file", classes="heading")
+            yield Input(placeholder="path/to/journey.json", id="journey-file")
+            yield Static("Enter opens · Esc cancels", id="journey-file-status", markup=False)
+
+    def on_mount(self) -> None:
+        self.query_one(Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        from . import _journey_source
+
+        event.stop()
+        path = Path(event.value.strip()).expanduser()
+        status = self.query_one("#journey-file-status", Static)
+        if not path.is_file():
+            status.update(f"no such file: {path}")
+            return
+        try:
+            journey, warnings = _journey_source(str(path))
+        except ValueError as e:
+            status.update(str(e))
+            return
+        self.dismiss((journey, list(warnings)))
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class JourneyShowModal(ModalScreen[str | None]):
+    """A journey as `journey show` prints it, with its warnings; for an opened file, Play and Save as too."""
+
+    BINDINGS = [Binding("escape", "cancel", "Close")]
+    DEFAULT_CSS = """
+    JourneyShowModal { align: center middle; }
+    JourneyShowModal > Vertical { width: 90; height: 80%; border: round $primary; padding: 0 1; background: $surface; }
+    JourneyShowModal .heading { color: $primary; text-style: bold; }
+    JourneyShowModal #journey-warnings { color: $warning; }
+    JourneyShowModal VerticalScroll { height: 1fr; }
+    JourneyShowModal #buttons { height: auto; }
+    JourneyShowModal Button { margin-right: 1; }
+    """
+
+    def __init__(self, journey: Journey, warnings: list[str] | None = None, actions: bool = False):
+        super().__init__()
+        self.journey, self.warnings, self.actions = journey, warnings or [], actions
+
+    def compose(self) -> ComposeResult:
+        import json
+
+        with Vertical():
+            yield Static(f"Journey: {escape(self.journey.title or self.journey.name)}", classes="heading")
+            yield Static("\n".join(f"warning: {w}" for w in self.warnings), id="journey-warnings", markup=False)
+            with VerticalScroll():
+                yield Static(json.dumps(self.journey.to_dict(), ensure_ascii=False, indent=2), id="journey-json",
+                             markup=False)
+            with Horizontal(id="buttons"):
+                if self.actions:
+                    yield Button("Play", id="play", variant="primary")
+                    yield Button("Save as…", id="save")
+                yield Button("Close", id="close")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id if event.button.id in ("play", "save") else None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class JourneyPickerModal(ModalScreen[str | None]):
+    """Pick a journey: "create" first, then the built-ins, then the saved ones alphabetically, then "open" (a file);
+    `v` shows the highlighted one, `d` deletes a saved one.
+
+    Dismisses with "create", "open", "builtin:<name>" or "saved:<name>"."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel"), Binding("d,delete", "delete", "Delete"),
+                Binding("v", "show", "Show")]
     DEFAULT_CSS = """
     JourneyPickerModal { align: center middle; }
     JourneyPickerModal > Vertical { width: 70; height: auto; border: round $primary; padding: 1;
@@ -509,6 +670,8 @@ class JourneyPickerModal(ModalScreen[str | None]):
         with Vertical():
             yield Static("Pick a journey", classes="heading")
             yield OptionList(id="journey-list")
+            yield Static("Enter plays · v shows · d deletes a saved journey · Esc closes", id="journey-picker-status",
+                         markup=False)
 
     def on_mount(self) -> None:
         options = self.query_one(OptionList)
@@ -518,6 +681,7 @@ class JourneyPickerModal(ModalScreen[str | None]):
                                       id=f"builtin:{name}"))
         for saved_name, _ in self.store.list():
             options.add_option(Option(f"[saved] {escape(saved_name)}", id=f"saved:{saved_name}"))
+        options.add_option(Option("📂 Open a journey file…", id="open"))   # last: the PM-012 order stays as it was
         ids = [options.get_option_at_index(i).id for i in range(options.option_count)]
         options.highlighted = ids.index(self.highlight) if self.highlight in ids else 0
         options.focus()
@@ -525,6 +689,34 @@ class JourneyPickerModal(ModalScreen[str | None]):
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         event.stop()
         self.dismiss(event.option.id or None)
+
+    def _highlighted(self) -> str | None:
+        options = self.query_one(OptionList)
+        return None if options.highlighted is None else options.get_option_at_index(options.highlighted).id
+
+    def action_delete(self) -> None:
+        option_id = self._highlighted() or ""
+        status = self.query_one("#journey-picker-status", Static)
+        if option_id.startswith("builtin:"):
+            status.update("built-in journeys cannot be deleted")
+            return
+        if not option_id.startswith("saved:"):
+            return
+        name = option_id.partition(":")[2]
+        try:
+            self.store.delete(name)
+        except JourneyStoreError as e:
+            status.update(str(e))
+            return
+        self.query_one(OptionList).remove_option(option_id)
+        status.update(f'Deleted journey "{name}"')
+
+    def action_show(self) -> None:
+        option_id = self._highlighted() or ""
+        kind, _, name = option_id.partition(":")
+        journey = BUILTIN.get(name) if kind == "builtin" else self.store.get(name) if kind == "saved" else None
+        if journey is not None:
+            self.app.push_screen(JourneyShowModal(journey))
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -700,7 +892,10 @@ class StreamApp(App):
             ("Save what is playing", "Save the prompt and style under a name (s)", "save_preset"),
             ("Saved prompts", "Play or delete a saved prompt (p)", "pick_preset"),
             ("Journey controls", "Restart, skip a stage or stop the journey (j)", "journey_menu"),
-            ("Journeys", "Pick, create or play a journey (J)", "journey_picker"),
+            ("Journeys", "Pick, create, open, show, delete or play a journey (J)", "journey_picker"),
+            ("Edit the journey", "Change the running journey in words, keeping your place (j)", "journey_edit"),
+            ("Save the journey as", "Save the running journey, with its edits, under a name (j)", "journey_save_as"),
+            ("Open a journey file", "Validate a JSON journey file, then play or save it (J)", "journey_open"),
             ("Volume up", "Five steps louder (+)", "volume(5)"),
             ("Volume down", "Five steps quieter (-)", "volume(-5)"),
             ("Record the session", "Start or stop recording what you hear into a WAV file (r)", "record"),
@@ -747,9 +942,82 @@ class StreamApp(App):
 
         self.push_screen(PresetPicker(self.presets), chosen)
 
+    def action_journey_edit(self) -> None:
+        """Edit the running journey in words: the stage diff first, applied only on Apply."""
+        current, snap = self.player.journey_current(), self.player.now.journey
+        if current is None or snap is None:
+            self._status("[$error]Journey:[/] no journey is running")
+            return
+
+        def edited(journey: Journey | None) -> None:
+            if journey is None:
+                return
+            try:
+                self.player.journey_edit(journey.to_dict())
+            except (ValueError, ConnectionError) as e:
+                self._status(f"[$error]Journey:[/] {escape(str(e))}")
+                return
+            usage = modal.usage
+            if usage:
+                self.session_usage = usage if self.session_usage is None else self.session_usage + usage
+                self._show_model()
+            self._status(f"Edited journey [b]{escape(journey.title or journey.name)}[/b] from the next bar")
+
+        modal = JourneyEditModal(self.shell, current, snap)
+        self.push_screen(modal, edited)
+
+    def _save_journey(self, journey: Journey) -> None:
+        def named(name: str | None) -> None:
+            if name is None:
+                return
+            try:
+                stored, _ = JourneyStore().save(name, journey)
+            except JourneyStoreError as e:
+                self._status(f"[$error]Journey:[/] {escape(str(e))}")
+                return
+            self._status(f'Saved journey "{escape(stored)}"')
+
+        self.push_screen(SaveDialog(journey.title or journey.name, "Save the journey as"), named)
+
+    def action_journey_save_as(self) -> None:
+        """Save the running journey (with its edits) under a name."""
+        current = self.player.journey_current()
+        if current is None:
+            self._status("[$error]Journey:[/] no journey is running")
+            return
+        self._save_journey(Journey.from_dict(current))
+
+    def action_journey_open(self) -> None:
+        """Open, validate and show a JSON journey file; then play or save it."""
+        def opened(result: tuple[Journey, list[str]] | None) -> None:
+            if result is None:
+                return
+            journey, warnings = result
+
+            def act(choice: str | None) -> None:
+                if choice == "play":
+                    try:
+                        self.player.journey_start(journey.to_dict())
+                    except (ValueError, ConnectionError) as e:
+                        self._status(f"[$error]Journey:[/] {escape(str(e))}")
+                        return
+                    self._status(f"Journey [b]{escape(journey.title)}[/b] starts at the next bar")
+                elif choice == "save":
+                    self._save_journey(journey)
+
+            self.push_screen(JourneyShowModal(journey, warnings, actions=True), act)
+
+        self.push_screen(JourneyFileModal(), opened)
+
     def action_journey_menu(self) -> None:
         def chosen(action: str | None) -> None:
             if not action:
+                return
+            if action == "edit":
+                self.action_journey_edit()
+                return
+            if action == "save":
+                self.action_journey_save_as()
                 return
             try:
                 if action == "restart":
@@ -773,6 +1041,9 @@ class StreamApp(App):
             if choice == "create":
                 modal = JourneyPromptModal(self.shell, store)
                 self.push_screen(modal, lambda name: created(name, modal.usage))
+                return
+            if choice == "open":
+                self.action_journey_open()
                 return
             kind, _, name = choice.partition(":")
             journey = BUILTIN.get(name) if kind == "builtin" else store.get(name)

@@ -17,7 +17,7 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
 | T1 PM-036 record the session | S1 | inline | `feat/session-record` | done (PM-036 commit; base `docs/m10-plan`) |
 | T2 PM-037 open-ended stages | S2 | inline | `feat/open-stages` | done (PM-037 commit; base `4347a90`) |
 | T3 PM-038 point-list curves | S3 | inline | `feat/point-curves` | done (PM-038 commit; base `10c82c5`) |
-| T4 PM-039 journeys from the TUI | S4, S0 | inline | `feat/tui-journeys` | pending |
+| T4 PM-039 journeys from the TUI | S4, S0 | inline | `feat/tui-journeys` | done (PM-039 commit; base `a886ff7`) |
 | T5 PM-040 live controls from the TUI | S5, S0 | inline | `feat/tui-controls` | pending |
 | T6 PM-041 binaural from the TUI | S6, S0 | inline | `feat/tui-binaural` | pending |
 | T7 PM-042 spoken phrases from the TUI | S7, S0 | inline | `feat/tui-say` | pending |
@@ -75,3 +75,18 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
   my message. RED 19 failed / 2 passed; GREEN 21; 6 mutations each fail tests. One new TRY004 (ValueError for a
   bad type) follows the parser's convention: its callers catch ValueError.
 - L9: PM-038 suite job-27: 1353 passed, 3 deselected, 0 test daemons. T3 verified.
+- L10: PM-039. `journey.edit_preview` computes what `journey edit` shows (position for the model, header, stage
+  diff, landing) and both the CLI and the TUI use it; it measures the position over the stage's span, which also fixes
+  a latent PM-037 bug in the CLI (seconds into an open stage were computed from an infinite length). TUI: journey menu
+  gains Edit with words (JourneyEditModal: the model runs in a worker, the diff is shown, Apply enabled only with a
+  valid answer, Esc cancels) and Save as (the running journey via journey_current, with its edits; SaveDialog gains a
+  heading). Picker: `v` shows (JourneyShowModal, the `journey show` JSON), `d` deletes a saved journey (built-ins
+  refused), and "Open a journey file" (JourneyFileModal: files only, validated with `_journey_source`, errors stay in
+  the dialog; then JourneyShowModal with warnings, Play and Save as). Palette gains the three actions. The open option
+  goes last: the PM-012 test pins create, built-ins, saved in that order (I first put it second and broke two tests);
+  the pinned list now ends with "open". My test-side slips: the fake stream is never pulled in make_app, so journeys
+  never started until a helper pulled audio; identity comparisons failed because journey_start rebuilds the journey
+  from JSON. A surviving mutation showed the file check mattered (a built-in name would have opened as a "file"); a
+  test was added. 12 tests; 6 real mutations fail tests (one control was unreachable by design). Three new RUF012
+  (dialog BINDINGS) follow the file's convention.
+- L11: PM-039 suite job-28: 1365 passed, 3 deselected, 0 test daemons. T4 verified.

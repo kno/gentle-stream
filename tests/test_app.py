@@ -669,7 +669,8 @@ async def test_pm012_shift_j_lists_create_then_builtins_then_saved_alphabeticall
         await pilot.press("J")
         await pilot.pause(0.1)
         assert isinstance(app.screen, JourneyPickerModal)
-        assert picker_ids(app) == (["create"] + [f"builtin:{n}" for n in BUILTIN] + ["saved:alpha", "saved:zeta"])
+        assert picker_ids(app) == (["create"] + [f"builtin:{n}" for n in BUILTIN] + ["saved:alpha", "saved:zeta"]
+                                   + ["open"])   # PM-039: opening a file comes last, the PM-012 order stays
 
 
 @pytest.mark.asyncio

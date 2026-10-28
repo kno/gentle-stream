@@ -15,8 +15,8 @@ CONTROLS = """controls:
   m        choose the model Gentle Shell uses
   s        save what is playing under a name (prompt and style)
   p        saved prompts: Enter applies one instantly, d deletes it
-  j        journey menu: restart, skip a stage or stop the running journey
-  J        journeys: create one from a description, or play a built-in or saved one
+  j        journey menu: restart, skip a stage, stop, edit in words, or save the running journey
+  J        journeys: create, play, show (v) or delete (d) one, or open a JSON journey file
   r        record the session into a WAV file; r again stops and saves it
   ctrl+p   command palette: every action, found by typing its name
   + / -    volume up / down by 5%
@@ -81,19 +81,12 @@ def setup_samples() -> int:
     return 0
 
 
-def _clock(seconds: float) -> str:
-    if not math.isfinite(seconds):
-        return "open"
-    total = max(0, round(seconds))
-    return f"{total // 60}:{total % 60:02d}"
-
-
 def _journey_edit(prompt: str, *, model: str | None, gentle_shell: str, yes: bool) -> int:
     """`journey edit PROMPT`: ask the model for the running journey changed as PROMPT says, print the stage diff and
     where the listener lands, then apply it from the next bar (after asking on a terminal, or with --yes)."""
     from .bridge import GentleShell, InterpretError
     from .client import NoPlayer, PlayerError, PlayerGone, connect
-    from .journey import Journey, map_position, stage_diff
+    from .journey import Journey, edit_preview
 
     try:
         player = connect()
@@ -109,11 +102,7 @@ def _journey_edit(prompt: str, *, model: str | None, gentle_shell: str, yes: boo
             print("gentle-stream: no journey is running", file=sys.stderr)
             return 1
         current = Journey.from_dict(data)
-        stage = current.stages[snap.stage - 1]
-        into = snap.progress * stage.seconds
-        t = (current._ends[snap.stage - 2] if snap.stage > 1 else 0.0) + into
-        position = (f'stage {snap.stage} of {snap.stages} "{stage.name}", {_clock(into)} into its '
-                    f"{_clock(stage.seconds)} ({_clock(t)} into the journey)")
+        position, _ = edit_preview(current, snap.stage, snap.progress, current)
         try:
             edited, usage = GentleShell(binary=gentle_shell, model=model).journey_edit(data, position, prompt)
         except InterpretError as e:
@@ -121,15 +110,8 @@ def _journey_edit(prompt: str, *, model: str | None, gentle_shell: str, yes: boo
             return 1
         if usage is not None:
             print(f"usage: {usage.format()}", file=sys.stderr)
-        new_t = map_position(current, t, edited)
-        index = edited.stage_index(new_t)
-        new_into = new_t - (edited._ends[index - 1] if index else 0.0)
-        print(f'Journey "{current.title or current.name}" ({len(current.stages)} stages, {_clock(current.seconds)}) -> '
-              f'"{edited.title or edited.name}" ({len(edited.stages)} stages, {_clock(edited.seconds)})')
-        for line in stage_diff(current, edited):
+        for line in edit_preview(current, snap.stage, snap.progress, edited)[1]:
             print(line)
-        print(f'Position: "{stage.name}" {_clock(into)} in ({_clock(t)}) -> '
-              f'"{edited.stages[index].name}" {_clock(new_into)} in ({_clock(new_t)})')
         if not yes:
             if not sys.stdin.isatty():
                 print("gentle-stream: not applied; run it again with --yes to apply it", file=sys.stderr)
