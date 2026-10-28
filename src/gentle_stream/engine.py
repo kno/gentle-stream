@@ -158,6 +158,8 @@ class Engine:
         self._pending_journey: Journey | None = None   # what it starts, or None to stop
         self._journey_control: str | None = None  # restart or skip, applied at the next rendered bar
         self._pending_edit: Journey | None = None   # replaces the running journey at the next bar, keeping its place
+        # a mood during a journey (PM-035): (journey and stage it belongs to, its name, offsets on the journey's fields)
+        self._override: tuple[tuple[int, int], str, dict[str, float]] | None = None
         self._binaural_queued = False           # a binaural setting waits for the next bar (under _lock)
         self._pending_binaural: tuple[Binaural | None, float] = (None, 0.0)   # the setting (None: off), glide
         self._binaural = BinauralLayer(sr)      # render thread only
@@ -472,6 +474,7 @@ class Engine:
             self._running = running
         t = (self.samples_out - running.start_sample) / self.sr if running is not None else 0.0
         values = self._journey_values(running, t)   # owned by the journey: a new piece starts with them
+        values = self._apply_override(running, t, values, style)
         stage_index = running.journey.at(t, running.start)[0] if running is not None else None
         target_genre = (running.journey.stages[int(stage_index)].genre
                         if running is not None and stage_index is not None else None)
@@ -509,6 +512,8 @@ class Engine:
         running = self._running   # None once a released journey has given its final values
         self._snapshot = (running.journey.snapshot(t, running.start, self.style.bpm, running.binaural_start)
                           if running is not None else None)
+        if self._snapshot is not None and self._override is not None:
+            self._snapshot = replace(self._snapshot, override=(self._override[1], dict(self._override[2])))
         bar_start = self.piece_seconds
         if self.bar % 4 == 0:   # a phrase boundary: the parts the journey switches take effect here
             self._masked = running.journey.masked_layers(t) if running is not None else frozenset()
@@ -597,6 +602,30 @@ class Engine:
             return
         key, _ = harmonic_handoff(self.style.key, self.style.mode, genres.get(target).modes)
         self.composer.pivot(self.bar, (KEYS.index(key) - KEYS.index(self.style.key)) % 12)
+
+    def _apply_override(self, running: _Running | None, t: float, values: dict[str, float],
+                        mood: Style | None) -> dict[str, float]:
+        """The journey's `values` with the stage's mood offsets. A `mood` queued during a journey turns each field it
+        changes that the journey owns into an offset from the journey's value, for the rest of the stage (the other
+        fields it changes apply directly, as the new piece's style); a later mood in the same stage replaces the
+        offsets of the fields it changes. Offsets end at the stage boundary, or when the journey restarts or changes."""
+        if running is None:
+            self._override = None
+            return values
+        key = (id(running), running.journey.stage_index(t))
+        if self._override is not None and self._override[0] != key:
+            self._override = None
+        if mood is not None:
+            offsets = dict(self._override[2]) if self._override is not None else {}
+            for name, value in values.items():
+                if abs(getattr(mood, name) - getattr(self.style, name)) > 1e-6:   # what the mood changed
+                    offsets[name] = getattr(mood, name) - value
+            offsets = {name: d for name, d in offsets.items() if abs(d) > 1e-9}
+            self._override = (key, mood.mood or mood.name, offsets) if offsets else None
+        if self._override is None:
+            return values
+        offsets = self._override[2]
+        return {name: _bounded(name, value + offsets.get(name, 0.0)) for name, value in values.items()}
 
     def _journey_values(self, running: _Running | None, t: float) -> dict[str, float]:
         """The values of `running` (the journey playing) for the bar about to render, `t` seconds into it; empty

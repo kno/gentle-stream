@@ -156,6 +156,7 @@ class JourneySnapshot:
     target_bpm: float
     seconds_left: float | None
     binaural: dict[str, float] | None = None   # the binaural values at the bar's start, when the journey moves them
+    override: tuple[str, dict[str, float]] | None = None   # a mood's offsets on the journey's fields for this stage
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -168,10 +169,19 @@ class JourneySnapshot:
                        str(data["stage_name"]), float(data["progress"]), float(data["bpm"]),
                        float(data["target_bpm"]),
                        None if data["seconds_left"] is None else float(data["seconds_left"]),
-                       _binaural_values(data.get("binaural")))
+                       _binaural_values(data.get("binaural")), _override(data.get("override")))
         except (KeyError, TypeError, ValueError):
             return None
         return snap
+
+
+def _override(data) -> tuple[str, dict[str, float]] | None:
+    """A snapshot's mood override, or None when absent or malformed (an older player reports none)."""
+    try:
+        name, offsets = data
+        return str(name), {str(k): float(v) for k, v in dict(offsets).items()}
+    except (TypeError, ValueError):
+        return None
 
 
 def _binaural_values(data) -> dict[str, float] | None:

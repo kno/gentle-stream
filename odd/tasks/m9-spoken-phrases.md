@@ -23,7 +23,7 @@ warning."
 | T2 PM-032 phrases in journeys | S2 | inline | `feat/journey-phrases` | done (PM-032 commit; base `2141704`) |
 | T3 PM-033 voice characteristics | S3 | inline | `feat/speech-voices` | done (PM-033 commit; base `f496ba4`) |
 | T4 PM-034 natural-language journey edit | S4 | inline | `feat/journey-edit` | done (PM-034 commit; base `d08f102`) |
-| T5 PM-035 moods inside a journey | S5 | inline | `feat/journey-moods` | pending |
+| T5 PM-035 moods inside a journey | S5 | inline | `feat/journey-moods` | done (PM-035 commit; base `3b98de8`) |
 
 ## Log
 
@@ -90,3 +90,16 @@ warning."
   mutation survive and was rewritten. RED ImportError; GREEN 21 tests; 10 mutations each fail tests. Ruff/Pyright
   clean on new code.
 - L10: PM-034 full non-slow suite job-21 exited 0: 1282 passed, 3 deselected, 0 orphan daemons. T4 verified.
+- L11: PM-035. Before it, a mood during a journey lost every change to a field the journey owns (the next bar took
+  the journey's values: the "fighting" the roadmap names). Now, when a style is queued while a journey runs, each owned
+  field the mood changes (compared with the playing style) becomes an offset from the journey's value, applied to the
+  journey's values (clamped) for the rest of the stage; the rest of the mood applies directly as before and stays.
+  Offsets are keyed by the running journey and stage, so they end at the stage boundary and on restart, skip or edit;
+  a later mood in the same stage replaces only the offsets it changes; the name is the mood text, else the style name.
+  The snapshot gains an optional `override` (name, offsets), additive in to_dict and tolerated missing from older
+  players; the TUI journey line appends `mood "NAME": field +x.xx ... until "STAGE" ends`. Contract change pinned in
+  tests/test_journey.py: the "style during a journey" case now expects the mood's bpm and energy (as offsets, named
+  in the snapshot); the "next" case is unchanged; the snapshot key order gains "override". A bpm tolerance I first
+  added was dead code (the engine and the model both round bpm to 0.1), shown by a surviving mutation, and removed.
+  RED 7 failed / 3 passed (those three pin behaviour that already held); GREEN 10; 6 mutations each fail tests.
+- L12: PM-035 full non-slow suite job-22 exited 0: 1292 passed, 3 deselected, 0 orphan daemons. T5 verified. M9 implemented; slow flagship tests run next.

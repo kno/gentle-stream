@@ -90,8 +90,14 @@ def journey_line(snap: JourneySnapshot | None, into_bar: float = 0.0) -> str:
     bpm, target = round(snap.bpm), round(snap.target_bpm)
     tempo = f"{bpm} bpm" if bpm == target else f"{bpm} → {target} bpm"
     left = "sustaining" if snap.seconds_left is None else f"{format_time(snap.seconds_left - into_bar)} left"
-    return (f"Journey: {snap.title} · stage {snap.stage}/{snap.stages} \"{snap.stage_name}\" · "
+    line = (f"Journey: {snap.title} · stage {snap.stage}/{snap.stages} \"{snap.stage_name}\" · "
             f"{round(snap.progress * 100)}% · {tempo} · {left}")
+    if snap.override is not None:   # a mood adjusting the journey's fields for the rest of the stage
+        name, offsets = snap.override
+        changes = ", ".join(f"{field} {delta:+.0f}" if field == "bpm" else f"{field} {delta:+.2f}"
+                            for field, delta in sorted(offsets.items()))
+        line += f' · mood "{name}": {changes} until "{snap.stage_name}" ends'
+    return line
 
 
 def binaural_line(setting: Binaural | None) -> str:

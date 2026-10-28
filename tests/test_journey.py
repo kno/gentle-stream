@@ -239,10 +239,15 @@ def test_a_new_piece_during_a_journey_takes_the_journey_values_on_the_next_bar(c
     bar = e.render_bar()
     _, _, plan = THREE.at(t, START)
     assert e.piece == piece + 1 and e.bar == 1 and e.journey is THREE
-    assert abs(bpm_of(bar) - plan["bpm"]) <= 0.1
-    for style in (e.style, e._piece.style, e.composer.style):     # the piece starts with the journey's values
-        assert style.bpm == pytest.approx(plan["bpm"], abs=0.1) and style.energy == pytest.approx(plan["energy"])
-    if change == "style":
+    assert abs(bpm_of(bar) - (130 if change == "style" else plan["bpm"])) <= 0.1
+    if change == "next":
+        for style in (e.style, e._piece.style, e.composer.style):     # the piece starts with the journey's values
+            assert style.bpm == pytest.approx(plan["bpm"], abs=0.1) and style.energy == pytest.approx(plan["energy"])
+    if change == "style":   # PM-035: the mood's owned fields become offsets on the journey's values for the stage
+        for style in (e.style, e._piece.style, e.composer.style):
+            assert style.bpm == pytest.approx(130, abs=0.1) and style.energy == pytest.approx(0.95)
+        snap = e.journey_snapshot
+        assert snap is not None and snap.override is not None and set(snap.override[1]) == {"bpm", "energy"}
         assert (e.style.name, e.style.genre, e.style.brightness) == ("B", "jazz", 0.1)   # the rest is the mood's
 
 
@@ -470,7 +475,7 @@ def test_a_snapshot_round_trips_through_json_in_a_fixed_key_order():
     snap = JourneySnapshot("warm-up", "Warm-up", 2, 4, "Wake", 0.625, 66.5, 72.0, 412.25)
     data = snap.to_dict()
     assert list(data) == ["name", "title", "stage", "stages", "stage_name", "progress", "bpm", "target_bpm",
-                          "seconds_left", "binaural"]
+                          "seconds_left", "binaural", "override"]
     assert JourneySnapshot.from_dict(json.loads(json.dumps(data))) == snap
     sustaining = JourneySnapshot("warm-up", "Warm-up", 4, 4, "Glow", 1.0, 100.0, 100.0, None)
     assert JourneySnapshot.from_dict(sustaining.to_dict()) == sustaining
