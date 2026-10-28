@@ -24,6 +24,7 @@ from multiprocessing.connection import Client
 import numpy as np
 
 from . import daemon
+from .binaural import Binaural
 from .journey import JourneySnapshot
 from .player import NowPlaying, settle
 from .style import Style
@@ -223,6 +224,13 @@ class PlayerClient:
 
     def journey_skip(self) -> None:
         self._control("journey_skip")
+
+    def binaural(self, setting: Binaural | None) -> None:
+        """Add the binaural layer with `setting` from the next bar; None removes it."""
+        if setting is None:
+            self._control("binaural", on=False)
+        else:
+            self._control("binaural", on=True, **setting.to_dict())
 
     def set_volume(self, volume: float) -> None:
         self._control("set_volume", volume=float(volume))

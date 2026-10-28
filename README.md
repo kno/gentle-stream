@@ -203,6 +203,7 @@ gentle-stream ctl stop     # ends the background player
 | `ctl play`, `pause`, `toggle`, `next`, `stop` | Nothing, or `gentle-stream: nothing is playing` on stderr | `0`, or `1` when nothing plays |
 | `ctl tempo BPM [--over SECONDS]` | Glide tempo in place (default 60 seconds) | `0`, or `1` when nothing plays |
 | `ctl glide FIELD=VALUE... [--over SECONDS]` | Glide `energy`, `brightness`, `space`, `swing`, `vinyl`, `lead_density` or `bpm` in place (default 60 seconds) | `0`; `1` when nothing plays or the player refuses; `2` for a malformed or discrete field |
+| `ctl binaural on [--carrier HZ] [--beat HZ] [--level L]`, `ctl binaural off` | Add or remove the binaural texture from the next bar (see [Binaural](#binaural)); nothing on stdout | `0`; `1` when nothing plays; `2` for a value out of range or options with `off` |
 | `journey play NAME\|FILE` | Run a built-in or saved journey (names ignore case) or a JSON file (see [Journeys](#journeys)); nothing on stdout | `0`; `1` when nothing plays or the name is unknown |
 | `journey restart` | Restart the running journey at its first stage on the next bar | `0`; `1` when nothing plays or no journey is running |
 | `journey skip` | Advance the running journey to its next stage on the next bar | `0`; `1` when nothing plays, no journey is running, or the journey has reached its final stage |
@@ -215,6 +216,27 @@ gentle-stream ctl stop     # ends the background player
 A glide changes the piece that is playing instead of starting a new one: the song form keeps going, and each bar takes the values at its start. Each field glides on its own (a second `glide` adds to or replaces per field), values are clamped like a mood's, and a new mood or `next` cancels every glide. Discrete fields (genre, key, mode, instruments, drums) only change with a new piece. Genres that pick something once per piece from the tempo (chiptune's arpeggio speed) keep the value the piece started with. If the background player is older than the command, `ctl` says so: run `gentle-stream ctl stop` and start again.
 
 The player listens on a Unix socket in a private directory (`$XDG_RUNTIME_DIR/gentle-stream`, default `~/.cache/gentle-stream/run`, mode `0700`), authenticated with a random key in a `0600` file. A player that crashed is detected and replaced on the next start. If the audio output cannot be opened, `gentle-stream` prints the error and exits with `1`.
+
+<div align="right"><a href="#top">Back to top</a></div>
+
+<div align="center"><img src="https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/rose.png" width="28" alt="" /></div>
+
+## Binaural
+
+An optional listening texture under the music, best with headphones: a quiet sine on each ear, the left one half the beat below the carrier and the right one half the beat above it. gentle-stream makes no claim about any effect it may have. It is off by default.
+
+```bash
+gentle-stream ctl binaural on --carrier 200 --beat 6 --level 0.05   # 197 Hz left, 203 Hz right
+gentle-stream ctl binaural off
+```
+
+| Option | Range | Default |
+| :--- | :--- | :--- |
+| `--carrier HZ` | 40–1000 | 200 |
+| `--beat HZ` | 0.5–40 (the difference between the ears) | 6 |
+| `--level L` | 0–0.08 (each tone's amplitude) | 0.05 |
+
+The layer is added after the master chain, so no reverb, tape wow, tone filter or compressor touches it, and the music's ceiling (0.9) plus the highest level stays below full scale. A new setting keeps both tones running without a jump; turning it on starts from silence and turning it off stops it at once (smooth fades come later). `next` crossfades over about 80 ms, during which the layer's level dips briefly, without a click. The player state reports it as `binaural` (`{"carrier", "beat", "level"}` or `null`).
 
 <div align="right"><a href="#top">Back to top</a></div>
 
@@ -407,6 +429,7 @@ All music is generated: the composer builds every melody, counter-melody, bass l
 | [`src/gentle_stream/composer.py`](src/gentle_stream/composer.py) | Song form, harmony, motif development, counter-melody, bass |
 | [`src/gentle_stream/engine.py`](src/gentle_stream/engine.py) | Bar-by-bar rendering and the master chain |
 | [`src/gentle_stream/mastering.py`](src/gentle_stream/mastering.py) | Procedural impulse response, convolution reverb, bus compressor, soft clip |
+| [`src/gentle_stream/binaural.py`](src/gentle_stream/binaural.py) | The optional binaural layer: settings and the phase-continuous sine pair |
 | [`src/gentle_stream/player.py`](src/gentle_stream/player.py) | Real-time playback, buffering, crossfades, spectrum |
 | [`src/gentle_stream/samples.py`](src/gentle_stream/samples.py) | Soundfont download and verification, FluidSynth rendering |
 | [`src/gentle_stream/synth.py`](src/gentle_stream/synth.py) | Shared oscillators, envelopes, filters, waveshaper |

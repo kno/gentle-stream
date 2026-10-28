@@ -20,6 +20,10 @@ key kept in a 0600 file. Messages are JSON (never pickle), one request and one r
                                      "no journey called ..."} listing the built-ins)
     {"cmd": "journey_last"}          -> {"ok": true, "journey": {...} | null} (last started journey)
     {"cmd": "journey_stop"}          (leaves the music as it is; fine when no journey runs)
+    {"cmd": "binaural", "on": true, "carrier": 200, "beat": 6, "level": 0.05}
+                                     (the binaural layer from the next bar, see binaural.Binaural; omitted values
+                                     take the defaults; {"on": false} removes it; "binaural" in the state is the
+                                     setting of the bar rendered last, or null)
     {"cmd": "stop"}                  -> {"ok": true}, then the process exits and every connection sees EOF
     anything else                    -> {"ok": false, "error": "..."}
 
@@ -132,6 +136,7 @@ def state(player, bands: int = 0) -> dict:
         "bpm": now.style.bpm,
         "target_bpm": player.engine.target_bpm,
         "journey": now.journey.to_dict() if now.journey is not None else None,
+        "binaural": player.engine.binaural.to_dict() if player.engine.binaural is not None else None,
     }
     if bands > 0:
         out["spectrum"] = [round(float(v), 4) for v in player.spectrum_levels(min(bands, MAX_BANDS))]
@@ -161,6 +166,19 @@ def _glide_fields(fields) -> dict[str, float]:
     if unknown:
         raise ValueError(f"cannot glide {', '.join(map(repr, unknown))}: only {', '.join(GLIDE_FIELDS)}")
     return {name: _finite(value, name) for name, value in fields.items()}
+
+
+def _binaural(request):
+    """The validated setting of a `binaural` request, or None for off; a bad value rejects the request."""
+    from .binaural import Binaural
+
+    on = request["on"]
+    if not isinstance(on, bool):
+        raise TypeError("on must be true or false")
+    if not on:
+        return None
+    values = {name: _finite(request[name], name) for name in ("carrier", "beat", "level") if name in request}
+    return Binaural.from_dict(values)
 
 
 def handle(player, request) -> dict:
@@ -203,6 +221,8 @@ def handle(player, request) -> dict:
             return {"ok": True, "journey": getattr(player, "last_journey", None)}
         elif cmd == "journey_stop":
             player.engine.stop_journey()
+        elif cmd == "binaural":
+            player.engine.queue_binaural(_binaural(request))
         elif cmd == "journey_restart":
             player.engine.restart_journey()
         elif cmd == "journey_skip":

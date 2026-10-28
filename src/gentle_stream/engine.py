@@ -41,6 +41,7 @@ from . import samples as _samples
 from .composer import Composer
 from .genres.base import Piece
 from .genres.lofi import Instruments  # noqa: F401  (re-exported: the procedural lo-fi voices)
+from .binaural import Binaural, BinauralLayer
 from .mastering import Compressor, ConvolutionReverb, procedural_ir, soft_clip
 from .style import DEFAULT, KEYS, Style
 from .synth import SR, StatefulFilter, _sos, bp, hp, lp, mtof  # noqa: F401  (re-exported)
@@ -118,6 +119,9 @@ class Engine:
         self._journey_queued = False            # a journey command waits for the next bar (under _lock)
         self._pending_journey: Journey | None = None   # what it starts, or None to stop
         self._journey_control: str | None = None  # restart or skip, applied at the next rendered bar
+        self._binaural_queued = False           # a binaural setting waits for the next bar (under _lock)
+        self._pending_binaural: Binaural | None = None   # what it sets, or None to turn the layer off
+        self._binaural = BinauralLayer(sr)      # render thread only
         self._driving: Journey | None = None    # the journey playing, as other threads may see it (under _lock)
         self._running: _Running | None = None   # the journey playing; render thread only
         self._snapshot: JourneySnapshot | None = None   # its progress at the bar rendered last
@@ -172,6 +176,16 @@ class Engine:
     def queue_tempo(self, bpm: float, seconds: float) -> None:
         """Glide tempo in place: `queue_glide({"bpm": bpm}, seconds)`."""
         self.queue_glide({"bpm": bpm}, seconds)
+
+    def queue_binaural(self, setting: Binaural | None) -> None:
+        """Add the binaural layer with `setting` (None removes it) from the next rendered bar."""
+        with self._lock:
+            self._pending_binaural, self._binaural_queued = setting, True
+
+    @property
+    def binaural(self) -> Binaural | None:
+        """The binaural setting of the bar rendered last, or None when the layer is off."""
+        return self._binaural.setting
 
     def queue_journey(self, journey: Journey) -> None:
         """Run `journey` from the next bar on, starting from the values playing then; it replaces a running one
@@ -270,6 +284,8 @@ class Engine:
             queued, journey, control = self._journey_queued, self._pending_journey, self._journey_control
             self._pending_style, self._pending_next = None, False
             self._journey_queued, self._pending_journey, self._journey_control = False, None, None
+            binaural_queued, binaural = self._binaural_queued, self._pending_binaural
+            self._binaural_queued, self._pending_binaural = False, None
             if queued:   # a journey starts or stops here; one that starts takes over its fields from any glide
                 self._driving = journey
                 if journey is not None:
@@ -318,6 +334,10 @@ class Engine:
         self._acc[:-n] = self._acc[n:]
         self._acc[-n:] = 0
         out = self._master(out)
+        if binaural_queued:
+            self._binaural.set(binaural)
+        if self._binaural.setting is not None:   # after the master chain: nothing colours or pumps it
+            out = out + self._binaural.render(n)
         self.bar += 1
         self.samples_out += n
         self.piece_seconds += n / self.sr

@@ -6,7 +6,10 @@ import json
 import math
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from .binaural import Binaural
 
 CONTROLS = """controls:
   space    play / pause
@@ -26,6 +29,9 @@ background playback:
   gentle-stream ctl tempo BPM [--over SECONDS] glides the live tempo (default: 60 seconds)
   gentle-stream ctl glide FIELD=VALUE... [--over SECONDS] glides energy, brightness, space, swing, vinyl,
   lead_density or bpm in place, without restarting the piece (a new mood or next cancels glides)
+  gentle-stream ctl binaural on [--carrier HZ] [--beat HZ] [--level L] adds an optional binaural texture under
+  the music: a carrier - beat/2 tone on the left and carrier + beat/2 on the right (headphones; defaults 200, 6,
+  0.05); ctl binaural off removes it
   (status prints one JSON line, with "journey": the running journey's progress or null; the others exit 1 when
   nothing is playing).
 
@@ -77,7 +83,7 @@ OLDER_PLAYER = ("the running player is older than this gentle-stream; run `gentl
 
 
 def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
-        fields: dict[str, float] | None = None) -> int:
+        fields: dict[str, float] | None = None, binaural: Binaural | None = None) -> int:
     from .client import NoPlayer, PlayerError, PlayerGone, connect
 
     try:
@@ -102,6 +108,15 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
                 player.tempo(bpm, seconds)
             elif action == "glide" and fields:          # and at least one FIELD=VALUE for glide
                 player.glide(fields, seconds)
+        except PlayerGone:
+            print("gentle-stream: nothing is playing", file=sys.stderr)
+            return 1
+        except PlayerError as e:
+            print(f"gentle-stream: {OLDER_PLAYER if 'unknown command' in str(e) else e}", file=sys.stderr)
+            return 1
+    elif action == "binaural":
+        try:
+            player.binaural(binaural)   # None turns the layer off
         except PlayerGone:
             print("gentle-stream: nothing is playing", file=sys.stderr)
             return 1
@@ -385,6 +400,8 @@ def _number(text: str) -> float | None:
 
 def _ctl_args(parser: argparse.ArgumentParser, args) -> tuple[float | None, float, dict[str, float] | None]:
     """(bpm, seconds, fields) for `ctl`, or a usage error (exit 2) before the player is contacted."""
+    if any(value is not None for value in (args.carrier, args.beat, args.level)):
+        parser.error("--carrier, --beat and --level are only for binaural")
     if args.action not in ("tempo", "glide"):
         if args.args:
             parser.error(f"{args.action} takes no arguments")
@@ -413,6 +430,23 @@ def _ctl_args(parser: argparse.ArgumentParser, args) -> tuple[float | None, floa
     return None, args.over, fields
 
 
+def _binaural_args(parser: argparse.ArgumentParser, args) -> Binaural | None:
+    """The setting of `ctl binaural on` (None for `off`), or a usage error (exit 2) before the player is contacted."""
+    from .binaural import Binaural
+
+    if args.args not in (["on"], ["off"]):
+        parser.error("binaural requires on or off")
+    values = {name: getattr(args, name) for name in ("carrier", "beat", "level") if getattr(args, name) is not None}
+    if args.args == ["off"]:
+        if values:
+            parser.error("binaural off takes no --carrier, --beat or --level")
+        return None
+    try:
+        return Binaural.from_dict(values)
+    except ValueError as e:
+        parser.error(f"invalid binaural setting: {e}")
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["daemon"]:   # the background player, started by the TUI; not listed in --help
@@ -430,10 +464,17 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("setup-samples", help="download the FluidR3_GM soundfont (MIT) for sampled instruments, once")
     ctl_parser = sub.add_parser("ctl", help="control the music playing in the background")
     ctl_parser.add_argument("action", choices=("play", "pause", "toggle", "next", "stop", "status", "tempo",
-                                               "glide"))
-    ctl_parser.add_argument("args", nargs="*", metavar="ARG", help="tempo: BPM; glide: FIELD=VALUE...")
+                                               "glide", "binaural"))
+    ctl_parser.add_argument("args", nargs="*", metavar="ARG",
+                            help="tempo: BPM; glide: FIELD=VALUE...; binaural: on or off")
     ctl_parser.add_argument("--over", type=float, default=60.0, metavar="SECONDS",
                             help="tempo and glide: seconds to reach the target, 0-3600 (default: 60)")
+    ctl_parser.add_argument("--carrier", type=float, metavar="HZ",
+                            help="binaural on: the carrier tone, 40-1000 Hz (default: 200)")
+    ctl_parser.add_argument("--beat", type=float, metavar="HZ",
+                            help="binaural on: the difference between the ears, 0.5-40 Hz (default: 6)")
+    ctl_parser.add_argument("--level", type=float, metavar="L",
+                            help="binaural on: the level of each tone, 0-0.08 (default: 0.05)")
     render_parser = sub.add_parser("render", help="render music into a 16-bit stereo WAV file (no audio device)",
                                    description="Render music offline with the engine alone into a WAV file.")
     render_parser.add_argument("out", metavar="OUT.wav", help="the WAV file to write")
@@ -471,6 +512,8 @@ def main(argv: list[str] | None = None) -> int:
     create_parser.add_argument("--dry-run", action="store_true", help="print without starting")
     args = ap.parse_args(argv)
     if args.command == "ctl":
+        if args.action == "binaural":
+            return ctl("binaural", binaural=_binaural_args(ctl_parser, args))
         return ctl(args.action, *_ctl_args(ctl_parser, args))
     if args.command == "journey":
         return journey_command(args.journey_action, getattr(args, "name", None),
