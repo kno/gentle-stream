@@ -150,6 +150,15 @@ class Player:
         """Glide the tempo in place, as the background player's `tempo` (`ctl tempo`)."""
         self.engine.queue_tempo(bpm, seconds)
 
+    def say(self, text: str, voice: str | None = None, rate: int | None = None, effect: str = "dry") -> list[str]:
+        """Speak `text` from the next phrase boundary, as the background player's `say` (`ctl say`): the warnings
+        (an unknown voice); SpeechError when it cannot be spoken. Renders here: call it off the UI thread."""
+        from .speech import render, resolve_voice
+
+        voice, warning = resolve_voice(voice)
+        self.engine.queue_speech(render(text, self.engine.sr, voice, rate, effect))
+        return [warning] if warning else []
+
     def set_binaural(self, setting: Binaural | None, seconds: float = 0.0) -> None:
         """Head for `setting` (None fades it out), as the background player's `binaural` (`ctl binaural on|off`)."""
         self.engine.queue_binaural(setting, seconds)

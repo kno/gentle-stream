@@ -20,7 +20,7 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
 | T4 PM-039 journeys from the TUI | S4, S0 | inline | `feat/tui-journeys` | done (PM-039 commit; base `a886ff7`) |
 | T5 PM-040 live controls from the TUI | S5, S0 | inline | `feat/tui-controls` | done (PM-040 commit; base `a5b5c64`) |
 | T6 PM-041 binaural from the TUI | S6, S0 | inline | `feat/tui-binaural` | done (PM-041 commit; base `ef9030e`) |
-| T7 PM-042 spoken phrases from the TUI | S7, S0 | inline | `feat/tui-say` | pending |
+| T7 PM-042 spoken phrases from the TUI | S7, S0 | inline | `feat/tui-say` | done (PM-042 commit; base `fdbd512`) |
 | T8 PM-043 voices and samples from the TUI | S8, S0 | inline | `feat/tui-voices` | pending |
 | T9 PM-044 render and the parity guard | S9, S0 | inline | `feat/tui-render` | pending |
 
@@ -108,3 +108,11 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
   because the local engine receives the same call for on and set; a test now checks the requests themselves, as the
   acceptance criterion says. RED ImportError; GREEN 13.
 - L16: PM-041 suite job-31: 1387 passed, 3 deselected, 0 test daemons. T6 verified.
+- L17: PM-042. `t` opens SayModal: text, a voice Select filled in a worker from speech.voices() (Default first),
+  rate (blank = the voice's own, else 80-400) and effect. Say renders in a worker through the new Player.say (the
+  background player's `say`: resolve_voice warning, render, queue_speech), so the CLI and TUI send the same
+  options to the TTS program (tested on its argv). Errors (no backend, empty text, bad rate) stay in the dialog.
+  A worker that dismisses the dialog itself was cancelled with the screen; the dialog now closes from
+  on_worker_state_changed. Mutations: 4 of 5 caught; "skip the empty-text check" is equivalent (speech.render
+  refuses with the same message before calling the program). RED ImportError; GREEN 8.
+- L18: PM-042 suite job-32: 1395 passed, 3 deselected, 0 test daemons. T7 verified.

@@ -23,9 +23,9 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.markup import escape
 from textual.screen import ModalScreen
 from textual.theme import Theme
-from textual.widgets import Button, Footer, Header, Input, OptionList, Static
+from textual.widgets import Button, Footer, Header, Input, OptionList, Select, Static
 from textual.widgets.option_list import Option
-from textual.worker import get_current_worker
+from textual.worker import Worker, WorkerState, get_current_worker
 
 from .binaural import Binaural
 from .bridge import GentleShell, InterpretError, Usage
@@ -842,6 +842,122 @@ class BinauralModal(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class SayModal(ModalScreen[tuple[str, list[str]] | None]):
+    """Say a phrase over the music (PM-042), as `ctl say` does: text, a system voice (the list comes from the
+    text-to-speech program), rate and effect. The phrase is rendered in a worker; errors stay in the dialog."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    DEFAULT_CSS = """
+    SayModal { align: center middle; }
+    SayModal > Vertical { width: 72; height: auto; border: round $primary; padding: 0 1; background: $surface; }
+    SayModal .heading { color: $primary; text-style: bold; }
+    SayModal .row { height: auto; }
+    SayModal .row Static { width: 12; padding: 1 0; }
+    SayModal .row > Input, SayModal .row > Select { width: 1fr; }
+    SayModal #say-status { color: $text-muted; }
+    SayModal #buttons { height: auto; }
+    SayModal Button { margin-right: 1; }
+    """
+
+    def __init__(self, player):
+        super().__init__()
+        self.player = player
+
+    def compose(self) -> ComposeResult:
+        from .speech import EFFECTS, RATES
+
+        with Vertical():
+            yield Static("Say a phrase", classes="heading")
+            yield Input(placeholder="What to say (at most 200 characters)", id="say-text")
+            with Horizontal(classes="row"):
+                yield Static("voice")
+                yield Select([("Default voice", "")], value="", allow_blank=False, id="say-voice")
+            with Horizontal(classes="row"):
+                yield Static("rate")
+                yield Input(placeholder=f"words per minute, {RATES[0]}-{RATES[1]} (blank: the voice's own)",
+                            id="say-rate")
+            with Horizontal(classes="row"):
+                yield Static("effect")
+                yield Select([(name, name) for name in EFFECTS], value="dry", allow_blank=False, id="say-effect")
+            yield Static("It starts on the next phrase boundary, the music dipping under it.", id="say-status",
+                         markup=False)
+            with Horizontal(id="buttons"):
+                yield Button("Say", id="say", variant="primary")
+                yield Button("Cancel", id="cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#say-text", Input).focus()
+        self._list_voices()
+
+    @work(thread=True, group="say-voices")
+    def _list_voices(self) -> None:
+        from .speech import SpeechError, voices
+
+        try:
+            found = voices()
+        except SpeechError as e:
+            self.app.call_from_thread(self.query_one("#say-status", Static).update, str(e))
+            return
+        options = [("Default voice", ""), *((f"{name} ({language})", name) for name, language in found)]
+        self.app.call_from_thread(self.query_one("#say-voice", Select).set_options, options)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()   # never a mood request for the app below
+        self._say()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "say":
+            self._say()
+        else:
+            self.action_cancel()
+
+    def _say(self) -> None:
+        from .speech import MAX_TEXT, RATES
+
+        status = self.query_one("#say-status", Static)
+        phrase = " ".join(self.query_one("#say-text", Input).value.split())
+        if not 1 <= len(phrase) <= MAX_TEXT:
+            status.update(f"a phrase must have between 1 and {MAX_TEXT} characters")
+            return
+        raw_rate = self.query_one("#say-rate", Input).value.strip()
+        rate = None
+        if raw_rate:
+            try:
+                rate = int(raw_rate)
+            except ValueError:
+                rate = -1
+            if not RATES[0] <= rate <= RATES[1]:
+                status.update(f"rate must be a whole number from {RATES[0]} to {RATES[1]}")
+                return
+        voice = self.query_one("#say-voice", Select).value
+        effect = self.query_one("#say-effect", Select).value
+        status.update("Rendering the phrase…")
+        self._speak(phrase, str(voice) if voice else None, rate, str(effect))
+
+    @work(thread=True, exclusive=True, group="say")
+    def _speak(self, phrase: str, voice: str | None, rate: int | None, effect: str) -> tuple[str, list[str]] | str:
+        """The phrase and its warnings, or the error to show; the dialog closes when this worker has finished."""
+        from .client import PlayerError
+        from .speech import SpeechError
+
+        try:
+            return phrase, list(self.player.say(phrase, voice=voice, rate=rate, effect=effect))
+        except (SpeechError, PlayerError) as e:
+            return str(e)
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        if event.worker.group != "say" or event.state != WorkerState.SUCCESS:
+            return
+        result = event.worker.result
+        if isinstance(result, str):
+            self.query_one("#say-status", Static).update(result)
+        elif result is not None:
+            self.dismiss(result)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class JourneyPickerModal(ModalScreen[str | None]):
     """Pick a journey: "create" first, then the built-ins, then the saved ones alphabetically, then "open" (a file);
     `v` shows the highlighted one, `d` deletes a saved one.
@@ -950,6 +1066,7 @@ class StreamApp(App):
         Binding("r", "record", "Record"),
         Binding("c", "controls", "Controls"),
         Binding("B", "binaural", "Binaural"),
+        Binding("t", "say", "Say"),
         Binding("plus,equals_sign", "volume(5)", "Vol +5"),
         Binding("minus", "volume(-5)", "Vol -5"),
         Binding("up", "volume(1)", "Vol +1"),
@@ -1100,6 +1217,7 @@ class StreamApp(App):
             ("Live controls", "Glide tempo, energy, brightness, space, swing, vinyl, melody density or voice (c)",
              "controls"),
             ("Binaural", "Turn the binaural layer on or off, or glide its carrier, beat and level (B)", "binaural"),
+            ("Say a phrase", "Speak a phrase over the music, choosing voice, rate and effect (t)", "say"),
             ("Record the session", "Start or stop recording what you hear into a WAV file (r)", "record"),
             ("Back", "Leave the app, the music keeps playing (b)", "back"),
             ("Quit", "Leave the app and stop the music (q)", "quit"),
@@ -1125,6 +1243,16 @@ class StreamApp(App):
                 self._status(f"Binaural {outcome}" + (f": {escape(binaural_line(setting))}" if setting else ""))
 
         self.push_screen(BinauralModal(self.player, self.player.binaural), done)
+
+    def action_say(self) -> None:
+        """Say a phrase, as `ctl say` does."""
+        def said(result: tuple[str, list[str]] | None) -> None:
+            if result is not None:
+                phrase, warnings = result
+                extra = "".join(f" · warning: {escape(w)}" for w in warnings)
+                self._status(f"Saying “{escape(phrase)}” at the next phrase boundary{extra}")
+
+        self.push_screen(SayModal(self.player), said)
 
     def action_record(self) -> None:
         """Start recording (asks for the file) or stop and say where it was saved."""
