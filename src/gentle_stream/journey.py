@@ -49,6 +49,10 @@ BINAURAL_RANGES = {"carrier": CARRIER, "beat": BEAT, "level": (0.0, MAX_LEVEL)}
 LAYERS = ("chords", "bass", "drums", "lead", "counter")   # the parts a bar plan can hold (`BarPlan.layers`)
 DRUM_ENERGY = ((0.25, "none"), (0.5, "soft"), (0.75, "lofi"))   # below each energy, that drum level; then busy
 MAX_TRANSITION_BARS = 32
+MAX_PHRASES = 12                  # spoken phrases a stage may have, each 1 to MAX_PHRASE characters
+MAX_PHRASE = 80
+PHRASE_EVERY = (10.0, 3600.0)     # seconds between a stage's phrases
+DEFAULT_PHRASE_EVERY = 120.0
 
 
 def drums_for_energy(energy: float) -> str:
@@ -93,6 +97,8 @@ class Stage:
     layers: Mapping[str, bool] = MappingProxyType({})     # parts switched on (True) or off (False) from this stage
     drums: str | None = None                              # a drum level from this stage on, None to keep the last
     transition: int | None = None                         # bars over which a genre step crossfades, None: at once
+    phrases: tuple[str, ...] = ()                         # spoken during the stage, one per `phrase_every` seconds
+    phrase_every: float = DEFAULT_PHRASE_EVERY
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.seconds) or self.seconds <= 0:
@@ -123,10 +129,16 @@ class Stage:
             raise ValueError(f"stage {self.name!r}: drums must be one of {', '.join(DRUMS)}")
         if self.transition is not None and not 1 <= self.transition <= MAX_TRANSITION_BARS:
             raise ValueError(f"stage {self.name!r}: a transition lasts 1 to {MAX_TRANSITION_BARS} bars")
+        if len(self.phrases) > MAX_PHRASES or not all(1 <= len(p) <= MAX_PHRASE for p in self.phrases):
+            raise ValueError(f"stage {self.name!r}: at most {MAX_PHRASES} phrases of 1 to {MAX_PHRASE} characters")
+        if not PHRASE_EVERY[0] <= self.phrase_every <= PHRASE_EVERY[1]:
+            raise ValueError(f"stage {self.name!r}: phrases come every {PHRASE_EVERY[0]:g} to {PHRASE_EVERY[1]:g} s")
+        object.__setattr__(self, "phrases", tuple(self.phrases))
 
     def __hash__(self) -> int:
         return hash((self.name, self.seconds, self.genre, self.curve, frozenset(self.to.items()),
-                     frozenset(self.binaural.items()), frozenset(self.layers.items()), self.drums, self.transition))
+                     frozenset(self.binaural.items()), frozenset(self.layers.items()), self.drums, self.transition,
+                     self.phrases, self.phrase_every))
 
 
 @dataclass(frozen=True)
@@ -179,6 +191,27 @@ def _parse_transition(raw, number: int) -> int | None:
     if isinstance(bars, bool) or not isinstance(bars, int) or not 1 <= bars <= MAX_TRANSITION_BARS:
         raise ValueError(f'stage {number}: "transition.bars" must be a whole number from 1 to {MAX_TRANSITION_BARS}')
     return bars
+
+
+def _parse_phrases(raw, every, number: int) -> tuple[tuple[str, ...], float]:
+    """A stage's spoken phrases (whitespace collapsed) and their interval; anything malformed rejects the journey."""
+    if raw is None:
+        if every is not None:
+            raise ValueError(f'stage {number}: "phrase_every" needs "phrases"')
+        return (), DEFAULT_PHRASE_EVERY
+    if not isinstance(raw, list) or not all(isinstance(p, str) for p in raw):
+        raise ValueError(f'stage {number}: "phrases" must be a list of strings')
+    phrases = tuple(" ".join(p.split()) for p in raw)
+    if len(phrases) > MAX_PHRASES:
+        raise ValueError(f'stage {number}: at most {MAX_PHRASES} phrases')
+    if not all(1 <= len(p) <= MAX_PHRASE for p in phrases):
+        raise ValueError(f'stage {number}: every phrase must have 1 to {MAX_PHRASE} characters')
+    if every is None:
+        return phrases, DEFAULT_PHRASE_EVERY
+    lo, hi = PHRASE_EVERY
+    if isinstance(every, bool) or not isinstance(every, (int, float)) or not lo <= every <= hi:
+        raise ValueError(f'stage {number}: "phrase_every" must be a number from {lo:g} to {hi:g} seconds')
+    return phrases, float(every)
 
 
 def _parse_drums(raw, number: int) -> str | None:
@@ -297,7 +330,8 @@ class Journey:
             stages.append(Stage(stage_name, float(seconds), normalized, genre, curve,
                                 _parse_binaural(raw.get("binaural", {}), number, warnings),
                                 _parse_layers(raw.get("layers", {}), number), _parse_drums(raw.get("drums"), number),
-                                _parse_transition(raw.get("transition"), number)))
+                                _parse_transition(raw.get("transition"), number),
+                                *_parse_phrases(raw.get("phrases"), raw.get("phrase_every"), number)))
         if total > 12 * 60 * 60:
             raise ValueError('combined stage duration must be at most 43200 seconds')
         journey_name = data.get("name", name)
@@ -333,6 +367,9 @@ class Journey:
                 stage_dict["drums"] = s.drums
             if s.transition is not None:
                 stage_dict["transition"] = {"bars": s.transition}
+            if s.phrases:
+                stage_dict["phrases"] = list(s.phrases)
+                stage_dict["phrase_every"] = s.phrase_every
             stages_list.append(stage_dict)
         data = {"version": 1, "name": self.name, "title": self.title, "description": self.description,
                 "end": self.end, "stages": stages_list}
@@ -365,6 +402,15 @@ class Journey:
         if named:
             return named[-1]
         return drums_for_energy(energy) if self.drums == "energy" else None
+
+    @property
+    def phrases(self) -> tuple[str, ...]:
+        """Every phrase the journey can speak, once each, in order of first appearance."""
+        return tuple(dict.fromkeys(p for stage in self.stages for p in stage.phrases))
+
+    def stage_index(self, t: float) -> int:
+        """The index of the stage playing at `t` seconds (the last one past the end)."""
+        return min(bisect_right(self._ends, max(0.0, float(t))), len(self.stages) - 1)
 
     def masked_layers(self, t: float) -> frozenset[str]:
         """The parts switched off at `t` seconds into the journey: every stage's switches up to the one playing."""

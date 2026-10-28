@@ -9,9 +9,12 @@ cached by text and level-normalised; a failing program raises `SpeechError` and 
 """
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 import tempfile
+import threading
+from collections.abc import Callable, Iterable
 from functools import lru_cache
 from pathlib import Path
 
@@ -19,6 +22,8 @@ import numpy as np
 
 from .synth import SR
 from .voicepacks import PackError, read_wav
+
+log = logging.getLogger(__name__)
 
 MAX_TEXT = 200          # characters a phrase may have
 TIMEOUT = 30.0          # seconds the program may take
@@ -86,6 +91,26 @@ def render(text: str, sr: int = SR) -> np.ndarray:
     clip = normalise(x)
     clip.flags.writeable = False
     return clip
+
+
+def prerender(texts: Iterable[str], sr: int, deliver: Callable[[str, np.ndarray], None]) -> threading.Thread:
+    """Render each of `texts` in a background thread and hand every clip to `deliver(text, clip)` as soon as it is
+    ready (a journey's phrases, before their stage comes). The first failure is logged once and ends the thread:
+    the journey plays on without its phrases."""
+    texts = tuple(texts)
+
+    def work() -> None:
+        for text in texts:
+            try:
+                clip = render(text, sr)
+            except SpeechError as e:
+                log.warning("journey phrases will not be spoken: %s", e)
+                return
+            deliver(text, clip)
+
+    thread = threading.Thread(target=work, daemon=True, name="gentle-stream-phrases")
+    thread.start()
+    return thread
 
 
 def duck_envelope(length: int, sr: int = SR) -> np.ndarray:

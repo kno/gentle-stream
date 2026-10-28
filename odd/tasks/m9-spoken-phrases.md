@@ -20,7 +20,7 @@ warning."
 | Task | Specs | Route | Branch | Commit |
 | :--- | :--- | :--- | :--- | :--- |
 | T1 PM-031 TTS phrase layer | S1 | inline | `feat/tts-phrases` | done (PM-031 commit; base `f821ace`) |
-| T2 PM-032 phrases in journeys | S2 | inline | `feat/journey-phrases` | pending |
+| T2 PM-032 phrases in journeys | S2 | inline | `feat/journey-phrases` | done (PM-032 commit; base `2141704`) |
 | T3 PM-033 voice characteristics | S3 | inline | `feat/speech-voices` | pending |
 | T4 PM-034 natural-language journey edit | S4 | inline | `feat/journey-edit` | pending |
 | T5 PM-035 moods inside a journey | S5 | inline | `feat/journey-moods` | pending |
@@ -45,3 +45,17 @@ warning."
   reports the player's error, needs TEXT, and handles no player. All tests passed at the first run, so I mutated
   nine rules (boundary, duck, ramps, stdin, say format, backend order, daemon queueing, peak limit): each fails tests.
 - L4: PM-031 full non-slow suite job-18 exited 0: 1204 passed, 3 deselected, 0 orphan daemons. T1 verified. Not done: hearing a real `say` phrase over the music.
+- L5: PM-032: `Stage.phrases` (<= 12, 1-80 characters, whitespace collapsed) and `phrase_every` (10-3600 s, default 120;
+  `phrase_every` without `phrases` is refused); round-trips through to_dict. Decisions: phrases are rendered ahead by
+  `speech.prerender` in a background thread when the daemon (or the in-process player) starts the journey, delivered
+  with `Engine.provide_phrase`; the engine checks on each phrase boundary: the playing stage's interval has passed since
+  its last phrase (each stage counts from its own start), nothing is speaking or queued, and a clip is ready (else it
+  skips; the music plays on). Choice: a dedicated generator seeded from the engine seed, so phrases never change the
+  music's random draws and the order repeats for a seed; never the phrase just spoken unless the stage has one. The
+  first prerender failure is logged once and stops the thread. The NL journey prompt offers phrases with the rule
+  "never claim health, therapeutic or medical effects". RED 22 failed. One test expectation was my arithmetic error
+  (10 s interval on 8 s boundaries gives 4 phrases in 64 s, not 5). Mutations: two survived (no-repeat rule, stage
+  reset), so two tests were added (25 picks of two phrases must alternate; consecutive phrase stages); then every
+  mutation (interval, repeats, stage reset, never speaks, shared rng, daemon prerender, phrases saved, stage index)
+  fails tests. 24 tests pass; ruff/pyright clean (journey.py keeps its 9 pre-existing TRY004).
+- L6: User: "sube y sigue": M8 branches and feat/tts-phrases pushed to fork (no PRs). PM-032 full non-slow suite job-19 exited 0: 1228 passed, 3 deselected, 0 orphan daemons. T2 verified.

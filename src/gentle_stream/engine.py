@@ -144,6 +144,9 @@ class Engine:
         self._voices = voices
         self._speech_queue: list[np.ndarray] = []                 # finished clips waiting for a boundary (_lock)
         self._speech: tuple[np.ndarray, np.ndarray, int] | None = None   # (clip, duck, position) playing
+        self._phrase_clips: dict[str, np.ndarray] = {}            # journey phrases rendered so far (_lock)
+        self._phrase_rng = np.random.default_rng(None if seed is None else [seed, 32])   # never the music's
+        self._phrase_state: tuple[tuple[int, int], float | None, str | None] | None = None   # (stage, last t, text)
         self.melodic_vocals = voices is not None and voices.pack.melody
         sf2 = _samples.soundfont_path() if samples is True else (Path(samples) if samples else None)
         renderer = _samples.load_renderer(sf2, sr) if sf2 is not None else None
@@ -241,6 +244,37 @@ class Engine:
         before it, the music ducked under it. Rendering the clip is the caller's job (`speech.render`)."""
         with self._lock:
             self._speech_queue.append(np.asarray(clip, dtype=float))
+
+    def provide_phrase(self, text: str, clip: np.ndarray) -> None:
+        """A journey phrase rendered ahead (`speech.prerender`): from now on its stage can speak it."""
+        with self._lock:
+            self._phrase_clips[text] = np.asarray(clip, dtype=float)
+
+    def _journey_phrase(self, running: _Running, t: float) -> None:
+        """On a phrase boundary, speak one of the playing stage's phrases when its interval has passed since the last
+        one, nothing else is speaking, and a clip is ready: a random one, never the one just spoken (unless the stage
+        has only one)."""
+        index = running.journey.stage_index(t)
+        stage = running.journey.stages[index]
+        key = (id(running), index)
+        state = self._phrase_state if self._phrase_state is not None and self._phrase_state[0] == key else None
+        self._phrase_state = state or (key, None, None)
+        if not stage.phrases:
+            return
+        _, last_t, last_text = self._phrase_state
+        if last_t is not None and t - last_t < stage.phrase_every - 1e-9:
+            return
+        with self._lock:
+            if self._speech is not None or self._speech_queue:
+                return
+            ready = [p for p in stage.phrases if p in self._phrase_clips]
+            clips = dict(self._phrase_clips)
+        choices = ready if len(set(stage.phrases)) == 1 else [p for p in ready if p != last_text]
+        if not choices:
+            return
+        text = choices[int(self._phrase_rng.integers(len(choices)))]
+        self.queue_speech(clips[text])
+        self._phrase_state = (key, t, text)
 
     def _mix_speech(self, out: np.ndarray, n: int) -> np.ndarray:
         """Start the next queued clip on a phrase boundary, then duck the music and add the playing clip."""
@@ -452,6 +486,8 @@ class Engine:
             self._masked = running.journey.masked_layers(t) if running is not None else frozenset()
             if running is not None and running.journey.drives_drums:
                 self._step_drums(running.journey.drums_at(t, self.style.energy))
+            if running is not None:
+                self._journey_phrase(running, t)
         if running is not None and (self.bar + 1) % 4 == 0 and self._incoming is None:
             self._prepare_genre_step(running, t + self.bar_seconds)
         self._schedule_bar()

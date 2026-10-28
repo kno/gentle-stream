@@ -223,6 +223,9 @@ def handle(player, request) -> dict:
                 normalized = Journey.from_dict(journey)
                 player.last_journey = normalized.to_dict()
                 player.engine.queue_journey(normalized)
+                if normalized.phrases:   # rendered ahead, off this thread and off the render thread
+                    from .speech import prerender
+                    prerender(normalized.phrases, player.engine.sr, player.engine.provide_phrase)
             else:  # compatibility with the PM-004 name payload; never interpret paths here
                 from .journey import BUILTIN, unknown_journey
                 name = request["name"]

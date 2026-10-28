@@ -122,8 +122,13 @@ class Player:
         self.engine.queue_style(style)
 
     def journey_start(self, journey: dict) -> None:
-        """Run a journey object (`Journey.to_dict`) from the next rendered bar, like the background player."""
-        self.engine.queue_journey(Journey.from_dict(journey))
+        """Run a journey object (`Journey.to_dict`) from the next rendered bar, like the background player, rendering
+        its phrases ahead in the background."""
+        normalized = Journey.from_dict(journey)
+        self.engine.queue_journey(normalized)
+        if normalized.phrases:
+            from .speech import prerender
+            prerender(normalized.phrases, self.engine.sr, self.engine.provide_phrase)
 
     def journey_restart(self) -> None:
         """Restart the running journey at the next rendered bar."""
