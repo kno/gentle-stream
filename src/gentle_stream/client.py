@@ -160,6 +160,7 @@ class PlayerClient:
         self.pid = state["pid"]
         self.playing, self.volume, self.level = state["playing"], state["volume"], state["level"]
         self.backend = state["backend"]
+        self.vocals_backend = state.get("vocals", {}).get("backend", "unknown")
         self.now = NowPlaying(Style.from_dict(now["style"]), now["piece"], now["bar"],
                                float(now.get("start_seconds", 0.0)), JourneySnapshot.from_dict(state.get("journey")))
         self.bpm = float(state.get("bpm", self.now.style.bpm))

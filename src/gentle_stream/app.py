@@ -504,6 +504,7 @@ class StreamApp(App):
             yield Static(id="mood-line")
             yield Static(id="journey", markup=False)
             yield Static(id="binaural", markup=False)
+            yield Static(id="vocals", markup=False)
             yield Spectrum(self.player, id="spectrum")
             yield Static(id="state")
             yield Static(id="model")
@@ -521,6 +522,7 @@ class StreamApp(App):
             "mood-line": self.query_one("#mood-line", Static),
             "journey": self.query_one("#journey", Static),
             "binaural": self.query_one("#binaural", Static),
+            "vocals": self.query_one("#vocals", Static),
             "state": self.query_one("#state", Static),
             "model": self.query_one("#model", Static),
             "status": self.query_one("#status", Static),
@@ -557,6 +559,8 @@ class StreamApp(App):
         binaural = binaural_line(p.binaural)
         w["binaural"].update(binaural)
         w["binaural"].display = bool(binaural)
+        w["vocals"].update(f"Vocals: choir ({p.vocals_backend}) · {round(now.style.voice * 100)}%")
+        w["vocals"].display = now.style.voice > 0
         state = "[b $success]▶ Playing[/]" if p.playing else "[b $warning]⏸ Paused[/]"
         elapsed, remaining = format_time(p.elapsed_seconds), format_time(p.cycle_remaining_seconds)
         w["state"].update(f"{state} · piece {now.piece} · bar {now.bar + 1} · "

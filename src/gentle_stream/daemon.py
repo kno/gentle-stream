@@ -131,6 +131,7 @@ def state(player, bands: int = 0) -> dict:
         "volume": float(player.volume),
         "level": float(player.level),
         "backend": player.engine.backend,
+        "vocals": {"backend": player.engine.vocals_backend, "level": now.style.voice},
         "now": {"style": now.style.to_dict(), "piece": now.piece, "bar": now.bar,
                  "start_seconds": now.start_seconds},
         "style": player.style.to_dict(),

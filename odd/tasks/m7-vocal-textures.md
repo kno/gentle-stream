@@ -22,12 +22,16 @@ melody."
 | Task | Specs | Route | Branch | Commit |
 | :--- | :--- | :--- | :--- | :--- |
 | T1 PM-022 procedural wordless choir | S1 | inline | `feat/wordless-choir` | done (PM-022 commit) |
-| T2 PM-023 sampled choir | S2 | inline | `feat/sampled-choir` | verified; implementation in PM-023 work-unit commit (parent `ca1601f`) |
-| T3 PM-024 vocals in journeys and status | S3 | inline | `feat/vocal-status` | pending |
+| T2 PM-023 sampled choir | S2 | inline | `feat/sampled-choir` | done (`226de88`; separate cleanup `ca1601f`) |
+| T3 PM-024 vocals in journeys and status | S3 | inline | `feat/vocal-status` | done (PM-024 work-unit commit; base `226de88`) |
 | T4 PM-025 wordless vocal melody | S4 | inline | `feat/vocal-melody` | pending |
 | T5 PM-026 vocal harmonies | S5 | inline | `feat/vocal-harmonies` | pending |
 
 ## Log
+
+- L10: PM-024 full non-slow suite job-6 exited 0: 1024 passed, 3 deselected. Eight-path LSP clean and three focused tests passed. Native assessment remains unavailable (package-local-binary-missing), not approved. Work-unit review boundary is 226de88..HEAD, not the accumulated stack. T3 verified; PM-025 next.
+
+- L9: PM-024 adds audible vocal level/backend to daemon state, local/remote player backend access, a TUI line hidden at zero, and a wordless-choir explanation in the journey prompt. Journey voice interpolation already uses GLIDE_FIELDS. Initial RED: two failed, one passed. After implementation and deterministic TUI setup: three passed; fresh LSP checks on eight paths found no errors. README updated. Full non-slow suite job-6 running; no completion or commit yet.
 
 - L8: Full non-slow suite job-4 exited 0: 1021 passed, 3 deselected. Separate teardown fix committed as ca1601f. PM-023 work-unit boundary is fffd942..HEAD on feat/sampled-choir, excluding the isolated teardown commit; earlier M6/M7 work belongs to preceding stack branches, not this review slice. Native assessment unavailable (package-local-binary-missing); no review approval claimed. PM-023 focused tests and Pyright passed; slow tests excluded. T2 verified; T3 is next.
 

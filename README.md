@@ -230,6 +230,8 @@ gentle-stream ctl glide voice=0.6 --over 30
 gentle-stream --mood "ambient with ethereal wordless choir"
 ```
 
+Journeys can bring the choir in and out with a stage target such as `"to": {"voice": 0.5}`. While audible, the TUI shows `Vocals: choir (sampled) · 50%` (or `procedural`); it hides the line at zero. `gentle-stream ctl status` includes a `vocals` object with `backend` and the audible `level` from 0 to 1. When attached to an older daemon without vocal status, the backend is reported as `unknown`.
+
 The vowel follows the song form: "aah" where the melody plays, "ooh" in the intro, breakdown and release. Each procedural voice is a band-limited source through three vowel formants (around 800, 1200 and 2500 Hz for "aah"), with a vibrato that enters after the onset and a little breath. With `voice` at 0 nothing of it runs, so the music is exactly as before; saved prompts from before it load with `voice` 0.
 
 <div align="right"><a href="#top">Back to top</a></div>

@@ -138,6 +138,11 @@ class Player:
         self.engine.stop_journey()
 
     @property
+    def vocals_backend(self) -> str:
+        """The backend singing the wordless vocal layer."""
+        return self.engine.vocals_backend
+
+    @property
     def binaural(self) -> Binaural | None:
         """The binaural setting the layer is heading to, or None when it is off."""
         return self.engine.binaural

@@ -234,6 +234,8 @@ Original music only: never reproduce existing songs, melodies, riffs or soundtra
 Genres and tempo ranges:
 {genre_lines()}
 Fields and ranges: {ranges}
+The continuous "voice" field controls a wordless choir (0 = off, 1 = full level); use "to": {{"voice": 0.5}}
+to bring it in or out over a stage. It never sings words.
 Curves: {', '.join(CURVES)}. Ends: sustain or release. Stage seconds: 10-14400 each, 43200 total.
 Return only JSON with version, name, title, description, end, and stages. Each stage has name, seconds, to, and
 optional genre, curve, layers and binaural; to contains fields only.
