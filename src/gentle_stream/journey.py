@@ -6,6 +6,10 @@ stage does not name holds its value. `Journey.at` is pure: the engine evaluates 
 seconds since the journey started, and applies the values in place. After the last stage, `end="sustain"` holds the
 final values forever and `end="release"` hands the fields back to the music as they are.
 
+A stage may also move the binaural layer (`binaural.Binaural`): its `binaural` block names the carrier, beat or
+level reached by its end, interpolated the same way, from the layer playing when the journey starts (silent when
+it is off). A journey that names any of them owns the layer while it runs; one that names none leaves it alone.
+
 `Journey.snapshot` describes one bar's place in the journey (`JourneySnapshot`): the engine makes one per rendered
 bar and it travels with that bar's audio, so the progress shown is the progress heard.
 
@@ -24,11 +28,14 @@ from itertools import accumulate
 from pathlib import Path
 from types import MappingProxyType
 
+from .binaural import BEAT, CARRIER, DEFAULT_BEAT, DEFAULT_CARRIER, MAX_LEVEL
+from .binaural import FIELDS as BINAURAL_FIELDS
 from .engine import GLIDE_FIELDS
 from .presets import PresetError, normalize_name
 from .storage import write_json_atomic
 
 ENDS = ("sustain", "release")
+BINAURAL_RANGES = {"carrier": CARRIER, "beat": BEAT, "level": (0.0, MAX_LEVEL)}
 CURVES = ("linear", "ease-in", "ease-out", "ease-in-out", "exp", "step")
 
 
@@ -64,6 +71,7 @@ class Stage:
     to: Mapping[str, float]   # the immutable values each named field reaches at the end of the stage
     genre: str | None = None
     curve: str = "linear"
+    binaural: Mapping[str, float] = MappingProxyType({})   # the binaural values reached by the end of the stage
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.seconds) or self.seconds <= 0:
@@ -79,9 +87,17 @@ class Stage:
         if not all(math.isfinite(value) for value in self.to.values()):
             raise ValueError(f"stage {self.name!r}: every value must be a finite number")
         object.__setattr__(self, "to", MappingProxyType(dict(self.to)))
+        for name, value in self.binaural.items():
+            if name not in BINAURAL_RANGES:
+                raise ValueError(f"stage {self.name!r}: binaural has no {name!r}: only {', '.join(BINAURAL_FIELDS)}")
+            lo, hi = BINAURAL_RANGES[name]
+            if not lo <= value <= hi:
+                raise ValueError(f"stage {self.name!r}: binaural {name} must be between {lo:g} and {hi:g}")
+        object.__setattr__(self, "binaural", MappingProxyType(dict(self.binaural)))
 
     def __hash__(self) -> int:
-        return hash((self.name, self.seconds, self.genre, self.curve, frozenset(self.to.items())))
+        return hash((self.name, self.seconds, self.genre, self.curve, frozenset(self.to.items()),
+                     frozenset(self.binaural.items())))
 
 
 @dataclass(frozen=True)
@@ -98,6 +114,7 @@ class JourneySnapshot:
     bpm: float
     target_bpm: float
     seconds_left: float | None
+    binaural: dict[str, float] | None = None   # the binaural values at the bar's start, when the journey moves them
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -109,10 +126,37 @@ class JourneySnapshot:
             snap = cls(str(data["name"]), str(data["title"]), int(data["stage"]), int(data["stages"]),
                        str(data["stage_name"]), float(data["progress"]), float(data["bpm"]),
                        float(data["target_bpm"]),
-                       None if data["seconds_left"] is None else float(data["seconds_left"]))
+                       None if data["seconds_left"] is None else float(data["seconds_left"]),
+                       _binaural_values(data.get("binaural")))
         except (KeyError, TypeError, ValueError):
             return None
         return snap
+
+
+def _binaural_values(data) -> dict[str, float] | None:
+    """The binaural values of a snapshot dict, or None when absent (an older player reports none)."""
+    if not isinstance(data, Mapping):
+        return None
+    return {name: float(data[name]) for name in BINAURAL_FIELDS if name in data}
+
+
+def _parse_binaural(raw, number: int, warnings: list[str]) -> dict[str, float]:
+    """A stage's binaural block, clamped into range (one warning per clamped value); unknown keys are ignored."""
+    if not isinstance(raw, Mapping):
+        raise ValueError(f'stage {number}: "binaural" must be an object')
+    out = {}
+    for name in BINAURAL_FIELDS:
+        if name not in raw:
+            continue
+        value = raw[name]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f'stage {number}: "binaural.{name}" must be a number')
+        lo, hi = BINAURAL_RANGES[name]
+        result = min(hi, max(lo, float(value)))
+        if result != value:
+            warnings.append(f'stage {number}: "binaural.{name}" clamped from {value!r} to {result!r}')
+        out[name] = result
+    return out
 
 
 @dataclass(frozen=True)
@@ -189,7 +233,8 @@ class Journey:
                     curve = "linear"
                 else:
                     raise ValueError(f'stage {number}: "curve" must be a string')
-            stages.append(Stage(stage_name, float(seconds), normalized, genre, curve))
+            stages.append(Stage(stage_name, float(seconds), normalized, genre, curve,
+                                _parse_binaural(raw.get("binaural", {}), number, warnings)))
         if total > 12 * 60 * 60:
             raise ValueError('combined stage duration must be at most 43200 seconds')
         journey_name = data.get("name", name)
@@ -214,6 +259,8 @@ class Journey:
                 stage_dict["genre"] = s.genre
             if s.curve != "linear":
                 stage_dict["curve"] = s.curve
+            if s.binaural:
+                stage_dict["binaural"] = dict(s.binaural)
             stages_list.append(stage_dict)
         return {"version": 1, "name": self.name, "title": self.title, "description": self.description,
                 "end": self.end, "stages": stages_list}
@@ -229,25 +276,49 @@ class Journey:
         named = {name for stage in self.stages for name in stage.to}
         return tuple(name for name in GLIDE_FIELDS if name in named)
 
+    @property
+    def owns_binaural(self) -> bool:
+        """Whether any stage moves the binaural layer (then the journey drives it while it runs)."""
+        return any(stage.binaural for stage in self.stages)
+
     def at(self, t: float, start: Mapping[str, float]) -> tuple[int, float, dict[str, float]]:
         """(stage index, progress through it 0..1, value of every owned field) at `t` seconds into the journey,
         starting from the `start` value of each owned field. Exact at stage boundaries; past the end, the last
         stage at progress 1."""
+        return self._interpolate(t, {name: float(start[name]) for name in self.fields}, "to")
+
+    def binaural_at(self, t: float, start: Mapping[str, float]) -> dict[str, float]:
+        """The carrier, beat and level at `t` seconds into the journey, from `start` (all three), like `at`."""
+        return self._interpolate(t, {name: float(start[name]) for name in BINAURAL_FIELDS}, "binaural")[2]
+
+    def _interpolate(self, t: float, values: dict[str, float], targets: str) -> tuple[int, float, dict[str, float]]:
+        """`at` over the stages' `targets` mapping ("to" or "binaural"), starting from `values`."""
         t = max(0.0, float(t))
         index = min(bisect_right(self._ends, t), len(self.stages) - 1)
         begin = self._ends[index - 1] if index else 0.0
         stage = self.stages[index]
         progress = min(1.0, (t - begin) / stage.seconds)
-        values = {name: float(start[name]) for name in self.fields}
         for previous in self.stages[:index]:
-            values.update(previous.to)
-        for name, target in stage.to.items():
+            values.update(getattr(previous, targets))
+        for name, target in getattr(stage, targets).items():
             shaped = shape(stage.curve, progress)
             values[name] = (1 - shaped) * values[name] + shaped * target
         return index, progress, values
 
-    def snapshot(self, t: float, start: Mapping[str, float], bpm: float) -> JourneySnapshot:
-        """The snapshot of a bar starting `t` seconds into the journey and playing at `bpm`."""
+    def binaural_start(self, playing: Mapping[str, float] | None) -> dict[str, float]:
+        """Where the binaural values start: the layer `playing` (its to_dict), or, when it is off, silence at the
+        first carrier and beat a stage names (the defaults otherwise)."""
+        if playing is not None:
+            return {name: float(playing[name]) for name in BINAURAL_FIELDS}
+        named = [stage.binaural for stage in self.stages]
+        carrier = next((b["carrier"] for b in named if "carrier" in b), DEFAULT_CARRIER)
+        beat = next((b["beat"] for b in named if "beat" in b), DEFAULT_BEAT)
+        return {"carrier": carrier, "beat": beat, "level": 0.0}
+
+    def snapshot(self, t: float, start: Mapping[str, float], bpm: float,
+                 binaural_start: Mapping[str, float] | None = None) -> JourneySnapshot:
+        """The snapshot of a bar starting `t` seconds into the journey and playing at `bpm`; `binaural_start` is
+        where its binaural values started, for a journey that owns the layer."""
         index, progress, _ = self.at(t, start)
         target = bpm
         if "bpm" in self.fields:   # the stage's end tempo, clamped and rounded as the engine applies it
@@ -255,16 +326,19 @@ class Journey:
             target = round(min(hi, max(lo, self.at(self._ends[index], start)[2]["bpm"])), 1)
         t = max(0.0, float(t))
         left = None if self.end == "sustain" and t >= self.seconds else max(0.0, self.seconds - t)
+        binaural = self.binaural_at(t, binaural_start) if self.owns_binaural and binaural_start else None
         return JourneySnapshot(self.name, self.title, index + 1, len(self.stages), self.stages[index].name,
-                               progress, float(bpm), target, left)
+                               progress, float(bpm), target, left, binaural)
 
 
 BUILTIN: dict[str, Journey] = {j.name: j for j in (
     Journey("ambient-to-synthwave", (
-        Stage("Ambient", 60, {"bpm": 60.0}, genre="ambient"),
+        Stage("Ambient", 60, {"bpm": 60.0}, genre="ambient",
+              binaural={"carrier": 200.0, "beat": 6.0, "level": 0.05}),
         Stage("Chillout", 180, {"bpm": 88.0}, genre="lofi"),
-        Stage("Synthwave", 240, {"bpm": 118.0}, genre="synthwave"),
-    ), description="ambient at 60 bpm through lo-fi chillout to synthwave at 118 bpm, then sustains"),
+        Stage("Synthwave", 240, {"bpm": 118.0}, genre="synthwave", binaural={"level": 0.0}),
+    ), description="ambient at 60 bpm through lo-fi chillout to synthwave at 118 bpm, then sustains; a 6 Hz "
+                   "binaural texture fades in with the ambient stage and out during the synthwave one"),
     Journey("warm-up", (
         Stage("Settle", 60, {"bpm": 60.0, "energy": 0.2, "brightness": 0.35, "lead_density": 0.3}),
         Stage("Wake", 180, {"bpm": 72.0, "energy": 0.45, "brightness": 0.5}),

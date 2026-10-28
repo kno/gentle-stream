@@ -470,7 +470,7 @@ def test_a_snapshot_round_trips_through_json_in_a_fixed_key_order():
     snap = JourneySnapshot("warm-up", "Warm-up", 2, 4, "Wake", 0.625, 66.5, 72.0, 412.25)
     data = snap.to_dict()
     assert list(data) == ["name", "title", "stage", "stages", "stage_name", "progress", "bpm", "target_bpm",
-                          "seconds_left"]
+                          "seconds_left", "binaural"]
     assert JourneySnapshot.from_dict(json.loads(json.dumps(data))) == snap
     sustaining = JourneySnapshot("warm-up", "Warm-up", 4, 4, "Glow", 1.0, 100.0, 100.0, None)
     assert JourneySnapshot.from_dict(sustaining.to_dict()) == sustaining

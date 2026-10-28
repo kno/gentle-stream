@@ -270,7 +270,7 @@ gentle-stream journey delete "Rainy evening"
 
 | Journey | Stages | End |
 | :--- | :--- | :--- |
-| `ambient-to-synthwave` | Ambient (1 min, ambient, 60 bpm), Chillout (3 min, lo-fi, 88 bpm), Synthwave (4 min, synthwave, 118 bpm) | sustain |
+| `ambient-to-synthwave` | Ambient (1 min, ambient, 60 bpm, binaural 200 Hz / 6 Hz fades in), Chillout (3 min, lo-fi, 88 bpm), Synthwave (4 min, synthwave, 118 bpm, binaural fades out) | sustain |
 | `warm-up` | Settle (1 min, 60 bpm, energy 0.2), Wake (3 min, 72 bpm), Rise (4 min, 88 bpm), Glow (2 min, 100 bpm, energy 0.9) | sustain |
 | `wind-down` | Ease (2 min, 84 bpm), Soften (4 min, 68 bpm), Drift (4 min, 58 bpm, energy 0.15) | release |
 
@@ -289,7 +289,15 @@ The tempo shows one value when the stage ends at the tempo it has (`100 bpm`), a
 "journey": {"name": "warm-up", "title": "Warm-up", "stage": 2, "stages": 4, "stage_name": "Wake", "progress": 0.62, "bpm": 67.4, "target_bpm": 72.0, "seconds_left": 428.4}
 ```
 
-`stage` counts from 1, `progress` is through the stage (0 to 1), `target_bpm` is the tempo at the end of the stage and `seconds_left` is `null` while sustaining.
+`stage` counts from 1, `progress` is through the stage (0 to 1), `target_bpm` is the tempo at the end of the stage and `seconds_left` is `null` while sustaining. A journey that moves the binaural layer also reports `"binaural": {"carrier", "beat", "level"}` at the bar's start (`null` otherwise).
+
+A stage can also move the [binaural layer](#binaural) with an optional block, interpolated with the stage's curve like the other fields; a stage without one holds the values reached so far, and `level` 0 fades it out:
+
+```json
+{"name": "Ambient", "seconds": 60, "genre": "ambient", "to": {"bpm": 60}, "binaural": {"carrier": 200, "beat": 6, "level": 0.05}}
+```
+
+Values outside the ranges are clamped with a warning, like the other fields. A journey with binaural blocks starts from the layer that plays (from silence when it is off) and owns it while it runs: `ctl binaural` is refused until you stop the journey, and stopping it leaves the layer where it was. A journey without binaural blocks never touches the layer. `journey create` may add the block when the description asks for it.
 
 <div align="right"><a href="#top">Back to top</a></div>
 

@@ -38,10 +38,10 @@ import numpy as np
 
 from . import genres
 from . import samples as _samples
+from .binaural import Binaural, BinauralLayer, glide_seconds
 from .composer import Composer
 from .genres.base import Piece
 from .genres.lofi import Instruments  # noqa: F401  (re-exported: the procedural lo-fi voices)
-from .binaural import Binaural, BinauralLayer, glide_seconds
 from .mastering import Compressor, ConvolutionReverb, procedural_ir, soft_clip
 from .style import DEFAULT, KEYS, Style
 from .synth import SR, StatefulFilter, _sos, bp, hp, lp, mtof  # noqa: F401  (re-exported)
@@ -79,6 +79,7 @@ class _Running:
     journey: Journey
     start_sample: int
     start: dict[str, float]
+    binaural_start: dict[str, float] | None = None   # where its binaural values start, when it owns the layer
 
 
 class JourneyDriven(ValueError):
@@ -182,6 +183,10 @@ class Engine:
         plays; turning it on fades it in and None fades it out (see `binaural`)."""
         seconds = glide_seconds(seconds)
         with self._lock:
+            driver = self._pending_journey if self._journey_queued else self._driving
+            if driver is not None and driver.owns_binaural:
+                raise JourneyDriven(f'binaural is driven by the journey "{driver.name}"; stop it first '
+                                    f"(gentle-stream journey stop)")
             self._pending_binaural, self._binaural_queued = (setting, seconds), True
 
     @property
@@ -295,6 +300,8 @@ class Engine:
                 self._driving = journey
                 if journey is not None:
                     self._glides = {name: g for name, g in self._glides.items() if name not in journey.fields}
+        if binaural_queued:   # before a journey starts here, so it starts from the layer as it now plays
+            self._binaural.set(*binaural)
         if queued and journey is None:
             self._running = None
         running = self._running
@@ -326,12 +333,17 @@ class Engine:
             self._start_piece(replace(self.style, genre=target_genre, **values), skip_intro=True)
         self._apply_glides()
         if journey is not None:   # starts here, at t = 0, from the values this bar already has
-            running, t = _Running(journey, self.samples_out, {f: getattr(self.style, f) for f in journey.fields}), 0.0
+            playing = self._binaural.setting.to_dict() if self._binaural.active and self._binaural.setting else None
+            binaural_start = journey.binaural_start(playing) if journey.owns_binaural else None
+            running = _Running(journey, self.samples_out, {f: getattr(self.style, f) for f in journey.fields},
+                               binaural_start)
+            t = 0.0
             self._running = running
         elif values:
             self._evolve(values)
         running = self._running   # None once a released journey has given its final values
-        self._snapshot = running.journey.snapshot(t, running.start, self.style.bpm) if running is not None else None
+        self._snapshot = (running.journey.snapshot(t, running.start, self.style.bpm, running.binaural_start)
+                          if running is not None else None)
         bar_start = self.piece_seconds
         self._schedule_bar()
         n = int(round(self.bar_seconds * self.sr))
@@ -339,8 +351,10 @@ class Engine:
         self._acc[:-n] = self._acc[n:]
         self._acc[-n:] = 0
         out = self._master(out)
-        if binaural_queued:
-            self._binaural.set(*binaural)
+        if running is not None and running.binaural_start is not None:   # head for the journey's end-of-bar values
+            end = (self.samples_out + n - running.start_sample) / self.sr
+            values = running.journey.binaural_at(end, running.binaural_start)
+            self._binaural.set(Binaural.from_dict(values), n / self.sr)
         if self._binaural.active:   # after the master chain: nothing colours or pumps it
             out = out + self._binaural.render(n)
         self.bar += 1
