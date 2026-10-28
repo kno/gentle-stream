@@ -54,6 +54,13 @@ def soundfont_path(cache: Path | None = None) -> Path | None:
     return sf2 if sf2.is_file() and (cache / LICENSES_NAME).is_file() else None
 
 
+def installed_message(sf2: Path, already: bool) -> str:
+    """What `setup-samples` (and the TUI's voices dialog) says once the soundfont is at `sf2`."""
+    if already:
+        return f"FluidR3_GM already installed: {sf2} (license: {sf2.parent / LICENSES_NAME})"
+    return f"installed {sf2} (SHA-256 verified; license: {sf2.parent / LICENSES_NAME})"
+
+
 def setup_samples(cache: Path | None = None, url: str | None = None, sha256: str | None = None,
                   progress: Callable[[int, int | None], None] | None = None) -> Path:
     """Download, verify and extract FluidR3_GM into `cache`; does nothing when it is already installed.

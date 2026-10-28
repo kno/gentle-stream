@@ -394,6 +394,35 @@ def active_voice(sr: int = SR) -> PackVoice | None:
     return PackVoice(pack, sr) if pack is not None else None
 
 
+def added_message(pack: Pack, replaced: bool) -> str:
+    """What `voices add` (and the TUI's voices dialog) says after registering `pack`."""
+    return f'{"Replaced" if replaced else "Added"} voice pack "{pack.name}" ({pack.license}); the choir now sings it'
+
+
+def list_lines(entries: list[tuple[str, Path, bool, Pack | PackError]]) -> list[str]:
+    """The lines of `voices list` for `VoiceStore.entries()`, the active pack marked with *; shared with the TUI."""
+    if not entries:
+        return ["No voice packs. Add one with: gentle-stream voices add FOLDER"]
+    lines = []
+    for name, folder, active, loaded in entries:
+        mark = "*" if active else " "
+        if isinstance(loaded, PackError):
+            lines.append(f"{mark} {name} · unavailable: {loaded}")
+            continue
+        parts = [f"license: {loaded.license}"]
+        if loaded.attribution:
+            parts.append(f"by {loaded.attribution}")
+        if loaded.source:
+            parts.append(f"source: {loaded.source}")
+        if loaded.sfz is not None:
+            parts.append(f"{loaded.sfz.name} ({len(loaded.regions)} regions)")
+        if loaded.sf2 is not None:
+            bank = f"bank {loaded.bank} " if loaded.bank else ""
+            parts.append(f"{loaded.sf2.name} {bank}program {loaded.program}")
+        lines.append(f"{mark} {loaded.name} · {' · '.join(parts)} · {folder}")
+    return lines
+
+
 def voices_command(action: str, target: str | None = None) -> int:
     """`gentle-stream voices add FOLDER | list | remove NAME`."""
     import sys
@@ -401,9 +430,7 @@ def voices_command(action: str, target: str | None = None) -> int:
     store = VoiceStore()
     try:
         if action == "add":
-            pack, replaced = store.add(str(target))
-            print(f'{"Replaced" if replaced else "Added"} voice pack "{pack.name}" ({pack.license}); '
-                  "the choir now sings it")
+            print(added_message(*store.add(str(target))))
             return 0
         if action == "remove":
             removed = store.remove(str(target))
@@ -416,23 +443,6 @@ def voices_command(action: str, target: str | None = None) -> int:
     except PackError as e:
         print(f"gentle-stream: {e}", file=sys.stderr)
         return 1
-    if not entries:
-        print("No voice packs. Add one with: gentle-stream voices add FOLDER")
-        return 0
-    for name, folder, active, loaded in entries:
-        mark = "*" if active else " "
-        if isinstance(loaded, PackError):
-            print(f"{mark} {name} · unavailable: {loaded}")
-            continue
-        parts = [f"license: {loaded.license}"]
-        if loaded.attribution:
-            parts.append(f"by {loaded.attribution}")
-        if loaded.source:
-            parts.append(f"source: {loaded.source}")
-        if loaded.sfz is not None:
-            parts.append(f"{loaded.sfz.name} ({len(loaded.regions)} regions)")
-        if loaded.sf2 is not None:
-            bank = f"bank {loaded.bank} " if loaded.bank else ""
-            parts.append(f"{loaded.sf2.name} {bank}program {loaded.program}")
-        print(f"{mark} {loaded.name} · {' · '.join(parts)} · {folder}")
+    for line in list_lines(entries):
+        print(line)
     return 0

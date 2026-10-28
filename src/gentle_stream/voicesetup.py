@@ -52,6 +52,13 @@ CATALOG = {
 }
 
 
+def installed_message(key: str, folder: Path, already: bool) -> str:
+    """What `setup-voices` (and the TUI's voices dialog) says once `key` is installed and registered in `folder`."""
+    if already:
+        return f"{CATALOG[key].name} already installed: {folder}; the choir sings it"
+    return f"installed {folder} (SHA-256 verified; license: {folder / LICENSES_NAME}); the choir now sings it"
+
+
 def voices_dir() -> Path:
     return cache_dir() / "voices"
 

@@ -21,7 +21,7 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
 | T5 PM-040 live controls from the TUI | S5, S0 | inline | `feat/tui-controls` | done (PM-040 commit; base `a5b5c64`) |
 | T6 PM-041 binaural from the TUI | S6, S0 | inline | `feat/tui-binaural` | done (PM-041 commit; base `ef9030e`) |
 | T7 PM-042 spoken phrases from the TUI | S7, S0 | inline | `feat/tui-say` | done (PM-042 commit; base `fdbd512`) |
-| T8 PM-043 voices and samples from the TUI | S8, S0 | inline | `feat/tui-voices` | pending |
+| T8 PM-043 voices and samples from the TUI | S8, S0 | inline | `feat/tui-voices` | done (PM-043 commit; base `418280a`) |
 | T9 PM-044 render and the parity guard | S9, S0 | inline | `feat/tui-render` | pending |
 
 ## Log
@@ -116,3 +116,14 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
   on_worker_state_changed. Mutations: 4 of 5 caught; "skip the empty-text check" is equivalent (speech.render
   refuses with the same message before calling the program). RED ImportError; GREEN 8.
 - L18: PM-042 suite job-32: 1395 passed, 3 deselected, 0 test daemons. T7 verified.
+- L19: PM-043. `v` opens VoicesModal. The CLI's texts moved to shared functions (voicepacks.list_lines,
+  added_message; voicesetup.installed_message; samples.installed_message) so the dialog and the CLI cannot drift;
+  the CLI output is unchanged (138 voice/sample tests pass untouched). Tests compare against the CLI itself: the
+  list equals `voices list`; add/remove leave voices.json byte-identical to `voices add/remove`; installing the
+  choir or the soundfont leaves config and cache trees identical to `setup-voices`/`setup-samples` (local fake
+  .7z/.deb); a failed install (checksum) says why and leaves nothing; a slow fake download moves the bar, disables
+  the install buttons and the UI keeps answering. The dialog cannot close mid-download (a thread cannot be stopped).
+  80x24 first clipped two buttons: two button rows now (tested). Mutations: 5 of 6 caught; the survivor
+  ("always call setup_samples") is equivalent, it does nothing when installed. Finding for the user: the engine
+  reads the active pack only at start, so "the choir now sings it" (CLI and dialog) takes effect on the next start.
+- L20: PM-043 suite job-33: 1406 passed, 3 deselected, 0 test daemons. T8 verified.

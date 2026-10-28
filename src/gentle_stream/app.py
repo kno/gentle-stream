@@ -23,7 +23,16 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.markup import escape
 from textual.screen import ModalScreen
 from textual.theme import Theme
-from textual.widgets import Button, Footer, Header, Input, OptionList, Select, Static
+from textual.widgets import (
+    Button,
+    Footer,
+    Header,
+    Input,
+    OptionList,
+    ProgressBar,
+    Select,
+    Static,
+)
 from textual.widgets.option_list import Option
 from textual.worker import Worker, WorkerState, get_current_worker
 
@@ -958,6 +967,153 @@ class SayModal(ModalScreen[tuple[str, list[str]] | None]):
         self.dismiss(None)
 
 
+class VoicesModal(ModalScreen[None]):
+    """Voice packs and the optional downloads (PM-043), with the functions of `voices add|list|remove`,
+    `setup-voices` and `setup-samples`, so the store and caches end up as the CLI leaves them. A download runs in
+    a worker with a progress bar; the dialog stays open until it ends."""
+
+    BINDINGS = [Binding("escape", "cancel", "Close")]
+    DEFAULT_CSS = """
+    VoicesModal { align: center middle; }
+    VoicesModal > Vertical { width: 96; max-width: 100%; height: auto; border: round $primary; padding: 0 1;
+                             background: $surface; }
+    VoicesModal .heading { color: $primary; text-style: bold; }
+    VoicesModal #voices-list { height: auto; max-height: 7; }
+    VoicesModal #voices-status { color: $text-muted; }
+    VoicesModal .buttons { height: auto; }
+    VoicesModal Button { margin-right: 1; }
+    """
+
+    CHOIR = "freepats-synth-choir"
+
+    def __init__(self):
+        super().__init__()
+        self.busy = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static("Voice packs (* sings now) · the choir and sampled instruments", classes="heading")
+            yield OptionList(id="voices-list")
+            yield Input(placeholder="A pack folder to add (pack.json with its license, and the recordings)",
+                        id="voices-folder")
+            with Horizontal(classes="buttons"):
+                yield Button("Add", id="add", variant="primary")
+                yield Button("Remove", id="remove")
+            with Horizontal(classes="buttons"):
+                yield Button("Install FreePats choir", id="setup-voices")
+                yield Button("Install FluidR3_GM", id="setup-samples")
+                yield Button("Close", id="cancel")
+            yield ProgressBar(id="voices-progress", show_eta=False)
+            yield Static("Downloads are optional, verified by SHA-256 and kept with their licenses.",
+                         id="voices-status", markup=False)
+
+    def on_mount(self) -> None:
+        self._refresh()
+
+    def _refresh(self) -> None:
+        from .voicepacks import PackError, VoiceStore, list_lines
+
+        options = self.query_one("#voices-list", OptionList)
+        options.clear_options()
+        try:
+            self.entries = VoiceStore().entries()
+        except PackError as e:
+            self.entries = []
+            self.query_one("#voices-status", Static).update(str(e))
+            return
+        options.add_options(list_lines(self.entries))
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()   # never a mood request for the app below
+        self._add()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "add":
+            self._add()
+        elif event.button.id == "remove":
+            self._remove()
+        elif event.button.id in ("setup-voices", "setup-samples"):
+            self._busy(True)
+            self._install(event.button.id)
+        else:
+            self.action_cancel()
+
+    def _add(self) -> None:
+        from .voicepacks import PackError, VoiceStore, added_message
+
+        folder = self.query_one("#voices-folder", Input).value.strip()
+        status = self.query_one("#voices-status", Static)
+        if not folder:
+            status.update("type the folder of a voice pack")
+            return
+        try:
+            status.update(added_message(*VoiceStore().add(str(Path(folder).expanduser()))))
+        except PackError as e:
+            status.update(str(e))
+            return
+        self._refresh()
+
+    def _remove(self) -> None:
+        from .voicepacks import PackError, VoiceStore
+
+        index = self.query_one("#voices-list", OptionList).highlighted
+        if index is None or not self.entries:
+            return
+        try:
+            removed = VoiceStore().remove(self.entries[index][0])
+        except PackError as e:
+            self.query_one("#voices-status", Static).update(str(e))
+            return
+        if removed is not None:
+            self.query_one("#voices-status", Static).update(f'Removed voice pack "{removed}"')
+        self._refresh()
+
+    def _busy(self, busy: bool) -> None:
+        self.busy = busy
+        for name in ("add", "remove", "setup-voices", "setup-samples"):
+            self.query_one(f"#{name}", Button).disabled = busy
+
+    @work(thread=True, exclusive=True, group="voices-setup")
+    def _install(self, which: str) -> None:
+        from . import samples, voicesetup
+        from .voicepacks import PackError
+
+        bar = self.query_one("#voices-progress", ProgressBar)
+        status = self.query_one("#voices-status", Static)
+
+        def progress(done: int, total: int | None) -> None:
+            self.app.call_from_thread(bar.update, total=total, progress=done)
+
+        self.app.call_from_thread(bar.update, total=None, progress=0)
+        self.app.call_from_thread(status.update, "Downloading…")
+        try:
+            if which == "setup-voices":
+                already = voicesetup.installed(self.CHOIR)
+                folder = voicesetup.setup_voices(self.CHOIR, progress=progress)
+                message = voicesetup.installed_message(self.CHOIR, already or folder, already is not None)
+            else:
+                already = samples.soundfont_path()
+                sf2 = already or samples.setup_samples(progress=progress)
+                message = samples.installed_message(sf2, already is not None)
+        except (samples.SetupError, PackError) as e:
+            message = f"{which} failed: {e}"
+            self.app.call_from_thread(bar.update, total=None, progress=0)
+        else:
+            self.app.call_from_thread(bar.update, total=100, progress=100)
+        self.app.call_from_thread(self._done, message)
+
+    def _done(self, message: str) -> None:
+        self._busy(False)
+        self.query_one("#voices-status", Static).update(message)
+        self._refresh()
+
+    def action_cancel(self) -> None:
+        if self.busy:   # the download thread cannot be stopped; leave once it has cleaned up after itself
+            self.query_one("#voices-status", Static).update("Downloading… the dialog closes when it ends")
+            return
+        self.dismiss(None)
+
+
 class JourneyPickerModal(ModalScreen[str | None]):
     """Pick a journey: "create" first, then the built-ins, then the saved ones alphabetically, then "open" (a file);
     `v` shows the highlighted one, `d` deletes a saved one.
@@ -1067,6 +1223,7 @@ class StreamApp(App):
         Binding("c", "controls", "Controls"),
         Binding("B", "binaural", "Binaural"),
         Binding("t", "say", "Say"),
+        Binding("v", "voices", "Voices"),
         Binding("plus,equals_sign", "volume(5)", "Vol +5"),
         Binding("minus", "volume(-5)", "Vol -5"),
         Binding("up", "volume(1)", "Vol +1"),
@@ -1218,6 +1375,8 @@ class StreamApp(App):
              "controls"),
             ("Binaural", "Turn the binaural layer on or off, or glide its carrier, beat and level (B)", "binaural"),
             ("Say a phrase", "Speak a phrase over the music, choosing voice, rate and effect (t)", "say"),
+            ("Voices and samples", ("Add, list or remove voice packs; install the FreePats choir or the FluidR3_GM "
+                                    "soundfont (v)"), "voices"),
             ("Record the session", "Start or stop recording what you hear into a WAV file (r)", "record"),
             ("Back", "Leave the app, the music keeps playing (b)", "back"),
             ("Quit", "Leave the app and stop the music (q)", "quit"),
@@ -1253,6 +1412,10 @@ class StreamApp(App):
                 self._status(f"Saying “{escape(phrase)}” at the next phrase boundary{extra}")
 
         self.push_screen(SayModal(self.player), said)
+
+    def action_voices(self) -> None:
+        """Voice packs and the downloads, as `voices`, `setup-voices` and `setup-samples` do."""
+        self.push_screen(VoicesModal())
 
     def action_record(self) -> None:
         """Start recording (asks for the file) or stop and say where it was saved."""

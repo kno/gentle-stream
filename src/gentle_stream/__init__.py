@@ -20,6 +20,7 @@ CONTROLS = """controls:
   c        live controls: glide tempo, energy, brightness, space, swing, vinyl, melody density, voice
   B        binaural layer: turn it on or off, or glide its carrier, beat and level
   t        say a phrase over the music: voice, rate and effect
+  v        voice packs: add, list, remove; install the FreePats choir or FluidR3_GM
   r        record the session into a WAV file; r again stops and saves it
   ctrl+p   command palette: every action, found by typing its name
   + / -    volume up / down by 5%
@@ -77,7 +78,7 @@ def setup_samples() -> int:
         print(f"gentle-stream: setup-samples failed: {e}", file=sys.stderr)
         return 1
     print()
-    print(f"installed {sf2} (SHA-256 verified; license: {sf2.parent / samples.LICENSES_NAME})")
+    print(samples.installed_message(sf2, already=False))
     if samples.fluidsynth_module() is None:
         print("note: FluidSynth or pyfluidsynth is missing, so the procedural instruments stay in use "
               "(brew install fluid-synth; uv sync --extra samples)")
@@ -191,7 +192,7 @@ def setup_voices(key: str) -> int:
     try:
         if (done := voicesetup.installed(key)) is not None:
             voicesetup.setup_voices(key)
-            print(f"{source.name} already installed: {done}; the choir sings it")
+            print(voicesetup.installed_message(key, done, already=True))
             return 0
         print(f"downloading {source.name} ({source.license}, {source.attribution}) from {source.url}")
 
@@ -206,8 +207,7 @@ def setup_voices(key: str) -> int:
         print(f"gentle-stream: setup-voices failed: {e}", file=sys.stderr)
         return 1
     print()
-    print(f"installed {folder} (SHA-256 verified; license: {folder / voicesetup.LICENSES_NAME}); "
-          "the choir now sings it")
+    print(voicesetup.installed_message(key, folder, already=False))
     return 0
 
 
@@ -760,7 +760,7 @@ def main(argv: list[str] | None = None) -> int:
         from . import samples
 
         if (sf2 := samples.soundfont_path()) is not None:
-            print(f"FluidR3_GM already installed: {sf2} (license: {sf2.parent / samples.LICENSES_NAME})")
+            print(samples.installed_message(sf2, already=True))
             return 0
         return setup_samples()
 
