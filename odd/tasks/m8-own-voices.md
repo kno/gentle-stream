@@ -23,7 +23,7 @@ idempotent)."
 | :--- | :--- | :--- | :--- | :--- |
 | T1 PM-027 WAV voice packs with licensing | S1 | inline | `feat/voice-packs` | done (PM-027 commit; base `d839203`) |
 | T2 PM-028 SF2 voice packs | S2 | inline (FluidSynth installed) | `feat/sf2-voice-packs` | done (PM-028 commit; base `3438b79`) |
-| T3 PM-029 SFZ subset | S3 | inline | `feat/sfz-voice-packs` | pending |
+| T3 PM-029 SFZ subset | S3 | inline | `feat/sfz-voice-packs` | done (PM-029 commit; base `174033c`) |
 | T4 PM-030 `setup-voices` for a CC0 pack | S4 | inline; needs network to inspect the archive (A6) | `feat/setup-voices` | pending |
 
 ## Log
@@ -62,3 +62,14 @@ idempotent)."
   variation). GREEN 63 voice-pack tests; mutations (FluidSynth check, requested program, relative path, bank/program
   range, level matching) each fail tests. Ruff/Pyright clean.
 - L7: PM-028 full non-slow suite job-15 exited 0: 1129 passed, 3 deselected, 0 orphan daemons. T2 verified.
+- L8: PM-029: new `sfz.py` (parse and select only; `PackVoice` plays). Decisions: the choir asks regions for velocity 80
+  (`NOTE_VELOCITY`, shared with SF2); the first region in file order that plays the note wins (as SFZ players pick one
+  layer); a note no region plays is sung by the nearest key zone, reported once; loop points without `loop_mode` loop;
+  without `ampeg_release` the choir's 0.4 s release applies (SFZ's own default, 1 ms, would click on a pad); level
+  matching uses the region nearest middle C before its `volume`, so `volume` keeps its relative meaning. RED
+  ImportError (no sfz). Found and fixed in my own tests: `tune=-50` lowers the playback (the test had it raising), and
+  two tests that could not fail: the loop fixture joined at a zero crossing where any join looked smooth (moved to a
+  crest with silence after loop_end), and the region table had no overlapping case for "first match wins" (added
+  69 @ 90). GREEN 31 SFZ tests (94 with the other voice-pack tests); mutations (loop join, no wrap, tune sign, volume,
+  global inheritance, key=, first match, default looping, block comments) each fail tests. Ruff/Pyright clean.
+- L9: PM-029 full non-slow suite job-16 exited 0: 1160 passed, 3 deselected, 0 orphan daemons. T3 verified.

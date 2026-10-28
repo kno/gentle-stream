@@ -6,7 +6,8 @@ A voice pack is a folder with a `pack.json` and one WAV file per recorded note, 
     {"name": "My Choir", "license": "CC0-1.0", "source": "my own recordings", "attribution": "Me",
      "redistributable": true, "root_note_from_filename": true, "vowel": "a", "melody": false}
 
-A pack can also be a SoundFont: `"sf2": "voices.sf2"` (relative to the folder, or absolute) with an optional
+A pack can also be an SFZ instrument, `"sfz": "choir.sfz"` (the subset in `sfz.py`, WAV samples only, sustain
+loops held as long as a note lasts), or a SoundFont: `"sf2": "voices.sf2"` (relative to the folder, or absolute) with an optional
 `"bank"` and `"program"` (default 0), rendered by FluidSynth (the `samples` extra) instead of WAV files.
 
 `license` is required (a pack without one is refused); `melody: true` lets the choir sing the vocal melody with it
@@ -26,6 +27,7 @@ import os
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy.io import wavfile
@@ -34,13 +36,17 @@ from . import samples
 from .storage import write_json_atomic
 from .synth import SR
 
+if TYPE_CHECKING:
+    from .sfz import Region
+
 log = logging.getLogger(__name__)
 
 MAX_SHIFT = 4                      # semitones a recording is resampled without a report
 ATTACK = 0.005                     # seconds: no click at the start of a recording
 RELEASE = 0.4                      # seconds a note rings past its length (as the choir's other voices)
 VERSION = 1
-SF2_VELOCITY = 80                  # MIDI velocity of SF2 notes and of the reference note they are level-matched by
+NOTE_VELOCITY = 80                 # MIDI velocity the choir asks SF2 and SFZ packs for
+SF2_VELOCITY = NOTE_VELOCITY       # and the velocity of the reference note SF2 notes are level-matched by
 SF2_NEEDS = ("FluidSynth is needed for SF2 voice packs (install the FluidSynth library and the samples extra: "
              "uv sync --extra samples)")
 UNSUPPORTED = (".flac", ".ogg", ".mp3", ".aif", ".aiff", ".m4a", ".opus")
@@ -75,6 +81,8 @@ class Pack:
     sf2: Path | None = None                                 # an SF2 pack: its SoundFont, bank and program
     bank: int = 0
     program: int = 0
+    sfz: Path | None = None                                 # an SFZ pack: its instrument file and regions
+    regions: tuple[Region, ...] = ()
 
 
 def _whole(data: dict, key: str, hi: int, manifest: Path) -> int:
@@ -108,6 +116,15 @@ def load_pack(folder: Path | str) -> Pack:
     base = Pack(name=text("name")[:40] or folder.name, path=folder, license=license_.strip(), source=text("source"),
                 attribution=text("attribution"), redistributable=data.get("redistributable") is True,
                 vowel=vowel if isinstance(vowel, str) and vowel else None, melody=data.get("melody") is True)
+    if "sfz" in data:
+        from . import sfz as sfz_format
+        path = Path(str(data["sfz"])).expanduser()
+        path = path if path.is_absolute() else folder / path
+        if path.suffix.lower() != ".sfz":
+            raise PackError(f'{manifest}: "sfz" must be an .sfz file ({path.name})')
+        if not path.is_file():
+            raise PackError(f"{manifest}: no such SFZ file: {path}")
+        return replace(base, sfz=path, regions=sfz_format.parse(path).regions)
     if "sf2" in data:
         sf2 = Path(str(data["sf2"])).expanduser()
         sf2 = sf2 if sf2.is_absolute() else folder / sf2
@@ -164,6 +181,7 @@ class PackVoice:
         self._reported: set[int] = set()
         self._level: float | None = None
         self._renderer: samples.Renderer | None = None   # an SF2 pack's FluidSynth, loaded on the first note
+        self._samples: dict[Path, tuple[np.ndarray, int]] = {}   # an SFZ pack's WAV samples, read on first use
         self.low, self.high = (min(pack.notes), max(pack.notes)) if pack.notes else (0, 127)
 
     def _recording(self, root: int) -> tuple[np.ndarray, int]:
@@ -207,9 +225,58 @@ class PackVoice:
         x = self._renderer.note(0, p.bank, p.program, midi, SF2_VELOCITY, seconds, RELEASE)
         return samples._finish(x, self.sr) * samples._program_level(self._renderer, self.sr, p)
 
+    def _sample(self, path: Path) -> tuple[np.ndarray, int]:
+        if path not in self._samples:
+            self._samples[path] = read_wav(path)
+        return self._samples[path]
+
+    def _region(self, midi: int):
+        """The SFZ region that sings `midi` at NOTE_VELOCITY, or the zone nearest it (reported once)."""
+        from .sfz import select
+        region = select(self.pack.regions, midi, NOTE_VELOCITY)
+        if region is not None:
+            return region
+        if midi not in self._reported:
+            self._reported.add(midi)
+            log.warning('voice pack "%s": no region plays note %d at velocity %d; the nearest one sings it',
+                        self.pack.name, midi, NOTE_VELOCITY)
+        return min(self.pack.regions, key=lambda r: max(r.lokey - midi, midi - r.hikey, 0))
+
+    def _render_sfz(self, midi: int, seconds: float) -> np.ndarray:
+        region = self._region(midi)
+        x, file_sr = self._sample(region.sample)
+        release = region.ampeg_release if region.ampeg_release is not None else RELEASE
+        release = max(release, ATTACK)
+        rate = 2 ** ((midi - region.pitch_keycenter + region.tune / 100) / 12) * file_sr / self.sr
+        n = int((seconds + release) * self.sr)
+        p = np.arange(n) * rate
+        ran_out = False
+        if region.loops and region.loop_end is not None:
+            end = min(region.loop_end, len(x) - 1)
+            start = min(region.loop_start, end - 1)
+            span = end - start + 1
+            p = np.where(p > end, start + np.mod(p - start, span), p)
+            i0 = np.floor(p).astype(int)
+            i1 = np.where(i0 >= end, start, i0 + 1)       # across the join, interpolate loop end -> loop start
+        else:
+            p = p[p <= len(x) - 1]
+            ran_out = len(p) < n
+            i0 = np.floor(p).astype(int)
+            i1 = np.minimum(i0 + 1, len(x) - 1)
+        frac = p - i0
+        y = x[i0] * (1 - frac) + x[i1] * frac
+        t = np.arange(len(y)) / self.sr
+        env = np.clip(t / max(region.ampeg_attack, ATTACK), 0, 1) * np.clip(1 - (t - seconds) / release, 0, 1)
+        k = min(len(y), int(0.01 * self.sr))
+        if ran_out and k:                                   # a sample without a loop ends: fade to silence
+            env[len(y) - k:] *= np.linspace(1, 0, k)
+        return y * env * 10 ** (region.volume / 20) * self.level
+
     def _render(self, midi: int, seconds: float) -> np.ndarray:
         if self.pack.sf2 is not None:
             return self._render_sf2(midi, seconds)
+        if self.pack.sfz is not None:
+            return self._render_sfz(midi, seconds)
         root, shift = self.source(midi)
         x, file_sr = self._recording(root)
         rate = 2 ** (shift / 12) * file_sr / self.sr        # recording samples per output sample
@@ -229,8 +296,11 @@ class PackVoice:
         """Gain that gives the recording nearest middle C the RMS of the built-in choir's reference note."""
         if self._level is None:
             from .vocals import reference_rms
-            root = min(self.pack.notes, key=lambda r: (abs(60 - r), r))
-            x, file_sr = self._recording(root)
+            if self.pack.sfz is not None:                    # the region nearest middle C, before its volume
+                x, file_sr = self._sample(self._region(60).sample)
+            else:
+                root = min(self.pack.notes, key=lambda r: (abs(60 - r), r))
+                x, file_sr = self._recording(root)
             head = x[: int(0.5 * file_sr)]
             rms = float(np.sqrt(np.mean(np.square(head)))) if len(head) else 0.0
             self._level = reference_rms(self.sr) / rms if rms > 1e-9 else 1.0
@@ -359,6 +429,8 @@ def voices_command(action: str, target: str | None = None) -> int:
             parts.append(f"by {loaded.attribution}")
         if loaded.source:
             parts.append(f"source: {loaded.source}")
+        if loaded.sfz is not None:
+            parts.append(f"{loaded.sfz.name} ({len(loaded.regions)} regions)")
         if loaded.sf2 is not None:
             bank = f"bank {loaded.bank} " if loaded.bank else ""
             parts.append(f"{loaded.sf2.name} {bank}program {loaded.program}")
