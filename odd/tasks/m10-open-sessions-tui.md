@@ -16,7 +16,7 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
 | T0 M10 plan in the roadmap | S0 | inline | `docs/m10-plan` | done (`a35fe49`) |
 | T1 PM-036 record the session | S1 | inline | `feat/session-record` | done (PM-036 commit; base `docs/m10-plan`) |
 | T2 PM-037 open-ended stages | S2 | inline | `feat/open-stages` | done (PM-037 commit; base `4347a90`) |
-| T3 PM-038 point-list curves | S3 | inline | `feat/point-curves` | pending |
+| T3 PM-038 point-list curves | S3 | inline | `feat/point-curves` | done (PM-038 commit; base `10c82c5`) |
 | T4 PM-039 journeys from the TUI | S4, S0 | inline | `feat/tui-journeys` | pending |
 | T5 PM-040 live controls from the TUI | S5, S0 | inline | `feat/tui-controls` | pending |
 | T6 PM-041 binaural from the TUI | S6, S0 | inline | `feat/tui-binaural` | pending |
@@ -66,3 +66,12 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
   ingest needs a stream key, not an API key; OAuth/Data API out of scope. Encoder, frame drawing dependency and public
   content rules recorded as open decisions; nothing implemented.
 - L7: User: "pues adelante". PM-037 suite job-26: 1332 passed, 3 deselected, 0 test daemons. T2 verified.
+- L8: PM-038. `curve_points` validates a point list (2-16 [progress, fraction] pairs, both 0-1, progress strictly
+  increasing, from [0, 0] to [1, 1]) and names the offending point; `Stage.curve` is a name or a tuple of points;
+  `shape` interpolates linearly between points (bisect, no numpy in journey.py); to_dict writes lists; stage_diff
+  says "N points"; the journey rules offer it. Named curves and the unknown-name warning are unchanged (the two tests
+  pinning them passed in RED). The README had never documented the named curves (PM-009); now both forms are. My
+  slips: numpy is not imported in journey.py (first GREEN attempt failed); my own error-message regex did not match
+  my message. RED 19 failed / 2 passed; GREEN 21; 6 mutations each fail tests. One new TRY004 (ValueError for a
+  bad type) follows the parser's convention: its callers catch ValueError.
+- L9: PM-038 suite job-27: 1353 passed, 3 deselected, 0 test daemons. T3 verified.

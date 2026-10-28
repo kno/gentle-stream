@@ -67,12 +67,44 @@ def _genre_names() -> set[str]:
     return set(genres.NAMES)
 
 
-def shape(curve: str, progress: float) -> float:
-    """Curve shape from 0 to 1. Unknown curves fall back to linear."""
+Points = tuple[tuple[float, float], ...]   # a point-list curve: (progress, fraction) from (0, 0) to (1, 1)
+MAX_POINTS = 16
+
+
+def curve_points(raw, where: str) -> Points:
+    """A point-list curve from untrusted `raw` (PM-038): 2 to MAX_POINTS [progress, fraction] pairs, both 0-1,
+    progress increasing, from [0, 0] to [1, 1]; ValueError naming the offending point otherwise."""
+    if not isinstance(raw, (list, tuple)) or not 2 <= len(raw) <= MAX_POINTS:
+        raise ValueError(f'{where}: "curve" must be a curve name or 2 to {MAX_POINTS} [progress, fraction] points')
+    points = []
+    for number, point in enumerate(raw, 1):
+        label = list(point) if isinstance(point, tuple) else point
+        if (not isinstance(point, (list, tuple)) or len(point) != 2
+                or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in point)):
+            raise ValueError(f"{where}: curve point {number} {label!r} must be [progress, fraction]")
+        x, y = float(point[0]), float(point[1])
+        if not (0 <= x <= 1 and 0 <= y <= 1):
+            raise ValueError(f"{where}: curve point {number} {label!r} must have both values from 0 to 1")
+        if points and x <= points[-1][0]:
+            raise ValueError(f"{where}: curve point {number} {label!r} must come after the previous point")
+        points.append((x, y))
+    if points[0] != (0.0, 0.0):
+        raise ValueError(f"{where}: curve point 1 {list(raw[0])!r} must be [0, 0]: a curve starts at [0, 0]")
+    if points[-1] != (1.0, 1.0):
+        raise ValueError(f"{where}: curve point {len(points)} {list(raw[-1])!r} must be [1, 1]: a curve ends at [1, 1]")
+    return tuple(points)
+
+
+def shape(curve: str | Points, progress: float) -> float:
+    """Curve shape from 0 to 1. Unknown curves fall back to linear; a point list is linear between its points."""
     if progress <= 0:
         return 0.0
     if progress >= 1:
         return 1.0
+    if not isinstance(curve, str):
+        i = bisect_right([x for x, _ in curve], progress)   # the segment curve[i - 1] .. curve[i]
+        (x0, y0), (x1, y1) = curve[i - 1], curve[i]
+        return y0 + (y1 - y0) * (progress - x0) / (x1 - x0)
     if curve == "ease-in":
         return progress ** 2
     if curve == "ease-out":
@@ -93,7 +125,7 @@ class Stage:
     seconds: float
     to: Mapping[str, float]   # the immutable values each named field reaches at the end of the stage
     genre: str | None = None
-    curve: str = "linear"
+    curve: str | Points = "linear"   # a curve name or a point list
     binaural: Mapping[str, float] = MappingProxyType({})   # the binaural values reached by the end of the stage
     layers: Mapping[str, bool] = MappingProxyType({})     # parts switched on (True) or off (False) from this stage
     drums: str | None = None                              # a drum level from this stage on, None to keep the last
@@ -120,7 +152,9 @@ class Stage:
             raise ValueError(f"stage {self.name!r}: seconds must be above 0")
         if self.genre is not None and self.genre not in _genre_names():
             raise ValueError(f"stage {self.name!r}: unknown genre {self.genre!r}")
-        if self.curve not in CURVES:
+        if not isinstance(self.curve, str):
+            object.__setattr__(self, "curve", curve_points(self.curve, f"stage {self.name!r}"))
+        elif self.curve not in CURVES:
             raise ValueError(f"stage {self.name!r}: unknown curve {self.curve!r}")
         unknown = sorted(set(self.to) - set(GLIDE_FIELDS))
         if unknown:
@@ -359,7 +393,9 @@ class Journey:
             if genre is not None and (not isinstance(genre, str) or genre not in _genre_names()):
                 raise ValueError(f"stage {number}: unknown genre {genre!r}")
             curve = raw.get("curve", "linear")
-            if not isinstance(curve, str) or curve not in CURVES:
+            if isinstance(curve, list):
+                curve = curve_points(curve, f"stage {number}")
+            elif not isinstance(curve, str) or curve not in CURVES:
                 if isinstance(curve, str):
                     warnings.append(f'stage {number}: unknown curve {curve!r}; using linear')
                     curve = "linear"
@@ -398,7 +434,7 @@ class Journey:
             if s.genre is not None:
                 stage_dict["genre"] = s.genre
             if s.curve != "linear":
-                stage_dict["curve"] = s.curve
+                stage_dict["curve"] = s.curve if isinstance(s.curve, str) else [list(p) for p in s.curve]
             if s.binaural:
                 stage_dict["binaural"] = dict(s.binaural)
             if s.layers:
@@ -546,6 +582,10 @@ def _number(value: float) -> str:
     return f"{value:g}"
 
 
+def _curve_name(curve: str | Points) -> str:
+    return curve if isinstance(curve, str) else f"{len(curve)} points"
+
+
 def _length(stage: Stage) -> str:
     return f"open (ramp {_number(stage.ramp)} s)" if stage.ramp is not None else f"{_number(stage.seconds)} s"
 
@@ -572,7 +612,7 @@ def stage_diff(old: Journey, new: Journey) -> list[str]:
         if before.genre != stage.genre:
             changes.append(f"genre {before.genre or '(kept)'} -> {stage.genre or '(kept)'}")
         if before.curve != stage.curve:
-            changes.append(f"curve {before.curve} -> {stage.curve}")
+            changes.append(f"curve {_curve_name(before.curve)} -> {_curve_name(stage.curve)}")
         other = [name for name in ("binaural", "layers", "drums", "transition")
                  if getattr(before, name) != getattr(stage, name)]
         if (before.phrases, before.phrase_every) != (stage.phrases, stage.phrase_every):

@@ -154,7 +154,8 @@ Genres and tempo ranges:
 Fields and ranges: {ranges}
 The continuous "voice" field controls a wordless choir (0 = off, 1 = full level); use "to": {{"voice": 0.5}}
 to bring it in or out over a stage. It never sings words.
-Curves: {', '.join(CURVES)}. Ends: sustain or release. Stage seconds: 10-14400 each, 43200 total.
+Curves: {', '.join(CURVES)}, or a list of 2 to 16 [progress, fraction] points from [0, 0] to [1, 1] (progress
+increasing, both 0-1; linear between points) for a shape the names do not give. Ends: sustain or release. Stage seconds: 10-14400 each, 43200 total.
 When the request asks to keep going until the listener stops or moves on, a stage may use "seconds": "open" with an
 optional "ramp" (10-14400 seconds, default 120) for its values to reach their targets; it lasts until skipped.
 Return only JSON with version, name, title, description, end, and stages. Each stage has name, seconds, to, and
