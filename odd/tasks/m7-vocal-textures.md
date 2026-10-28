@@ -29,6 +29,12 @@ melody."
 
 ## Log
 
+- L24: Rerun job-13 exited 0: 1066 passed, 3 deselected, 0 orphan daemons after the run. M7 closed; branches pushed to fork.
+
+- L23: Full suite job-12 (after the M8 gate) exited 1 after 19m43s: 1058 passed, 8 failed, all `PlayerError: the player did not start in time` in tests/test_main.py. Load average was 64: an Apple Virtualization VM plus 37 orphaned `gentle_stream daemon` processes, all with XDG_RUNTIME_DIR=/tmp/gs-* (test daemons, 4-25 h old, from earlier interrupted runs: daemons start in their own session and survive a killed pytest). Orphans killed (load fell to 8.7). The 8 tests pass alone (27 selected passed); test_daemon, test_main, test_app and test_daemon_cleanup each leave no orphan. Rerun job-13.
+
+- L22: Maintainer on the choir pad (listen/pad.wav): "bien, sigue con el siguiente paso". M7 accepted: choir pad (PM-022/023) and status/journeys (PM-024) active; vocal melody and harmonies (PM-025/026) implemented and gated until an M8 melodic voice.
+
 - L21: PM-025 gate (on feat/vocal-melody): `Engine.melodic_vocals` (False until an M8 voice pack provides a melodic voice) is passed to `vocals.instrumental_plan` and `vocals.schedule`; without it the genre keeps its lead and the choir pads at any `voice`. RED 5 failed -> GREEN 82 passed across the vocal test files; the PM-023 level test's melody case now enables the melodic voice explicitly (its melody-level mutation still fails a test). Removing the gate fails 3 tests. README states that melody mode waits for a voice pack.
 
 - L20: User chose "Dejarlas a la espera de M8 (recomendado)": keep the PM-025/026 code and tests, but melody mode only runs when the engine has a melodic voice (a future M8 voice pack). Until then the choir is always a pad, whatever `voice`, and the genre lead is never replaced. The gate lands on `feat/vocal-melody` and is merged (no rewrite) into `feat/vocal-harmonies`.
