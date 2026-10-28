@@ -24,7 +24,7 @@ idempotent)."
 | T1 PM-027 WAV voice packs with licensing | S1 | inline | `feat/voice-packs` | done (PM-027 commit; base `d839203`) |
 | T2 PM-028 SF2 voice packs | S2 | inline (FluidSynth installed) | `feat/sf2-voice-packs` | done (PM-028 commit; base `3438b79`) |
 | T3 PM-029 SFZ subset | S3 | inline | `feat/sfz-voice-packs` | done (PM-029 commit; base `174033c`) |
-| T4 PM-030 `setup-voices` for a CC0 pack | S4 | inline; needs network to inspect the archive (A6) | `feat/setup-voices` | pending |
+| T4 PM-030 `setup-voices` for a CC0 pack | S4 | inline; needs network to inspect the archive (A6) | `feat/setup-voices` | done (PM-030 commit; base `d37026f`) |
 
 ## Log
 
@@ -72,4 +72,27 @@ idempotent)."
   crest with silence after loop_end), and the region table had no overlapping case for "first match wins" (added
   69 @ 90). GREEN 31 SFZ tests (94 with the other voice-pack tests); mutations (loop join, no wrap, tune sign, volume,
   global inheritance, key=, first match, default looping, block comments) each fail tests. Ruff/Pyright clean.
+- L10: PM-030 archive inspection (A6), done without extracting to disk: FreePats publishes Synth Pad Choir only as `.7z`
+  (SF2, SFZ+FLAC, SFZ+WAV) at github.com/freepats/synth-pad-choir/releases/download/2020-05-16/. SFZ+WAV edition:
+  10.1 MB, SHA-256 19f94afc8aed5e120b444da668a51a1737a1e87b772ae93b495d0fc42ff92a16, 17 entries: LICENSE.txt (full CC0
+  1.0 legal code), README.txt (CC0; samples by 快乐爱的小精灵 (Elf of Happy and Love) <lovebodhi@yandex.com>, ZynAddSubFX, edited by
+  roberto@zenvoid.org), one .sfz and 12 WAV samples (C and F# from C2 to F#7). The .sfz uses only supported opcodes
+  (lokey, hikey, pitch_keycenter, loop_start, loop_end, sample; global ampeg_release=2, loop_mode=loop_continuous).
+  Python's standard library cannot extract 7z: a decision is needed between a new dependency and a system tool.
 - L9: PM-029 full non-slow suite job-16 exited 0: 1160 passed, 3 deselected, 0 orphan daemons. T3 verified.
+- L11: User chose "Con una herramienta del sistema (recomendado)" for 7z extraction: `bsdtar` (macOS built-in, Linux
+  libarchive-tools) or `7z`, no new Python dependency. User asked to re-check the web ("vuelve a consultar la web"):
+  the FreePats page and the GitHub release (2020-05-16, published 2024-07-11; GitHub lists no digest) are unchanged; a
+  fresh download has the pinned SHA-256. A local probe confirmed bsdtar 3.5.3 creates and extracts 7z with spaces in
+  paths (the test fixture builds a FreePats-shaped archive that way; tests skip without bsdtar).
+- L12: PM-030 in new `voicesetup.py`: CATALOG with the pinned URL and SHA-256; reuses `samples._download` (verified
+  before extraction); listing checked before extraction (absolute paths, `..`, drive letters, stray top-level entries,
+  non SFZ/WAV/text files refused); extracted into a private `.partial-` staging folder; symlinks and special files
+  refused; LICENSE.txt and one .sfz required; the pack must load; pack.json and LICENSES.txt (source, checksum,
+  credit, the archive's LICENSE.txt and README.txt in full) written; moved into place, then registered and made
+  active. RED ImportError. A new test (registry write fails after the move) exposed a bug in my cleanup: it checked
+  `installed()`, which is already true after the move, so the half-installed pack stayed; fixed with an explicit
+  `moved` flag. GREEN 20 tests; mutations (listing check, top-folder check, LICENSE required, pack validation,
+  idempotency, staging cleanup, final cleanup) each fail tests. End-to-end against the real archive in a temporary
+  XDG dir: installed with 12 regions, second run "already installed" without downloading, render OK.
+- L13: PM-030 full non-slow suite job-17 exited 0: 1180 passed, 3 deselected, 0 orphan daemons. T4 verified; M8 implemented. Not pushed. Not done: listening to the FreePats choir and any voice pack marked `"melody": true`.

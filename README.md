@@ -263,6 +263,14 @@ A pack can also be an SFZ instrument, common for free vocal libraries: its manif
 
 A pack can also be a SoundFont: instead of WAV files, its manifest names an `.sf2` (relative to the folder, or absolute) and optionally a `bank` and `program` (default 0), for example `"sf2": "choir.sf2", "program": 52`. FluidSynth renders it (install the FluidSynth library and the `samples` extra; without them `voices add` answers "FluidSynth is needed for SF2 voice packs"). The SoundFont loads on the first note the choir sings, once per file, and its middle C is level-matched to the built-in choir; `voices list` shows the file and program.
 
+One pack can be installed in a single command, because its license was verified by inspecting its archive: FreePats' Synth Pad Choir (CC0 1.0, samples by 快乐爱的小精灵 (Elf of Happy and Love)). It is a synthetic choir made with the ZynAddSubFX synthesizer, not recorded human voices.
+
+```bash
+gentle-stream setup-voices freepats-synth-choir
+```
+
+It downloads the SFZ+WAV edition from a pinned URL, checks it against a pinned SHA-256 before anything is extracted, checks the archive's listing (one top folder, relative paths, only SFZ, WAV and text files), extracts it with `bsdtar` (included in macOS; on Linux install `libarchive-tools`) or `7z`, and loads the SFZ before installing it under `~/.cache/gentle-stream/voices/` with a `pack.json` and a `LICENSES.txt` that records the source, the checksum, the credit and the archive's license and readme. It then becomes the choir's voice, as with `voices add`. On any failure nothing is left behind; running it again does not download twice.
+
 Add `"melody": true` to a pack's manifest to let it sing the vocal melody and its harmonies too. Decide that by ear: only voices that sound natural on a melody should have it.
 
 ## Binaural

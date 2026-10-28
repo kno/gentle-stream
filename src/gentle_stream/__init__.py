@@ -77,6 +77,35 @@ def setup_samples() -> int:
     return 0
 
 
+def setup_voices(key: str) -> int:
+    from . import voicesetup
+    from .samples import SetupError
+    from .voicepacks import PackError
+
+    source = voicesetup.CATALOG[key]
+    try:
+        if (done := voicesetup.installed(key)) is not None:
+            voicesetup.setup_voices(key)
+            print(f"{source.name} already installed: {done}; the choir sings it")
+            return 0
+        print(f"downloading {source.name} ({source.license}, {source.attribution}) from {source.url}")
+
+        def progress(done: int, total: int | None) -> None:
+            mb = done / 1e6
+            line = f"  {mb:6.1f} MB" if not total else f"  {100 * done // total:3d}%  {mb:6.1f} / {total / 1e6:.1f} MB"
+            print("\r" + line, end="", flush=True)
+
+        folder = voicesetup.setup_voices(key, progress=progress)
+    except (SetupError, PackError) as e:
+        print()
+        print(f"gentle-stream: setup-voices failed: {e}", file=sys.stderr)
+        return 1
+    print()
+    print(f"installed {folder} (SHA-256 verified; license: {folder / voicesetup.LICENSES_NAME}); "
+          "the choir now sings it")
+    return 0
+
+
 OLDER_PLAYER = ("the running player is older than this gentle-stream; run `gentle-stream ctl stop` and "
                 "start again")
 
@@ -477,6 +506,14 @@ def main(argv: list[str] | None = None) -> int:
                     help="gentle-shell executable (default: %(default)s)")
     sub = ap.add_subparsers(dest="command", metavar="command")
     sub.add_parser("setup-samples", help="download the FluidR3_GM soundfont (MIT) for sampled instruments, once")
+    from .voicesetup import CATALOG as VOICE_CATALOG
+
+    setup_voices_parser = sub.add_parser(
+        "setup-voices", help="download and install a redistributable voice pack for the choir, once",
+        description="Download a voice pack whose license was verified (pinned URL and SHA-256), install it under "
+                    "the cache dir with its LICENSES.txt, and make it the choir's voice.")
+    setup_voices_parser.add_argument("pack", choices=tuple(VOICE_CATALOG), metavar="PACK",
+                                     help=f"the pack to install: {', '.join(VOICE_CATALOG)}")
     ctl_parser = sub.add_parser("ctl", help="control the music playing in the background")
     ctl_parser.add_argument("action", choices=("play", "pause", "toggle", "next", "stop", "status", "tempo",
                                                "glide", "binaural"))
@@ -561,6 +598,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.journey is not None and args.journey not in BUILTIN:
             render_parser.error(f"invalid journey {args.journey!r} (choose from {', '.join(BUILTIN)})")
         return render(args.out, args.seconds, args.seed, args.genre, args.mood_file, args.procedural, args.journey)
+    if args.command == "setup-voices":
+        return setup_voices(args.pack)
     if args.command == "setup-samples":
         from . import samples
 
