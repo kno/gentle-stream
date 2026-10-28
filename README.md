@@ -271,7 +271,7 @@ gentle-stream journey delete "Rainy evening"
 | Journey | Stages | End |
 | :--- | :--- | :--- |
 | `ambient-to-synthwave` | Ambient (1 min, ambient, 60 bpm, binaural 200 Hz / 6 Hz fades in), Chillout (3 min, lo-fi, 88 bpm), Synthwave (4 min, synthwave, 118 bpm, binaural fades out) | sustain |
-| `warm-up` | Settle (1 min, 60 bpm, energy 0.2), Wake (3 min, 72 bpm), Rise (4 min, 88 bpm), Glow (2 min, 100 bpm, energy 0.9) | sustain |
+| `warm-up` | Settle (1 min, 60 bpm, energy 0.2), Wake (3 min, 72 bpm), Rise (4 min, 88 bpm), Glow (2 min, 100 bpm, energy 0.9); drums build with the energy | sustain |
 | `wind-down` | Ease (2 min, 84 bpm), Soften (4 min, 68 bpm), Drift (4 min, 58 bpm, energy 0.15) | release |
 
 Genre steps start a new piece at the first following four-bar boundary of the old piece, skip its quiet intro, and preserve the progression and journey fields; shared tails continue ringing. The key and mode stay when the new genre plays that mode; otherwise the step lands on the new genre's most typical mode that shares the same notes (C lydian into synthwave becomes E minor), and the last bar before it ends on the dominant seventh of the new key, so the change sounds prepared. The new piece also opens its melody with the first bar of the old one's motif, in the new key, and keeps developing from it, so the tune stays recognisable from stage to stage (`next` and a new mood still start a fresh one). A journey owns the fields it moves: a new mood or `next` keeps it running, and the new piece takes the journey's tempo, energy and colour from its first bar (the rest of the mood applies as usual). Starting a journey cancels glides of those fields and replaces a running journey; while it runs, trying to glide one of those fields is rejected until you stop the journey. Journey time is rendered time, so `next` advances it by the buffered audio it drops (up to about one second). Genre stages switch at phrase boundaries. `gentle-stream render --journey warm-up` renders one offline.
@@ -296,6 +296,8 @@ A stage can switch parts off and on with an optional `layers` block (`chords`, `
 ```json
 {"name": "Bare", "seconds": 120, "layers": {"drums": false, "lead": false}}
 ```
+
+Drums can build with the journey. `"drums": "energy"` at the top of a journey maps the energy to a drum level (below 0.25 none, then soft, lofi, and busy from 0.75), and a stage's `"drums": "lofi"` names a level held from then on (it wins over the energy). The drums move one level per 4-bar phrase, never skipping one: `none → soft → lofi → busy`.
 
 A stage can also move the [binaural layer](#binaural) with an optional block, interpolated with the stage's curve like the other fields; a stage without one holds the values reached so far, and `level` 0 fades it out:
 

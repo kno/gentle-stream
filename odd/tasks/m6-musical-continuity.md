@@ -24,7 +24,7 @@ time during it; no clicks at either end."
 | T1 PM-016 harmonic handoff | S1 | inline | `feat/harmonic-handoff` | done (PM-016 commit) |
 | T2 PM-017 motif across stages | S2 | inline | `feat/motif-continuity` | done (PM-017 commit) |
 | T3 PM-018 layer entrances | S3 | inline | `feat/stage-layers` | done (PM-018 commit) |
-| T4 PM-019 drum ramp | S4 | inline | `feat/drum-ramp` | pending |
+| T4 PM-019 drum ramp | S4 | inline | `feat/drum-ramp` | done (PM-019 commit) |
 | T5 PM-020 two-genre crossfade | S5 | inline | `feat/genre-crossfade` | pending |
 | T6 PM-021 flagship journey | S6 | inline; listening review by the maintainer | `feat/flagship-journey` | pending |
 
@@ -47,3 +47,8 @@ time during it; no clicks at either end."
   (LAYERS missing) -> 13 passed; mutations (apply off-boundary, no filtering) -> 4 RED each. The full suite caught a
   broken f-string brace in the new prompt line (fixed, pinned by a prompt test). Full suite 905 passed, 27 skipped,
   8 known daemon teardown errors; pyright clean.
+- L6: T4 decision: journey-level `"drums": "energy"` maps energy to a level (<0.25 none, <0.5 soft, <0.75 lofi,
+  else busy); a stage `"drums"` names a level held from then on and wins over energy; one level per phrase. `warm-up`
+  now builds its drums with the energy (roadmap demo). JourneyStore renaming now uses `dataclasses.replace` so new
+  Journey fields survive saving. Evidence: RED (drums_for_energy missing) -> 19 passed; mutation (jump straight to
+  the target) -> RED. Full suite 924 passed, 27 skipped, 5 known daemon teardown errors; pyright clean.

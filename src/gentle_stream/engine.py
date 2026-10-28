@@ -43,7 +43,7 @@ from .composer import Composer, harmonic_handoff
 from .genres.base import Piece
 from .genres.lofi import Instruments  # noqa: F401  (re-exported: the procedural lo-fi voices)
 from .mastering import Compressor, ConvolutionReverb, procedural_ir, soft_clip
-from .style import DEFAULT, KEYS, Style
+from .style import DEFAULT, DRUMS, KEYS, Style
 from .synth import SR, StatefulFilter, _sos, bp, hp, lp, mtof  # noqa: F401  (re-exported)
 
 if TYPE_CHECKING:
@@ -354,6 +354,8 @@ class Engine:
         bar_start = self.piece_seconds
         if self.bar % 4 == 0:   # a phrase boundary: the parts the journey switches take effect here
             self._masked = running.journey.masked_layers(t) if running is not None else frozenset()
+            if running is not None and running.journey.drives_drums:
+                self._step_drums(running.journey.drums_at(t, self.style.energy))
         if running is not None and (self.bar + 1) % 4 == 0:
             self._prepare_genre_step(running, t + self.bar_seconds)
         self._schedule_bar()
@@ -410,6 +412,16 @@ class Engine:
         self.style = replace(self.style, **values)
         self._piece.style = replace(self._piece.style, **values)
         self.composer.style = replace(self.composer.style, **values)
+
+    def _step_drums(self, target: str | None) -> None:
+        """Move the drums one level toward `target`, in place (the composer and the genre read them every bar)."""
+        if target is None or target == self.style.drums:
+            return
+        now = DRUMS.index(self.style.drums)
+        level = DRUMS[now + (1 if DRUMS.index(target) > now else -1)]
+        self.style = replace(self.style, drums=level)
+        self._piece.style = replace(self._piece.style, drums=level)
+        self.composer.style = replace(self.composer.style, drums=level)
 
     def _prepare_genre_step(self, running: _Running, t: float) -> None:
         """When the journey's stage at `t` (the end of the bar about to render, a phrase boundary) steps to another

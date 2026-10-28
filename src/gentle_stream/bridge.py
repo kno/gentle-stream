@@ -238,6 +238,8 @@ Return only JSON with version, name, title, description, end, and stages. Each s
 optional genre, curve, layers and binaural; to contains fields only.
 Optional "layers" per stage switches parts off or on from that stage: {{"drums": false, "lead": true}};
 parts: chords, bass, drums, lead, counter; switches hold until a later stage changes them and land on 4-bar phrases.
+Optional top-level "drums": "energy" builds the drums with the energy; or a stage "drums" names a level held from
+then on: none, soft, lofi, busy (one level per 4-bar phrase).
 Optional "binaural" per stage, only when the request asks for it: carrier 40-1000 Hz, beat 0.5-40 Hz, level 0-0.08
 (a quiet tone on each ear, beat apart), reached by the end of the stage; level 0 fades it out. It is only a
 listening texture: never claim any effect on the listener (health, focus, sleep, mood or other).

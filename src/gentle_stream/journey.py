@@ -9,6 +9,9 @@ final values forever and `end="release"` hands the fields back to the music as t
 A stage may also switch parts off and on (`layers`, e.g. {"drums": false}): each stage's switches hold until a later
 stage changes them, every part starts on, and the engine applies a change on a 4-bar phrase boundary.
 
+Drums can follow the journey too: `drums="energy"` maps the energy to a level (`drums_for_energy`), and a stage's
+`drums` names one explicitly (held by later stages); the engine climbs or drops one level per 4-bar phrase.
+
 A stage may also move the binaural layer (`binaural.Binaural`): its `binaural` block names the carrier, beat or
 level reached by its end, interpolated the same way, from the layer playing when the journey starts (silent when
 it is off). A journey that names any of them owns the layer while it runs; one that names none leaves it alone.
@@ -25,7 +28,7 @@ import math
 import os
 from bisect import bisect_right
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from itertools import accumulate
 from pathlib import Path
@@ -36,10 +39,17 @@ from .binaural import FIELDS as BINAURAL_FIELDS
 from .engine import GLIDE_FIELDS
 from .presets import PresetError, normalize_name
 from .storage import write_json_atomic
+from .style import DRUMS
 
 ENDS = ("sustain", "release")
 BINAURAL_RANGES = {"carrier": CARRIER, "beat": BEAT, "level": (0.0, MAX_LEVEL)}
 LAYERS = ("chords", "bass", "drums", "lead", "counter")   # the parts a bar plan can hold (`BarPlan.layers`)
+DRUM_ENERGY = ((0.25, "none"), (0.5, "soft"), (0.75, "lofi"))   # below each energy, that drum level; then busy
+
+
+def drums_for_energy(energy: float) -> str:
+    """The drum level an energy calls for, from none (quiet) to busy (0.75 and above)."""
+    return next((level for below, level in DRUM_ENERGY if energy < below), "busy")
 CURVES = ("linear", "ease-in", "ease-out", "ease-in-out", "exp", "step")
 
 
@@ -77,6 +87,7 @@ class Stage:
     curve: str = "linear"
     binaural: Mapping[str, float] = MappingProxyType({})   # the binaural values reached by the end of the stage
     layers: Mapping[str, bool] = MappingProxyType({})     # parts switched on (True) or off (False) from this stage
+    drums: str | None = None                              # a drum level from this stage on, None to keep the last
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.seconds) or self.seconds <= 0:
@@ -103,10 +114,12 @@ class Stage:
         if unknown_layers:
             raise ValueError(f"stage {self.name!r}: unknown layer {unknown_layers[0]!r}: only {', '.join(LAYERS)}")
         object.__setattr__(self, "layers", MappingProxyType(dict(self.layers)))
+        if self.drums is not None and self.drums not in DRUMS:
+            raise ValueError(f"stage {self.name!r}: drums must be one of {', '.join(DRUMS)}")
 
     def __hash__(self) -> int:
         return hash((self.name, self.seconds, self.genre, self.curve, frozenset(self.to.items()),
-                     frozenset(self.binaural.items()), frozenset(self.layers.items())))
+                     frozenset(self.binaural.items()), frozenset(self.layers.items()), self.drums))
 
 
 @dataclass(frozen=True)
@@ -149,6 +162,13 @@ def _binaural_values(data) -> dict[str, float] | None:
     return {name: float(data[name]) for name in BINAURAL_FIELDS if name in data}
 
 
+def _parse_drums(raw, number: int) -> str | None:
+    """A stage's drum level, or None when it names none."""
+    if raw is not None and raw not in DRUMS:
+        raise ValueError(f'stage {number}: "drums" must be one of {", ".join(DRUMS)}')
+    return raw
+
+
 def _parse_layers(raw, number: int) -> dict[str, bool]:
     """A stage's part switches; an unknown part or a value that is not true or false rejects the journey."""
     if not isinstance(raw, Mapping):
@@ -187,6 +207,7 @@ class Journey:
     end: str = "sustain"
     description: str = ""
     title: str = ""   # how it is shown; the name with a capital initial by default ("warm-up" -> "Warm-up")
+    drums: str | None = None   # "energy": the drum level follows the energy (stages naming one win)
     _ends: tuple[float, ...] = field(init=False, repr=False, compare=False)   # cumulative stage end times
 
     def __post_init__(self) -> None:
@@ -256,7 +277,7 @@ class Journey:
                     raise ValueError(f'stage {number}: "curve" must be a string')
             stages.append(Stage(stage_name, float(seconds), normalized, genre, curve,
                                 _parse_binaural(raw.get("binaural", {}), number, warnings),
-                                _parse_layers(raw.get("layers", {}), number)))
+                                _parse_layers(raw.get("layers", {}), number), _parse_drums(raw.get("drums"), number)))
         if total > 12 * 60 * 60:
             raise ValueError('combined stage duration must be at most 43200 seconds')
         journey_name = data.get("name", name)
@@ -270,8 +291,11 @@ class Journey:
         for key in ("title", "description"):
             if key in data and not isinstance(data[key], str):
                 raise ValueError(f'"{key}" must be a string')
+        drums = data.get("drums")
+        if drums is not None and drums != "energy":
+            raise ValueError('"drums" must be "energy"')
         return cls(journey_name, tuple(stages), end=end, description=data.get("description", ""),
-                   title=data.get("title", ""))
+                   title=data.get("title", ""), drums=drums)
 
     def to_dict(self) -> dict:
         stages_list = []
@@ -285,9 +309,14 @@ class Journey:
                 stage_dict["binaural"] = dict(s.binaural)
             if s.layers:
                 stage_dict["layers"] = dict(s.layers)
+            if s.drums is not None:
+                stage_dict["drums"] = s.drums
             stages_list.append(stage_dict)
-        return {"version": 1, "name": self.name, "title": self.title, "description": self.description,
+        data = {"version": 1, "name": self.name, "title": self.title, "description": self.description,
                 "end": self.end, "stages": stages_list}
+        if self.drums is not None:
+            data["drums"] = self.drums
+        return data
 
     @property
     def seconds(self) -> float:
@@ -299,6 +328,21 @@ class Journey:
         """The fields the journey owns: every field a stage names, in GLIDE_FIELDS order."""
         named = {name for stage in self.stages for name in stage.to}
         return tuple(name for name in GLIDE_FIELDS if name in named)
+
+    @property
+    def drives_drums(self) -> bool:
+        """Whether the journey moves the drum level (by energy or by a stage naming one)."""
+        return self.drums == "energy" or any(stage.drums is not None for stage in self.stages)
+
+    def drums_at(self, t: float, energy: float) -> str | None:
+        """The drum level the journey asks for at `t` seconds with the music at `energy`: the last level a stage up
+        to the one playing names, else the energy's (`drums="energy"`), else None (it leaves drums alone)."""
+        t = max(0.0, float(t))
+        index = min(bisect_right(self._ends, t), len(self.stages) - 1)
+        named = [stage.drums for stage in self.stages[: index + 1] if stage.drums is not None]
+        if named:
+            return named[-1]
+        return drums_for_energy(energy) if self.drums == "energy" else None
 
     def masked_layers(self, t: float) -> frozenset[str]:
         """The parts switched off at `t` seconds into the journey: every stage's switches up to the one playing."""
@@ -377,7 +421,8 @@ BUILTIN: dict[str, Journey] = {j.name: j for j in (
         Stage("Wake", 180, {"bpm": 72.0, "energy": 0.45, "brightness": 0.5}),
         Stage("Rise", 240, {"bpm": 88.0, "energy": 0.7, "brightness": 0.65, "lead_density": 0.55}),
         Stage("Glow", 120, {"bpm": 100.0, "energy": 0.9, "brightness": 0.75, "lead_density": 0.7}),
-    ), description="60 to 100 bpm and energy 0.2 to 0.9 over 10 minutes, then holds"),
+    ), description="60 to 100 bpm and energy 0.2 to 0.9 over 10 minutes, then holds; the drums build with it",
+       drums="energy"),
     Journey("wind-down", (
         Stage("Ease", 120, {"bpm": 84.0, "energy": 0.5, "brightness": 0.5}),
         Stage("Soften", 240, {"bpm": 68.0, "energy": 0.3, "brightness": 0.35, "space": 0.6}),
@@ -511,4 +556,4 @@ class JourneyStore:
 
 def _renamed(journey: Journey, name: str) -> Journey:
     """`journey` named and titled after its saved name, so it shows as the person called it."""
-    return Journey(name, journey.stages, journey.end, journey.description, name)
+    return replace(journey, name=name, title=name)
