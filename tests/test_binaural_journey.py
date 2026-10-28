@@ -187,13 +187,13 @@ def test_the_daemon_refuses_a_manual_binaural_change_while_the_journey_drives_it
 
 
 # ------------------------------------------------------------ the built-in and the model prompt
-def test_ambient_to_synthwave_fades_its_binaural_texture_out_in_the_synthwave_stage():
+def test_ambient_to_synthwave_fades_its_binaural_texture_out_before_the_synthwave_stage():
     journey = BUILTIN["ambient-to-synthwave"]
     assert journey.owns_binaural
-    ambient, chillout, synthwave = journey.stages
-    assert ambient.binaural == {"carrier": 200.0, "beat": 6.0, "level": 0.05}
-    assert chillout.binaural == {}
-    assert synthwave.binaural == {"level": 0.0}
+    named = [(stage.name, dict(stage.binaural)) for stage in journey.stages if stage.binaural]
+    assert named == [("Dawn", {"carrier": 200.0, "beat": 6.0, "level": 0.05}), ("Lift", {"level": 0.0})]
+    lift = [stage.name for stage in journey.stages].index("Lift")
+    assert all(stage.genre != "synthwave" for stage in journey.stages[: lift + 1])
 
 
 def test_the_journey_prompt_offers_the_optional_binaural_block_without_health_claims(tmp_path):

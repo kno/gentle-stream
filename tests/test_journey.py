@@ -381,9 +381,9 @@ def test_genre_stages_switch_at_old_piece_phrase_boundaries_preserving_the_journ
     assert changes[1][4][0] < 118 and changes[1][4][1] < 0.9
 
 
-def test_builtin_ambient_to_synthwave_has_three_genre_stages_and_sustains():
+def test_builtin_ambient_to_synthwave_steps_through_three_genres_and_sustains():
     journey = BUILTIN["ambient-to-synthwave"]
-    assert [s.genre for s in journey.stages] == ["ambient", "lofi", "synthwave"]
+    assert [s.genre for s in journey.stages if s.genre is not None] == ["ambient", "lofi", "synthwave"]
     assert journey.end == "sustain" and journey.stages[-1].to["bpm"] == 118.0
 
 

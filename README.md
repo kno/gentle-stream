@@ -270,7 +270,7 @@ gentle-stream journey delete "Rainy evening"
 
 | Journey | Stages | End |
 | :--- | :--- | :--- |
-| `ambient-to-synthwave` | Ambient (1 min, ambient, 60 bpm, binaural 200 Hz / 6 Hz fades in), Chillout (3 min, lo-fi, 88 bpm), Synthwave (4 min, synthwave, 118 bpm, binaural fades out) | sustain |
+| `ambient-to-synthwave` | The 20-minute reference: Dawn (3 min, ambient, 60 bpm, no drums or melody, binaural 200 Hz / 6 Hz fades in), Drift (3 min, ambient, melody enters), Chillout (4 min, lo-fi, 8-bar crossfade, drums enter), Lift (3 min, lo-fi, 98 bpm, binaural fades out), Synthwave (4 min, 8-bar crossfade, counter-melody), Peak (3 min, synthwave, 118 bpm); drums build with the energy ([listening checklist](docs/FLAGSHIP_LISTENING_CHECKLIST.md)) | sustain |
 | `warm-up` | Settle (1 min, 60 bpm, energy 0.2), Wake (3 min, 72 bpm), Rise (4 min, 88 bpm), Glow (2 min, 100 bpm, energy 0.9); drums build with the energy | sustain |
 | `wind-down` | Ease (2 min, 84 bpm), Soften (4 min, 68 bpm), Drift (4 min, 58 bpm, energy 0.15) | release |
 
@@ -463,7 +463,7 @@ All music is generated: the composer builds every melody, counter-melody, bass l
 uv run pytest
 ```
 
-The suite needs no audio device and no Gentle Shell: the player and the TUI are tested with a fake output stream and a fake shell. When the soundfont is installed, the player and app tests run on the sampled backend.
+The suite needs no audio device and no Gentle Shell: the player and the TUI are tested with a fake output stream and a fake shell. `tests/test_flagship_journey.py` renders the 20-minute flagship journey to check its regression metrics (tempo, loudness and onset density rising); it is marked `slow`, so `uv run pytest -m "not slow"` skips it. When the soundfont is installed, the player and app tests run on the sampled backend.
 
 <div align="right"><a href="#top">Back to top</a></div>
 

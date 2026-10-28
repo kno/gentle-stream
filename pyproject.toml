@@ -55,3 +55,4 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "strict"
+markers = ["slow: renders minutes of audio (skip with -m \"not slow\")"]

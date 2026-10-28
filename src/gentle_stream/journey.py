@@ -432,12 +432,21 @@ class Journey:
 
 BUILTIN: dict[str, Journey] = {j.name: j for j in (
     Journey("ambient-to-synthwave", (
-        Stage("Ambient", 60, {"bpm": 60.0}, genre="ambient",
-              binaural={"carrier": 200.0, "beat": 6.0, "level": 0.05}),
-        Stage("Chillout", 180, {"bpm": 88.0}, genre="lofi"),
-        Stage("Synthwave", 240, {"bpm": 118.0}, genre="synthwave", binaural={"level": 0.0}),
-    ), description="ambient at 60 bpm through lo-fi chillout to synthwave at 118 bpm, then sustains; a 6 Hz "
-                   "binaural texture fades in with the ambient stage and out during the synthwave one"),
+        Stage("Dawn", 180, {"bpm": 60.0, "energy": 0.15, "brightness": 0.3, "space": 0.8, "lead_density": 0.2},
+              genre="ambient", curve="ease-out", binaural={"carrier": 200.0, "beat": 6.0, "level": 0.05},
+              layers={"drums": False, "lead": False, "counter": False}),
+        Stage("Drift", 180, {"bpm": 68.0, "energy": 0.25, "brightness": 0.38, "lead_density": 0.4},
+              curve="ease-in-out", layers={"lead": True}),
+        Stage("Chillout", 240, {"bpm": 84.0, "energy": 0.45, "brightness": 0.5, "space": 0.55, "lead_density": 0.55},
+              genre="lofi", transition=8, layers={"drums": True}),
+        Stage("Lift", 180, {"bpm": 98.0, "energy": 0.62, "brightness": 0.6, "lead_density": 0.7},
+              curve="ease-in-out", binaural={"level": 0.0}),
+        Stage("Synthwave", 240, {"bpm": 112.0, "energy": 0.8, "brightness": 0.7, "space": 0.45, "lead_density": 0.8},
+              genre="synthwave", transition=8, layers={"counter": True}),
+        Stage("Peak", 180, {"bpm": 118.0, "energy": 0.95, "brightness": 0.78, "lead_density": 0.9}, curve="ease-out"),
+    ), drums="energy", description="20 minutes from a still ambient dawn through lo-fi chillout to a synthwave peak at "
+                                   "118 bpm, then sustains: parts enter stage by stage, the drums build with the "
+                                   "energy, genres crossfade, and a 6 Hz binaural texture fades out before the lift"),
     Journey("warm-up", (
         Stage("Settle", 60, {"bpm": 60.0, "energy": 0.2, "brightness": 0.35, "lead_density": 0.3}),
         Stage("Wake", 180, {"bpm": 72.0, "energy": 0.45, "brightness": 0.5}),

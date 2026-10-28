@@ -26,7 +26,7 @@ time during it; no clicks at either end."
 | T3 PM-018 layer entrances | S3 | inline | `feat/stage-layers` | done (PM-018 commit) |
 | T4 PM-019 drum ramp | S4 | inline | `feat/drum-ramp` | done (PM-019 commit) |
 | T5 PM-020 two-genre crossfade | S5 | inline | `feat/genre-crossfade` | done (PM-020 commit) |
-| T6 PM-021 flagship journey | S6 | inline; listening review by the maintainer | `feat/flagship-journey` | pending |
+| T6 PM-021 flagship journey | S6 | inline; listening review by the maintainer | `feat/flagship-journey` | metrics done (PM-021 commit); checklist pending the maintainer |
 
 ## Log
 
@@ -59,3 +59,10 @@ time during it; no clicks at either end."
   14 passed (RMS within +-3 dB, no clicks, >4x real time, 8 bars). The +-3 dB criterion alone also passes a linear
   fade, so an exact equal-power test was added (linear mutation -> RED). Full suite 938 passed, 27 skipped, 2 known
   daemon teardown errors; pyright clean. Procedural backend only (the samples backend is not installed here).
+- L8: T6: ambient-to-synthwave rebuilt as the 20-minute reference (Dawn, Drift, Chillout, Lift, Synthwave, Peak;
+  layers, energy drums, two 8-bar crossfades, binaural out before the lift). Metrics (slow test, seed 2026,
+  procedural): tempo monotonic after the opening stage 60 -> 118; per-stage RMS -18.1, -17.9, -13.0, -12.9, -15.1,
+  -15.2 dBFS (the bus compressor and each genre's master set loudness; decision: no stage drops more than 2.5 dB and
+  the end is >= 2.5 dB louder, thresholds fitted to these measurements); onsets/s 0.07, 0.11, 1.68, 1.93, 2.11, 2.22.
+  Finding: ambient ignores the `bass` layer (PM-018 relies on each genre's layers contract). Checklist in
+  docs/FLAGSHIP_LISTENING_CHECKLIST.md is for the maintainer's listening review (S6 not complete until then).
