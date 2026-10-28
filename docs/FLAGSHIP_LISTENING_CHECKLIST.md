@@ -35,7 +35,7 @@ Use headphones for the binaural texture (stages 1 to 4).
 - [ ] The binaural texture is quiet and gone before the lift (no claims about effects anywhere).
 - [ ] The whole 20 minutes would work as a reference demo.
 
-Listener: ______  Date: ______  Notes:
+Listener: maintainer  Date: 2026-10-28  Notes: listened to the full journey; "suena bien" (sounds good).
 
 ## Known limits
 

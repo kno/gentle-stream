@@ -26,7 +26,7 @@ time during it; no clicks at either end."
 | T3 PM-018 layer entrances | S3 | inline | `feat/stage-layers` | done (PM-018 commit) |
 | T4 PM-019 drum ramp | S4 | inline | `feat/drum-ramp` | done (PM-019 commit) |
 | T5 PM-020 two-genre crossfade | S5 | inline | `feat/genre-crossfade` | done (PM-020 commit) |
-| T6 PM-021 flagship journey | S6 | inline; listening review by the maintainer | `feat/flagship-journey` | metrics done (PM-021 commit); checklist pending the maintainer |
+| T6 PM-021 flagship journey | S6 | inline; listening review by the maintainer | `feat/flagship-journey` | done (PM-021 commit + listening review) |
 
 ## Log
 
@@ -66,3 +66,4 @@ time during it; no clicks at either end."
   the end is >= 2.5 dB louder, thresholds fitted to these measurements); onsets/s 0.07, 0.11, 1.68, 1.93, 2.11, 2.22.
   Finding: ambient ignores the `bass` layer (PM-018 relies on each genre's layers contract). Checklist in
   docs/FLAGSHIP_LISTENING_CHECKLIST.md is for the maintainer's listening review (S6 not complete until then).
+- L9: User listening review (verbatim): "lo he escuchado y suena bien, sube las ramas, sigue con el roadmap". M6 closed.
