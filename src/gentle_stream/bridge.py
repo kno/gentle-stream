@@ -145,6 +145,31 @@ def extract_json(text: str) -> dict:
     raise InterpretError("the model answered with no JSON object")
 
 
+def journey_rules() -> str:
+    """The journey format and rules every journey prompt shares (create and edit)."""
+    ranges = ", ".join(f"{name} {lo}-{hi}" for name, (lo, hi) in GLIDE_FIELDS.items())
+    return f"""Original music only: never reproduce existing songs, melodies, riffs or soundtracks; capture only a general feel.
+Genres and tempo ranges:
+{genre_lines()}
+Fields and ranges: {ranges}
+The continuous "voice" field controls a wordless choir (0 = off, 1 = full level); use "to": {{"voice": 0.5}}
+to bring it in or out over a stage. It never sings words.
+Curves: {', '.join(CURVES)}. Ends: sustain or release. Stage seconds: 10-14400 each, 43200 total.
+Return only JSON with version, name, title, description, end, and stages. Each stage has name, seconds, to, and
+optional genre, curve, layers and binaural; to contains fields only.
+Optional "layers" per stage switches parts off or on from that stage: {{"drums": false, "lead": true}};
+parts: chords, bass, drums, lead, counter; switches hold until a later stage changes them and land on 4-bar phrases.
+Optional top-level "drums": "energy" builds the drums with the energy; or a stage "drums" names a level held from
+then on: none, soft, lofi, busy (one level per 4-bar phrase).
+Optional "phrases" per stage, only when the request asks for spoken words: up to 12 short phrases of at most 80
+characters, spoken one at a time, and "phrase_every" seconds between them (10-3600, default 120). Keep them
+encouraging or descriptive and never claim health, therapeutic or medical effects.
+Optional "binaural" per stage, only when the request asks for it: carrier 40-1000 Hz, beat 0.5-40 Hz, level 0-0.08
+(a quiet tone on each ear, beat apart), reached by the end of the stage; level 0 fades it out. It is only a
+listening texture: never claim any effect on the listener (health, focus, sleep, mood or other).
+"""
+
+
 @dataclass
 class GentleShell:
     binary: str = "gentle-shell"
@@ -228,28 +253,22 @@ class GentleShell:
 
     def journey_from_prompt(self, description: str) -> tuple[Journey, Usage | None]:
         """Generate and validate a journey from a natural language description."""
-        ranges = ", ".join(f"{name} {lo}-{hi}" for name, (lo, hi) in GLIDE_FIELDS.items())
         prompt = f"""Create one progressive music journey for this request: {description}
-Original music only: never reproduce existing songs, melodies, riffs or soundtracks; capture only a general feel.
-Genres and tempo ranges:
-{genre_lines()}
-Fields and ranges: {ranges}
-The continuous "voice" field controls a wordless choir (0 = off, 1 = full level); use "to": {{"voice": 0.5}}
-to bring it in or out over a stage. It never sings words.
-Curves: {', '.join(CURVES)}. Ends: sustain or release. Stage seconds: 10-14400 each, 43200 total.
-Return only JSON with version, name, title, description, end, and stages. Each stage has name, seconds, to, and
-optional genre, curve, layers and binaural; to contains fields only.
-Optional "layers" per stage switches parts off or on from that stage: {{"drums": false, "lead": true}};
-parts: chords, bass, drums, lead, counter; switches hold until a later stage changes them and land on 4-bar phrases.
-Optional top-level "drums": "energy" builds the drums with the energy; or a stage "drums" names a level held from
-then on: none, soft, lofi, busy (one level per 4-bar phrase).
-Optional "phrases" per stage, only when the request asks for spoken words: up to 12 short phrases of at most 80
-characters, spoken one at a time, and "phrase_every" seconds between them (10-3600, default 120). Keep them
-encouraging or descriptive and never claim health, therapeutic or medical effects.
-Optional "binaural" per stage, only when the request asks for it: carrier 40-1000 Hz, beat 0.5-40 Hz, level 0-0.08
-(a quiet tone on each ear, beat apart), reached by the end of the stage; level 0 fades it out. It is only a
-listening texture: never claim any effect on the listener (health, focus, sleep, mood or other).
-"""
+{journey_rules()}"""
+        return self._journey(prompt)
+
+    def journey_edit(self, current: dict, position: str, request: str) -> tuple[Journey, Usage | None]:
+        """Edit the running journey `current` (its JSON) as `request` asks, the listener being at `position`; the
+        answer is a whole validated journey."""
+        prompt = f"""Edit this running progressive music journey as the request asks: {request}
+Current journey JSON: {json.dumps(current, ensure_ascii=False)}
+The listener is now at {position}.
+Change only what the request asks. Keep the name of every stage that stays, so the listener keeps their place in it;
+give new stages new names. Return the whole journey.
+{journey_rules()}"""
+        return self._journey(prompt)
+
+    def _journey(self, prompt: str) -> tuple[Journey, Usage | None]:
         text, usage = parse_output(self._run(self.command(prompt)))
         data = extract_json(text)
         try:

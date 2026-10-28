@@ -201,10 +201,13 @@ def test_render_bar_never_runs_text_to_speech(monkeypatch):
     run(journey(), seconds=94)
 
 
-def test_the_journey_prompt_offers_phrases_without_health_claims():
-    from gentle_stream import bridge
+def test_the_journey_prompt_offers_phrases_without_health_claims(monkeypatch):
+    from gentle_stream.bridge import GentleShell
 
-    source = bridge.GentleShell.journey_from_prompt.__code__.co_consts
-    text = " ".join(c for c in source if isinstance(c, str))
+    sent = []
+    answer = journey().to_dict()
+    monkeypatch.setattr(GentleShell, "_run", lambda self, cmd: sent.append(cmd) or __import__("json").dumps(answer))
+    GentleShell(binary="gentle-shell").journey_from_prompt("a run with encouragement")
+    text = sent[0][-1]                                     # the prompt the model receives
     assert '"phrases"' in text and '"phrase_every"' in text
     assert "never claim health, therapeutic or medical effects" in text

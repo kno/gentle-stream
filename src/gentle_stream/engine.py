@@ -36,11 +36,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from . import genres
+from . import genres, vocals
 from . import samples as _samples
 from . import speech as _speech
-from . import vocals
-from .voicepacks import PackVoice
 from .binaural import Binaural, BinauralLayer, glide_seconds
 from .composer import Composer, harmonic_handoff
 from .genres.base import Genre, Master, Piece
@@ -48,6 +46,7 @@ from .genres.lofi import Instruments  # noqa: F401  (re-exported: the procedural
 from .mastering import Compressor, ConvolutionReverb, procedural_ir, soft_clip
 from .style import DEFAULT, DRUMS, KEYS, Style
 from .synth import SR, StatefulFilter, _sos, bp, hp, lp, mtof  # noqa: F401  (re-exported)
+from .voicepacks import PackVoice
 
 if TYPE_CHECKING:
     from .journey import Journey, JourneySnapshot
@@ -158,6 +157,7 @@ class Engine:
         self._journey_queued = False            # a journey command waits for the next bar (under _lock)
         self._pending_journey: Journey | None = None   # what it starts, or None to stop
         self._journey_control: str | None = None  # restart or skip, applied at the next rendered bar
+        self._pending_edit: Journey | None = None   # replaces the running journey at the next bar, keeping its place
         self._binaural_queued = False           # a binaural setting waits for the next bar (under _lock)
         self._pending_binaural: tuple[Binaural | None, float] = (None, 0.0)   # the setting (None: off), glide
         self._binaural = BinauralLayer(sr)      # render thread only
@@ -305,6 +305,14 @@ class Engine:
             self._journey_queued, self._pending_journey = True, None
             self._journey_control = None
 
+    def queue_journey_edit(self, journey: Journey) -> None:
+        """Replace the running journey with `journey` at the next bar, at the same place (`journey.map_position`):
+        the values it started from are kept; JourneyControlError when no journey runs."""
+        with self._lock:
+            if self._driving is None:
+                raise JourneyControlError("no journey is running")
+            self._pending_edit = journey
+
     def restart_journey(self) -> None:
         """Restart the running journey at the next bar."""
         self._queue_journey_control("restart")
@@ -423,6 +431,12 @@ class Engine:
             queued, journey, control = self._journey_queued, self._pending_journey, self._journey_control
             self._pending_style, self._pending_next = None, False
             self._journey_queued, self._pending_journey, self._journey_control = False, None, None
+            edit, self._pending_edit = self._pending_edit, None
+            if edit is not None and not queued and self._driving is not None:   # an edit takes over the new fields
+                self._driving = edit
+                self._glides = {name: g for name, g in self._glides.items() if name not in edit.fields}
+            else:
+                edit = None
             binaural_queued, binaural = self._binaural_queued, self._pending_binaural
             self._binaural_queued, self._pending_binaural = False, (None, 0.0)
             if queued:   # a journey starts or stops here; one that starts takes over its fields from any glide
@@ -434,6 +448,20 @@ class Engine:
         if queued and journey is None:
             self._running = None
         running = self._running
+        if running is not None and edit is not None:
+            # journey imports this module, so it cannot be imported at the top
+            from .journey import map_position
+
+            old_t = (self.samples_out - running.start_sample) / self.sr
+            new_t = map_position(running.journey, old_t, edit)
+            start = {f: float(running.start[f] if f in running.start else getattr(self.style, f)) for f in edit.fields}
+            binaural_start = None
+            if edit.owns_binaural:
+                playing = (self._binaural.setting.to_dict() if self._binaural.active and self._binaural.setting
+                           else None)
+                binaural_start = running.binaural_start or edit.binaural_start(playing)
+            running = _Running(edit, self.samples_out - round(new_t * self.sr), start, binaural_start)
+            self._running = running
         if running is not None and control == "restart":
             running = replace(running, start_sample=self.samples_out)
             self._running = running

@@ -22,7 +22,7 @@ warning."
 | T1 PM-031 TTS phrase layer | S1 | inline | `feat/tts-phrases` | done (PM-031 commit; base `f821ace`) |
 | T2 PM-032 phrases in journeys | S2 | inline | `feat/journey-phrases` | done (PM-032 commit; base `2141704`) |
 | T3 PM-033 voice characteristics | S3 | inline | `feat/speech-voices` | done (PM-033 commit; base `f496ba4`) |
-| T4 PM-034 natural-language journey edit | S4 | inline | `feat/journey-edit` | pending |
+| T4 PM-034 natural-language journey edit | S4 | inline | `feat/journey-edit` | done (PM-034 commit; base `d08f102`) |
 | T5 PM-035 moods inside a journey | S5 | inline | `feat/journey-moods` | pending |
 
 ## Log
@@ -74,3 +74,19 @@ warning."
   warning (RED/GREEN with a crafted WAV). 33 tests; 9 mutations (flags per program, case, unknown voice passed,
   rate check, space, radio, daemon resolution, names with spaces) each fail tests. Ruff/Pyright clean.
 - L8: PM-033 full non-slow suite job-20 exited 0: 1261 passed, 3 deselected, 0 orphan daemons. T3 verified.
+- L9: PM-034 `journey edit "CHANGE" [--yes]`. Decisions: the CLI asks the player for the journey it is running
+  (`journey_current`, the engine's journey) rather than `journey_last`, which misses built-ins started by name; the
+  model gets the journey JSON, the position ("stage 2 of 3 "Build", 0:40 into its 2:00 (1:40 into the journey)") and
+  the same rules as `journey create` (moved to `bridge.journey_rules()`, shared). Position rule (`map_position`): same
+  stage name, any case, keeps the seconds into it, held inside a shorter stage (99.9% of it); otherwise the same time,
+  at most the new end. The engine applies it at the next bar (`queue_journey_edit`, refused without a running
+  journey) keeping the start values; fields the edit newly owns stop gliding. The diff (`stage_diff`) is printed with
+  a header and the position mapping before applying; a terminal is asked, no terminal needs `--yes` (exit 1
+  otherwise), declining exits 0. The TUI is not changed (the roadmap lists app.py): `journey edit` works on the
+  background player the TUI attaches to. Mistakes of mine found on the way: `journey_rules()` was inserted between
+  `@dataclass` and the class it decorates (import error, fixed); the PM-032 prompt test read journey_from_prompt's
+  code constants and broke with the refactor, now it checks the prompt actually sent; the M7/M8 import lines in
+  engine.py were unsorted (fixed); a weak test of the start values (only the first stage ramps from them) let a
+  mutation survive and was rewritten. RED ImportError; GREEN 21 tests; 10 mutations each fail tests. Ruff/Pyright
+  clean on new code.
+- L10: PM-034 full non-slow suite job-21 exited 0: 1282 passed, 3 deselected, 0 orphan daemons. T4 verified.

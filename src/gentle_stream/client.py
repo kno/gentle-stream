@@ -215,6 +215,14 @@ class PlayerClient:
         """Run a normalized journey object."""
         self._control("journey_start", journey=journey)
 
+    def journey_current(self) -> dict | None:
+        """The journey the player is running (its last rendered bar's), or None."""
+        return self._round_trip("journey_current").get("journey")
+
+    def journey_edit(self, journey: dict) -> None:
+        """Replace the running journey with `journey` from the next bar, keeping its place."""
+        self._round_trip("journey_edit", journey=journey)
+
     def journey_last(self) -> dict | None:
         """Return the last normalized journey started by the player."""
         return self._round_trip("journey_last").get("journey")

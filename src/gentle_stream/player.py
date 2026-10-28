@@ -130,6 +130,19 @@ class Player:
             from .speech import prerender
             prerender(normalized.phrases, self.engine.sr, self.engine.provide_phrase)
 
+    def journey_current(self) -> dict | None:
+        """The journey the engine is running, like the background player's `journey_current`."""
+        current = self.engine.journey
+        return current.to_dict() if current is not None else None
+
+    def journey_edit(self, journey: dict) -> None:
+        """Replace the running journey from the next bar, keeping its place, like the background player."""
+        edited = Journey.from_dict(journey)
+        self.engine.queue_journey_edit(edited)
+        if edited.phrases:
+            from .speech import prerender
+            prerender(edited.phrases, self.engine.sr, self.engine.provide_phrase)
+
     def journey_restart(self) -> None:
         """Restart the running journey at the next rendered bar."""
         self.engine.restart_journey()

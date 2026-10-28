@@ -234,6 +234,20 @@ def handle(player, request) -> dict:
                 if name not in BUILTIN:
                     return {"ok": False, "error": unknown_journey(name)}
                 player.engine.queue_journey(BUILTIN[name])
+        elif cmd == "journey_current":
+            current = player.engine.journey
+            return {"ok": True, "journey": current.to_dict() if current is not None else None}
+        elif cmd == "journey_edit":
+            from .journey import Journey
+
+            if not isinstance(request["journey"], dict):
+                raise TypeError("journey must be an object")
+            edited = Journey.from_dict(request["journey"])
+            player.engine.queue_journey_edit(edited)   # refuses when no journey runs
+            player.last_journey = edited.to_dict()
+            if edited.phrases:
+                from .speech import prerender
+                prerender(edited.phrases, player.engine.sr, player.engine.provide_phrase)
         elif cmd == "journey_last":
             return {"ok": True, "journey": getattr(player, "last_journey", None)}
         elif cmd == "journey_stop":

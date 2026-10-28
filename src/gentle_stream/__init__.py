@@ -77,6 +77,72 @@ def setup_samples() -> int:
     return 0
 
 
+def _clock(seconds: float) -> str:
+    total = max(0, round(seconds))
+    return f"{total // 60}:{total % 60:02d}"
+
+
+def _journey_edit(prompt: str, *, model: str | None, gentle_shell: str, yes: bool) -> int:
+    """`journey edit PROMPT`: ask the model for the running journey changed as PROMPT says, print the stage diff and
+    where the listener lands, then apply it from the next bar (after asking on a terminal, or with --yes)."""
+    from .bridge import GentleShell, InterpretError
+    from .client import NoPlayer, PlayerError, PlayerGone, connect
+    from .journey import Journey, map_position, stage_diff
+
+    try:
+        player = connect()
+    except NoPlayer:
+        print("gentle-stream: nothing is playing", file=sys.stderr)
+        return 1
+    except PlayerError as e:
+        print(f"gentle-stream: {e}", file=sys.stderr)
+        return 1
+    try:
+        data, snap = player.journey_current(), player.now.journey
+        if data is None or snap is None:
+            print("gentle-stream: no journey is running", file=sys.stderr)
+            return 1
+        current = Journey.from_dict(data)
+        stage = current.stages[snap.stage - 1]
+        into = snap.progress * stage.seconds
+        t = (current._ends[snap.stage - 2] if snap.stage > 1 else 0.0) + into
+        position = (f'stage {snap.stage} of {snap.stages} "{stage.name}", {_clock(into)} into its '
+                    f"{_clock(stage.seconds)} ({_clock(t)} into the journey)")
+        try:
+            edited, usage = GentleShell(binary=gentle_shell, model=model).journey_edit(data, position, prompt)
+        except InterpretError as e:
+            print(f"gentle-stream: {e}", file=sys.stderr)
+            return 1
+        if usage is not None:
+            print(f"usage: {usage.format()}", file=sys.stderr)
+        new_t = map_position(current, t, edited)
+        index = edited.stage_index(new_t)
+        new_into = new_t - (edited._ends[index - 1] if index else 0.0)
+        print(f'Journey "{current.title or current.name}" ({len(current.stages)} stages, {_clock(current.seconds)}) -> '
+              f'"{edited.title or edited.name}" ({len(edited.stages)} stages, {_clock(edited.seconds)})')
+        for line in stage_diff(current, edited):
+            print(line)
+        print(f'Position: "{stage.name}" {_clock(into)} in ({_clock(t)}) -> '
+              f'"{edited.stages[index].name}" {_clock(new_into)} in ({_clock(new_t)})')
+        if not yes:
+            if not sys.stdin.isatty():
+                print("gentle-stream: not applied; run it again with --yes to apply it", file=sys.stderr)
+                return 1
+            if input("Apply? [y/N] ").strip().lower() not in ("y", "yes"):
+                print("Kept the running journey")
+                return 0
+        player.journey_edit(edited.to_dict())
+    except PlayerGone:
+        print("gentle-stream: nothing is playing", file=sys.stderr)
+        return 1
+    except PlayerError as e:
+        print(f"gentle-stream: {OLDER_PLAYER if 'unknown command' in str(e) else e}", file=sys.stderr)
+        return 1
+    print(f'Edited journey "{edited.title or edited.name}"')
+    player.detach()
+    return 0
+
+
 def list_voices() -> int:
     """`ctl say --list-voices`: the system voices, one per line; no player needed."""
     from .speech import SpeechError, voices
@@ -223,7 +289,7 @@ def _journey_source(source: str):
 
 def journey_command(action: str, name: str | None = None, *, prompt: str | None = None,
                     model: str | None = None, gentle_shell: str = "gentle-shell", dry_run: bool = False,
-                    source: str | None = None, last: bool = False) -> int:
+                    source: str | None = None, last: bool = False, yes: bool = False) -> int:
     """`journey play|create|save|delete|validate|show|list|restart|skip|stop` (the journey module is a package
     attribute). `create` is the only action that calls a model; `save` takes a journey file (`source`) or the last
     journey the background player started (`last`)."""
@@ -279,6 +345,8 @@ def journey_command(action: str, name: str | None = None, *, prompt: str | None 
         print(f'Deleted journey "{name}"')
         return 0
 
+    if action == "edit":
+        return _journey_edit(prompt or "", model=model, gentle_shell=gentle_shell, yes=yes)
     if action == "create":
         if prompt is None:
             print("gentle-stream: journey create requires a prompt", file=sys.stderr)
@@ -599,6 +667,10 @@ def main(argv: list[str] | None = None) -> int:
     create_parser = journey_sub.add_parser("create", help="create a journey from a text prompt")
     create_parser.add_argument("prompt", metavar="PROMPT", help="a text description of the journey you want")
     create_parser.add_argument("--dry-run", action="store_true", help="print without starting")
+    edit_parser = journey_sub.add_parser("edit", help="change the running journey from a text prompt, keeping your "
+                                                      "place in it")
+    edit_parser.add_argument("prompt", metavar="PROMPT", help='what to change, e.g. "make the build-up longer"')
+    edit_parser.add_argument("--yes", action="store_true", help="apply without asking after showing the changes")
     voices_parser = sub.add_parser("voices", help="add, list, and remove voice packs the choir sings",
                                    description="Voice packs: folders of note-named WAV recordings with a pack.json "
                                                "that states their license. The last pack added is the choir's "
@@ -633,7 +705,8 @@ def main(argv: list[str] | None = None) -> int:
         return journey_command(args.journey_action, getattr(args, "name", None),
                               prompt=getattr(args, "prompt", None), model=args.model,
                               gentle_shell=args.gentle_shell, dry_run=getattr(args, "dry_run", False),
-                              source=getattr(args, "file", None), last=getattr(args, "last", False))
+                              source=getattr(args, "file", None), last=getattr(args, "last", False),
+                              yes=getattr(args, "yes", False))
     if args.command == "voices":
         from .voicepacks import voices_command
 

@@ -476,6 +476,61 @@ class Journey:
                                progress, float(bpm), target, left, binaural)
 
 
+def map_position(old: Journey, t: float, new: Journey) -> float:
+    """Where `t` seconds into `old` falls in `new` (PM-034): as far into the stage of the same name (any case) as it
+    was, kept inside that stage when it is shorter now; without that stage, the same time, at most `new`'s end."""
+    t = max(0.0, float(t))
+    index = old.stage_index(t)
+    name = old.stages[index].name.casefold()
+    into = t - (old._ends[index - 1] if index else 0.0)
+    for j, stage in enumerate(new.stages):
+        if stage.name.casefold() == name:
+            start = new._ends[j - 1] if j else 0.0
+            return start + min(into, stage.seconds * 0.999)
+    return min(t, new.seconds)
+
+
+def _number(value: float) -> str:
+    return f"{value:g}"
+
+
+def stage_diff(old: Journey, new: Journey) -> list[str]:
+    """One line per stage: `=` kept, `~` changed (what changed), `+` added, `-` removed, matched by name (any case),
+    in the new order with removed stages last."""
+    by_name = {stage.name.casefold(): stage for stage in old.stages}
+    lines = []
+    for stage in new.stages:
+        before = by_name.pop(stage.name.casefold(), None)
+        if before is None:
+            extra = f", genre {stage.genre}" if stage.genre else ""
+            lines.append(f"  + {stage.name}: {_number(stage.seconds)} s{extra}")
+            continue
+        changes = []
+        if before.seconds != stage.seconds:
+            changes.append(f"{_number(before.seconds)} s -> {_number(stage.seconds)} s")
+        for key in sorted(set(before.to) | set(stage.to)):
+            a, b = before.to.get(key), stage.to.get(key)
+            if a != b:
+                changes.append(f"to.{key} {'(unset)' if a is None else _number(a)} -> "
+                               f"{'(unset)' if b is None else _number(b)}")
+        if before.genre != stage.genre:
+            changes.append(f"genre {before.genre or '(kept)'} -> {stage.genre or '(kept)'}")
+        if before.curve != stage.curve:
+            changes.append(f"curve {before.curve} -> {stage.curve}")
+        other = [name for name in ("binaural", "layers", "drums", "transition")
+                 if getattr(before, name) != getattr(stage, name)]
+        if (before.phrases, before.phrase_every) != (stage.phrases, stage.phrase_every):
+            other.append("phrases")
+        if other:
+            changes.append(f"{', '.join(other)} changed")
+        if changes:
+            lines.append(f"  ~ {stage.name}: {'; '.join(changes)}")
+        else:
+            lines.append(f"  = {stage.name}: {_number(stage.seconds)} s")
+    lines += [f"  - {stage.name}: {_number(stage.seconds)} s" for stage in by_name.values()]
+    return lines
+
+
 BUILTIN: dict[str, Journey] = {j.name: j for j in (
     Journey("ambient-to-synthwave", (
         Stage("Dawn", 180, {"bpm": 60.0, "energy": 0.15, "brightness": 0.3, "space": 0.8, "lead_density": 0.2},

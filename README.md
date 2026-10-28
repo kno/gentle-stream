@@ -211,6 +211,7 @@ gentle-stream ctl stop     # ends the background player
 | `journey stop` | End the journey, leaving the music as it is | `0`, or `1` when nothing plays |
 | `journey list` | The built-in journeys, one per line with a short description, then the saved ones | `0` |
 | `journey create "DESCRIPTION" [--dry-run]` | Ask the model once (`--model`, `--gentle-shell` apply) for a journey: the normalized JSON on stdout, the token usage on stderr, then it starts; `--dry-run` only prints | `0`; `1` when the model fails, answers with no JSON object or an invalid journey, times out, or nothing plays |
+| `journey edit "CHANGE" [--yes]` | Ask the model once for the running journey changed as CHANGE says; print the stage diff and where you land, then apply it from the next bar, keeping your place (asks first on a terminal; `--yes` skips the question) | `0` (also when you decline); `1` when nothing plays, no journey runs, the model fails or answers with an invalid journey, or stdin is not a terminal without `--yes` |
 | `journey save NAME FILE\|--last` | Save a JSON file, or the last journey the player started, under `NAME`: `Saved journey "NAME"` (or `Replaced`) | `0`; `1` for a built-in name, an unreadable store, nothing playing, or no journey started yet |
 | `journey delete NAME` | Remove a saved journey: `Deleted journey "NAME"` | `0`; `1` when there is no saved journey with that name or it is a built-in |
 
@@ -339,6 +340,21 @@ gentle-stream journey create --dry-run "slow rainy evening" > rainy.json
 gentle-stream journey save "Rainy evening" rainy.json
 gentle-stream journey delete "Rainy evening"
 ```
+
+`journey edit` changes the journey that is playing without restarting it:
+
+```text
+$ gentle-stream journey edit "make the build-up five minutes longer and add more choir"
+Journey "Warm-up" (3 stages, 8:00) -> "Warm-up" (3 stages, 13:00)
+  = Warm: 120 s
+  ~ Build: 240 s -> 540 s; to.voice (unset) -> 0.5
+  = Peak: 120 s
+Position: "Build" 1:30 in (3:30) -> "Build" 1:30 in (3:30)
+Apply? [y/N] y
+Edited journey "Warm-up"
+```
+
+The model receives the running journey and where you are in it, and answers with the whole journey. Each stage line says whether it is kept (`=`), changed (`~`, with what changed), added (`+`) or removed (`-`). Your place is kept by stage name: if the stage you are in survives, you stay as far into it as you were (inside it, if it got shorter); if it was removed, you stay at the same time into the journey, at most its new end. The values the journey started from are kept, so the first stage ramps on from where it began. Use `--yes` in scripts; without a terminal and without `--yes` nothing is applied.
 
 | Journey | Stages | End |
 | :--- | :--- | :--- |
