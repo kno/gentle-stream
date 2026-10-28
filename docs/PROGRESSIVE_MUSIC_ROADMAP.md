@@ -1071,6 +1071,60 @@ the footer does not grow with each feature.
 
 ---
 
+### Milestone M11 — Live broadcast
+
+Added after M10 was planned (2026-10-28), at the maintainer's request: broadcast the music and its screen to a live
+streaming service such as YouTube Live. Capturing the terminal window (OBS, screen grabbing) was considered and left
+out: it needs a visible window, and the background player, which owns the audio, has no screen. The broadcast is made
+by the background player itself.
+
+#### PM-045 — Broadcast the player to an RTMP(S) service
+
+- **User value:** `gentle-stream ctl stream start` (and a TUI action) sends what plays, with a picture of it, to
+  YouTube Live or any RTMP(S) ingest; `ctl stream stop` ends it. The music keeps playing locally.
+- **Scope:** the background player feeds the audio it gives the device to an encoder, as the session recording does
+  (PM-036): a copy per block from the audio callback, never waiting on the network. A broadcast view renders frames
+  from what the TUI shows (style name, mood, genre and key, journey line, spectrum, the vocals and binaural lines),
+  at a low frame rate (about 10 fps) and a fixed size (1280x720), drawn by the player, not captured from a terminal.
+  Audio and frames go to an H.264 + AAC encoder that sends to the configured ingest URL. Status in `ctl status` and
+  the TUI: target (the URL without the key), duration, dropped frames, the encoder's last error. Stopping the player
+  ends the broadcast.
+- **Configuration and secrets:** the ingest URL and the stream key live apart: the key in a file in the config dir
+  created with mode 0600 (`gentle-stream stream key set`, read from stdin, never an argument) or in an environment
+  variable; never on any command line (encoder arguments included, where it is visible in `ps`), never in logs, the
+  player state or error messages. YouTube Live needs only the stream key from YouTube Studio with its RTMP(S) ingest
+  URL; creating broadcasts through the YouTube Data API (OAuth) is out of scope.
+- **Open decisions before implementation (need the maintainer):**
+  1. Encoder: the `ffmpeg` program (a system tool, like `bsdtar` for `setup-voices`, no Python dependency; the key
+     must then reach it without the command line, e.g. through a private named pipe or its stdin protocol) or a
+     Python binding such as PyAV (bundles FFmpeg; a new optional extra; check its license terms and wheel sizes).
+  2. Frame drawing: Pillow (a new optional extra) or a numpy-only renderer with a bundled bitmap font (no dependency,
+     less typography).
+  3. Content rules for public broadcast: spoken phrases with macOS `say` voices are licensed for personal use; the
+     broadcast must either mute phrases or require `espeak-ng`/a voice whose license allows it. Packs whose manifest
+     says `"redistributable": false` must not be broadcast either. No health or therapeutic claims in any overlay.
+- **Out of scope:** OAuth and the YouTube Data API, chat, overlays from other apps, recording the video locally (the
+  audio recording of PM-036 stays), several simultaneous targets.
+- **Affected components:** new `broadcast.py` (frames, encoder process or binding, the feed); `player.py`,
+  `daemon.py`, `client.py`, `__init__.py`, `app.py` (TUI action and status), docs; tests with a fake encoder and a
+  local RTMP-less sink (frames and audio written to a file), never a real service.
+- **Dependencies:** PM-036 (the audio feed), PM-044 (TUI parity rules).
+- **Acceptance criteria:**
+  1. The audio sent equals the audio given to the device (fake encoder), and the audio callback never waits on the
+     encoder or the network: a stalled encoder drops broadcast frames, never local audio.
+  2. The stream key never appears in any process's arguments, in logs, in `ctl status`, in the TUI or in errors (a
+     test searches all of them for a sentinel key).
+  3. A failing or disconnected encoder is reported (status and TUI) and leaves local playback untouched.
+  4. A broadcast with a non-redistributable voice pack or `say` phrases is refused with the reason, unless the
+     maintainer's chosen rule (decision 3) allows it.
+- **Demo:** a private ("unlisted") YouTube Live broadcast of the flagship journey.
+- **Estimated effort:** 6 h after the decisions.
+- **Risks:** secrets handling (high: a leaked key lets anyone stream to the channel); network jitter (bounded queues,
+  drop frames before audio); CPU (encoding H.264 next to the synthesis: low frame rate, `veryfast` preset, measure
+  render speed stays > 4x real time); platform terms for automated streams.
+
+---
+
 ## 5. Value delivery milestones
 
 | Milestone | Deliverables | User-visible result | Demonstration | Cumulative effort | Remaining limitations |
