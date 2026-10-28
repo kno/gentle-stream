@@ -38,6 +38,7 @@ import numpy as np
 
 from . import genres
 from . import samples as _samples
+from . import speech as _speech
 from . import vocals
 from .voicepacks import PackVoice
 from .binaural import Binaural, BinauralLayer, glide_seconds
@@ -141,6 +142,8 @@ class Engine:
         (`voicepacks.active_voice`) the choir sings; the engine never reads the registry itself."""
         self.sr = sr
         self._voices = voices
+        self._speech_queue: list[np.ndarray] = []                 # finished clips waiting for a boundary (_lock)
+        self._speech: tuple[np.ndarray, np.ndarray, int] | None = None   # (clip, duck, position) playing
         self.melodic_vocals = voices is not None and voices.pack.melody
         sf2 = _samples.soundfont_path() if samples is True else (Path(samples) if samples else None)
         renderer = _samples.load_renderer(sf2, sr) if sf2 is not None else None
@@ -232,6 +235,29 @@ class Engine:
             if self._binaural_queued:
                 return self._pending_binaural[0]
             return self._binaural.setting
+
+    def queue_speech(self, clip: np.ndarray) -> None:
+        """Play the finished mono `clip` from the next phrase boundary (every four bars) after the ones queued
+        before it, the music ducked under it. Rendering the clip is the caller's job (`speech.render`)."""
+        with self._lock:
+            self._speech_queue.append(np.asarray(clip, dtype=float))
+
+    def _mix_speech(self, out: np.ndarray, n: int) -> np.ndarray:
+        """Start the next queued clip on a phrase boundary, then duck the music and add the playing clip."""
+        if self._speech is None and self.bar % 4 == 0:
+            with self._lock:
+                clip = self._speech_queue.pop(0) if self._speech_queue else None
+            if clip is not None:
+                duck = _speech.duck_envelope(len(clip), self.sr)
+                self._speech = (np.r_[clip, np.zeros(len(duck) - len(clip))], duck, 0)
+        if self._speech is None:
+            return out
+        clip, duck, pos = self._speech
+        m = min(n, len(duck) - pos)
+        out = out.astype(float, copy=True)
+        out[:m] = out[:m] * duck[pos:pos + m, None] + clip[pos:pos + m, None]
+        self._speech = (clip, duck, pos + m) if pos + m < len(duck) else None
+        return out.astype(np.float32)
 
     def queue_journey(self, journey: Journey) -> None:
         """Run `journey` from the next bar on, starting from the values playing then; it replaces a running one
@@ -439,6 +465,7 @@ class Engine:
             end = (self.samples_out + n - running.start_sample) / self.sr
             values = running.journey.binaural_at(end, running.binaural_start)
             self._binaural.set(Binaural.from_dict(values), n / self.sr)
+        out = self._mix_speech(out, n)   # after the master chain too, on phrase boundaries
         if self._binaural.active:   # after the master chain: nothing colours or pumps it
             out = out + self._binaural.render(n)
         self.bar += 1

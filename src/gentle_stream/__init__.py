@@ -111,8 +111,10 @@ OLDER_PLAYER = ("the running player is older than this gentle-stream; run `gentl
 
 
 def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
-        fields: dict[str, float] | None = None, binaural_request: tuple[str, dict[str, float]] | None = None) -> int:
-    """`binaural_request` is (on|off|set, the --carrier/--beat/--level given) for `ctl binaural`."""
+        fields: dict[str, float] | None = None, binaural_request: tuple[str, dict[str, float]] | None = None,
+        text: str | None = None) -> int:
+    """`binaural_request` is (on|off|set, the --carrier/--beat/--level given) for `ctl binaural`; `text` the
+    phrase of `ctl say`."""
     from .client import NoPlayer, PlayerError, PlayerGone, connect
 
     try:
@@ -154,6 +156,15 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
                 player.glide_binaural(values, seconds)
             else:
                 player.set_binaural(Binaural.from_dict(values) if switch == "on" else None, seconds)
+        except PlayerGone:
+            print("gentle-stream: nothing is playing", file=sys.stderr)
+            return 1
+        except PlayerError as e:
+            print(f"gentle-stream: {OLDER_PLAYER if 'unknown command' in str(e) else e}", file=sys.stderr)
+            return 1
+    elif action == "say" and text is not None:   # main() has already required TEXT
+        try:
+            player.say(text)
         except PlayerGone:
             print("gentle-stream: nothing is playing", file=sys.stderr)
             return 1
@@ -516,9 +527,10 @@ def main(argv: list[str] | None = None) -> int:
                                      help=f"the pack to install: {', '.join(VOICE_CATALOG)}")
     ctl_parser = sub.add_parser("ctl", help="control the music playing in the background")
     ctl_parser.add_argument("action", choices=("play", "pause", "toggle", "next", "stop", "status", "tempo",
-                                               "glide", "binaural"))
+                                               "glide", "binaural", "say"))
     ctl_parser.add_argument("args", nargs="*", metavar="ARG",
-                            help="tempo: BPM; glide: FIELD=VALUE...; binaural: on, off or set")
+                            help="tempo: BPM; glide: FIELD=VALUE...; binaural: on, off or set; say: TEXT (spoken "
+                                 "over the music from the next phrase boundary)")
     ctl_parser.add_argument("--over", type=float, default=60.0, metavar="SECONDS",
                             help="tempo, glide, binaural on/set while it plays: seconds to reach the target, 0-3600 "
                                  "(default: 60)")
@@ -578,6 +590,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.action == "binaural":
             request, seconds = _binaural_args(ctl_parser, args)
             return ctl("binaural", seconds=seconds, binaural_request=request)
+        if args.action == "say":
+            if any(value is not None for value in (args.carrier, args.beat, args.level)):
+                ctl_parser.error("--carrier, --beat and --level are only for binaural")
+            if not args.args:
+                ctl_parser.error("say requires TEXT")
+            return ctl("say", text=" ".join(args.args))
         return ctl(args.action, *_ctl_args(ctl_parser, args))
     if args.command == "journey":
         return journey_command(args.journey_action, getattr(args, "name", None),

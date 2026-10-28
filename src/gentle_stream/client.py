@@ -240,6 +240,10 @@ class PlayerClient:
         """Glide only the given carrier, beat or level over `seconds`; the player refuses while the layer is off."""
         self._control("binaural_set", seconds=float(seconds), **values)
 
+    def say(self, text: str) -> None:
+        """Speak `text` over the music from the next phrase boundary; PlayerError when it cannot be spoken."""
+        self._round_trip("say", text=text)
+
     def set_volume(self, volume: float) -> None:
         self._control("set_volume", volume=float(volume))
 

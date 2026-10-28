@@ -243,6 +243,17 @@ def handle(player, request) -> dict:
                 return {"ok": False, "error": "binaural is off; turn it on first"}
             changed = _binaural_change(current, request)
             player.engine.queue_binaural(changed, _seconds(request) if "seconds" in request else 0.0)
+        elif cmd == "say":
+            from .speech import SpeechError, render
+
+            text = request["text"]
+            if not isinstance(text, str):
+                raise TypeError("text must be a string")
+            try:
+                clip = render(text, player.engine.sr)   # here, in this connection's thread, never while rendering
+            except SpeechError as e:
+                return {"ok": False, "error": str(e)}
+            player.engine.queue_speech(clip)
         elif cmd == "journey_restart":
             player.engine.restart_journey()
         elif cmd == "journey_skip":

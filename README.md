@@ -203,6 +203,7 @@ gentle-stream ctl stop     # ends the background player
 | `ctl play`, `pause`, `toggle`, `next`, `stop` | Nothing, or `gentle-stream: nothing is playing` on stderr | `0`, or `1` when nothing plays |
 | `ctl tempo BPM [--over SECONDS]` | Glide tempo in place (default 60 seconds) | `0`, or `1` when nothing plays |
 | `ctl glide FIELD=VALUE... [--over SECONDS]` | Glide `energy`, `brightness`, `space`, `swing`, `vinyl`, `lead_density`, `voice` or `bpm` in place (default 60 seconds) | `0`; `1` when nothing plays or the player refuses; `2` for a malformed or discrete field |
+| `ctl say TEXT` | Speak TEXT (at most 200 characters) over the music from the next phrase boundary, the music ducked 3 dB | `0`; `1` when nothing plays, no text-to-speech program is found, or it fails; `2` without TEXT |
 | `ctl binaural on [--carrier HZ] [--beat HZ] [--level L] [--over SECONDS]`, `ctl binaural set ... [--over SECONDS]`, `ctl binaural off` | Fade the binaural texture in or out, or glide it to new values (see [Binaural](#binaural)); nothing on stdout | `0`; `1` when nothing plays or `set` finds it off; `2` for a value out of range, options with `off`, or `set` without one |
 | `journey play NAME\|FILE` | Run a built-in or saved journey (names ignore case) or a JSON file (see [Journeys](#journeys)); nothing on stdout | `0`; `1` when nothing plays or the name is unknown |
 | `journey restart` | Restart the running journey at its first stage on the next bar | `0`; `1` when nothing plays or no journey is running |
@@ -272,6 +273,16 @@ gentle-stream setup-voices freepats-synth-choir
 It downloads the SFZ+WAV edition from a pinned URL, checks it against a pinned SHA-256 before anything is extracted, checks the archive's listing (one top folder, relative paths, only SFZ, WAV and text files), extracts it with `bsdtar` (included in macOS; on Linux install `libarchive-tools`) or `7z`, and loads the SFZ before installing it under `~/.cache/gentle-stream/voices/` with a `pack.json` and a `LICENSES.txt` that records the source, the checksum, the credit and the archive's license and readme. It then becomes the choir's voice, as with `voices add`. On any failure nothing is left behind; running it again does not download twice.
 
 Add `"melody": true` to a pack's manifest to let it sing the vocal melody and its harmonies too. Decide that by ear: only voices that sound natural on a melody should have it.
+
+## Spoken phrases
+
+`ctl say` speaks a short phrase over the background player's music:
+
+```bash
+gentle-stream ctl say "Keep going"
+```
+
+The phrase is spoken by the system's text-to-speech program, `say` on macOS or `espeak-ng` on Linux (install it with your package manager); without one, the command answers "no text-to-speech backend found". The player renders it before answering, so a failure is reported and the music is left exactly as it was. The phrase starts on the next phrase boundary (every four bars), centred and level-normalised, and the music dips 3 dB under it with 50 ms ramps in and out. Phrases asked for in a row play one after another, each on its own boundary. The text is given to the program on its standard input, never as an argument, and generated audio stays on your machine.
 
 ## Binaural
 
@@ -501,6 +512,7 @@ All music is generated: the composer builds every melody, counter-melody, bass l
 | [`src/gentle_stream/engine.py`](src/gentle_stream/engine.py) | Bar-by-bar rendering and the master chain |
 | [`src/gentle_stream/mastering.py`](src/gentle_stream/mastering.py) | Procedural impulse response, convolution reverb, bus compressor, soft clip |
 | [`src/gentle_stream/voicepacks.py`](src/gentle_stream/voicepacks.py) | Voice packs: manifests, WAV loading, pitch mapping and the registry |
+| [`src/gentle_stream/speech.py`](src/gentle_stream/speech.py) | Spoken phrases: the text-to-speech program, normalisation and the duck |
 | [`src/gentle_stream/vocals.py`](src/gentle_stream/vocals.py) | The wordless choir: formant voices and their voicing |
 | [`src/gentle_stream/binaural.py`](src/gentle_stream/binaural.py) | The optional binaural layer: settings and the phase-continuous sine pair |
 | [`src/gentle_stream/player.py`](src/gentle_stream/player.py) | Real-time playback, buffering, crossfades, spectrum |
