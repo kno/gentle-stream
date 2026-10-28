@@ -22,6 +22,7 @@ CONTROLS = """controls:
   t        say a phrase over the music: voice, rate and effect
   v        voice packs: add, list, remove; install the FreePats choir or FluidR3_GM
   r        record the session into a WAV file; r again stops and saves it
+  w        render the current style or a journey into a WAV file, as gentle-stream render
   ctrl+p   command palette: every action, found by typing its name
   + / -    volume up / down by 5%
   ↑ / ↓    volume up / down by 1%
@@ -499,14 +500,8 @@ def render(out: str, seconds: float, seed: int | None, genre: str | None, mood_f
            procedural: bool, journey_name: str | None = None) -> int:
     """Render `seconds` of music with the engine alone into a 16-bit stereo WAV at `out`, running the built-in
     journey `journey_name` from the first bar when given."""
-    import secrets
     from dataclasses import replace
 
-    import numpy as np
-    from scipy.io import wavfile
-
-    from .engine import Engine
-    from .journey import BUILTIN
     from .style import Style
 
     style = Style()
@@ -525,9 +520,32 @@ def render(out: str, seconds: float, seed: int | None, genre: str | None, mood_f
         style = Style.from_dict(data)
     if genre is not None:
         style = replace(style, genre=genre)
-    seed = secrets.randbelow(2 ** 31) if seed is None else seed   # printed, so any render can be repeated
+    try:
+        print(render_style(out, seconds, seed, style, procedural, journey_name))
+    except RenderError as e:
+        print(f"gentle-stream: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+class RenderError(Exception):
+    """The WAV file cannot be written; the message says why."""
+
+
+def render_style(out: str, seconds: float, seed: int | None, style, procedural: bool,
+                 journey_name: str | None = None) -> str:
+    """Render `seconds` of `style` (running the built-in journey `journey_name` from the first bar when given) into
+    a 16-bit stereo WAV at `out`; the line `render` prints. The CLI and the TUI's render dialog both call this."""
+    import secrets
+
+    import numpy as np
+    from scipy.io import wavfile
+
+    from .engine import Engine
+    from .journey import BUILTIN
     from .voicepacks import active_voice
 
+    seed = secrets.randbelow(2 ** 31) if seed is None else seed   # printed, so any render can be repeated
     engine = Engine(style, seed=seed, samples=not procedural, voices=None if procedural else active_voice())
     if journey_name is not None:
         engine.queue_journey(BUILTIN[journey_name])
@@ -541,11 +559,9 @@ def render(out: str, seconds: float, seed: int | None, genre: str | None, mood_f
             audio = np.clip(np.concatenate(bars)[:frames], -1, 1)   # the last bar trimmed to the exact length
             wavfile.write(f, engine.sr, np.round(audio * 32767).astype(np.int16))
     except OSError as e:
-        print(f"gentle-stream: cannot write {out}: {e.strerror}", file=sys.stderr)
-        return 1
+        raise RenderError(f"cannot write {out}: {e.strerror}") from e
     suffix = f", journey {journey_name}" if journey_name else ""
-    print(f"wrote {out}: {seconds:g} s, {style.genre}, seed {seed}{suffix}")
-    return 0
+    return f"wrote {out}: {seconds:g} s, {style.genre}, seed {seed}{suffix}"
 
 
 def _number(text: str) -> float | None:
@@ -610,12 +626,8 @@ def _binaural_args(parser: argparse.ArgumentParser, args) -> tuple[tuple[str, di
     return (switch, values), args.over
 
 
-def main(argv: list[str] | None = None) -> int:
-    argv = sys.argv[1:] if argv is None else argv
-    if argv[:1] == ["daemon"]:   # the background player, started by the TUI; not listed in --help
-        from .daemon import main as daemon_main
-
-        return daemon_main(argv[1:])
+def build_parser() -> argparse.ArgumentParser:
+    """The command line of `gentle-stream`: main() parses with it, and the TUI parity test walks it."""
     ap = argparse.ArgumentParser(prog="gentle-stream", description=__doc__, epilog=CONTROLS,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", help="model Gentle Shell uses to interpret moods, as provider/id "
@@ -707,6 +719,25 @@ def main(argv: list[str] | None = None) -> int:
     voices_sub.add_parser("list", help="list packs with their license and attribution (* the active one)")
     voices_sub.add_parser("remove", help="unregister a pack; the built-in choir sings again").add_argument(
         "target", metavar="NAME")
+    return ap
+
+
+def _command(parser: argparse.ArgumentParser, name: str) -> argparse.ArgumentParser:
+    """The subparser of the command `name`, for its own usage errors."""
+    sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    return sub.choices[name]
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["daemon"]:   # the background player, started by the TUI; not listed in --help
+        from .daemon import main as daemon_main
+
+        return daemon_main(argv[1:])
+    ap = build_parser()
+    ctl_parser, render_parser = _command(ap, "ctl"), _command(ap, "render")
+    from .speech import RATES
+
     args = ap.parse_args(argv)
     if args.command == "ctl":
         say_flags = (args.voice, args.rate, args.effect)

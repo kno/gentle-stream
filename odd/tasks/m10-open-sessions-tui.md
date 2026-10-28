@@ -22,7 +22,7 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
 | T6 PM-041 binaural from the TUI | S6, S0 | inline | `feat/tui-binaural` | done (PM-041 commit; base `ef9030e`) |
 | T7 PM-042 spoken phrases from the TUI | S7, S0 | inline | `feat/tui-say` | done (PM-042 commit; base `fdbd512`) |
 | T8 PM-043 voices and samples from the TUI | S8, S0 | inline | `feat/tui-voices` | done (PM-043 commit; base `418280a`) |
-| T9 PM-044 render and the parity guard | S9, S0 | inline | `feat/tui-render` | pending |
+| T9 PM-044 render and the parity guard | S9, S0 | inline (worker attempt discarded) | `feat/tui-render` | done (PM-044 commit; base `7706d20`) |
 
 ## Log
 
@@ -127,3 +127,16 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
   ("always call setup_samples") is equivalent, it does nothing when installed. Finding for the user: the engine
   reads the active pack only at start, so "the choir now sings it" (CLI and dialog) takes effect on the next start.
 - L20: PM-043 suite job-33: 1406 passed, 3 deselected, 0 test daemons. T8 verified.
+- L21: PM-044. A gentle-ai-worker was delegated (context backstop) and returned partial: its build_parser() was a
+  hand-written copy of the command list, so the guard could never see a new command, and one test was always true.
+  Discarded and done inline. `build_parser()` now holds the real parser main() uses (test: `--help` output equals
+  build_parser().format_help()). `render` keeps its CLI and calls the new `render_style(out, seconds, seed, style,
+  procedural, journey)`, which the TUI's RenderModal (`w`) also calls in a worker, with the style playing now. Tests:
+  the dialog's WAV equals `gentle-stream render --mood-file <that style>` byte for byte (style, and journey +
+  procedural), the printed line is the TUI's status, invalid options and an unwritable path stay in the dialog with
+  the CLI's messages, 80x24 fits. app.PARITY maps every command and ctl action to its TUI action (which must exist
+  and be in the palette); NOT_IN_TUI holds only `ctl status` (always on screen). The guard walks the real parser;
+  removing an entry or adding a CLI command fails it (tested both ways). No CLI gaps found. Mutations: 8 of 8 caught
+  after strengthening two tests (procedural only changes bytes with a soundfont, so a spy checks the options; the
+  playing style is now a non-default one). README: parity table and the `w` row; --help lists `w`.
+- L22: PM-044 suite job-34: 1424 passed, 3 deselected, 0 test daemons; test_tui_render.py re-run after a lint-only edit. T9 verified; M10 implementation complete (slow tests next).

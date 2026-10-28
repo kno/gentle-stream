@@ -169,11 +169,35 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 | `t` | Say a phrase over the music, as `ctl say`: the text, a voice from the list the system's text-to-speech program offers (or its default), a rate in words per minute and an effect (`dry`, `space`, `radio`); the phrase is rendered in the background and starts at the next phrase boundary; a missing program, an empty phrase or a rate out of range are shown in the dialog |
 | `v` | Voices and samples: the voice packs as `voices list` shows them (`*` is the one the choir sings); add a pack by its folder or remove the highlighted one, as `voices add` / `voices remove`; install the FreePats choir or the FluidR3_GM soundfont, as `setup-voices` / `setup-samples`, with a progress bar while the interface keeps working; a failed install leaves nothing behind and says why |
 | `r` | Record the session: asks for a WAV file (a dated one in your home folder is proposed), then saves everything you hear until you press `r` again; the state line shows `● REC` and the length |
+| `w` | Render to a file: the style playing now or a built-in journey, a length, a seed (blank: random, then shown) and the procedural instruments if you want them, written in the background by the same function as `gentle-stream render`, so the same options give the same bytes; what plays is not interrupted |
 | `ctrl+p` | Command palette: every action of the app, keyed or not, found by typing part of its name |
 | `+` / `-` | Volume up / down by 5% |
 | `↑` / `↓` | Volume up / down by 1% |
 | `b` | Back: leave the app and keep the music playing in the background |
 | `q` | Quit and stop the music (a running `gentle-shell` call is cancelled) |
+
+### The command line from the TUI
+
+Everything the command line does can be done from the TUI too: by its key, or by name in the command palette
+(`ctrl+p`). A test walks the command line's own parser and fails for any command without a row here.
+
+| Command line | In the TUI |
+| --- | --- |
+| `ctl play`, `ctl pause`, `ctl toggle` | `space` |
+| `ctl next` | `n` |
+| `ctl stop` | `q` (leaves the app and stops the music) |
+| `ctl tempo`, `ctl glide` | `c` live controls |
+| `ctl binaural on/set/off` | `B` |
+| `ctl say` (with `--voice`, `--rate`, `--effect`, `--list-voices`) | `t` |
+| `ctl record start/stop` | `r` |
+| `ctl status` | always on screen |
+| `journey play`, `list`, `show`, `delete`, `create` | `J` journeys |
+| `journey validate` | `J` → Open file |
+| `journey save` | `j` → Save as, or `J` → Open file → Save as |
+| `journey stop`, `restart`, `skip` | `j` journey controls |
+| `journey edit` | `j` → Edit with words |
+| `voices add`, `list`, `remove`, `setup-voices`, `setup-samples` | `v` voices and samples |
+| `render` | `w` |
 
 ### Flags
 

@@ -25,6 +25,7 @@ from textual.screen import ModalScreen
 from textual.theme import Theme
 from textual.widgets import (
     Button,
+    Checkbox,
     Footer,
     Header,
     Input,
@@ -1114,6 +1115,122 @@ class VoicesModal(ModalScreen[None]):
         self.dismiss(None)
 
 
+class RenderModal(ModalScreen[str | None]):
+    """Render to a WAV (PM-044) with the function `gentle-stream render` uses: the style playing now (the CLI's
+    `--mood-file` with it) or a built-in journey, a length, a seed (blank: random, reported) and the procedural
+    instruments if asked. It runs in a worker; errors stay in the dialog. Dismisses with the line render prints."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    DEFAULT_CSS = """
+    RenderModal { align: center middle; }
+    RenderModal > Vertical { width: 72; max-width: 100%; height: auto; border: round $primary; padding: 0 1;
+                             background: $surface; }
+    RenderModal .heading { color: $primary; text-style: bold; }
+    RenderModal .row { height: 1; }
+    RenderModal .row Static { width: 22; }
+    RenderModal .row Input { width: 1fr; }
+    RenderModal #render-journey { margin-top: 1; }
+    RenderModal #render-status { color: $text-muted; }
+    RenderModal #buttons { height: auto; }
+    RenderModal Button { margin-right: 1; }
+    """
+
+    def __init__(self, style: Style):
+        super().__init__()
+        self.style = style
+
+    def compose(self) -> ComposeResult:
+        from . import MAX_RENDER_SECONDS, RENDER_SECONDS
+        from .journey import BUILTIN
+
+        proposed = Path.home() / f"gentle-stream-render-{datetime.now():%Y%m%d-%H%M%S}.wav"
+        with Vertical():
+            yield Static(f"Render to a WAV file · {self.style.name}", classes="heading", markup=False)
+            yield Input(str(proposed), placeholder="FILE.wav", id="render-path")
+            for name, label, value in (("seconds", f"seconds (max {MAX_RENDER_SECONDS:g})", f"{RENDER_SECONDS:g}"),
+                                       ("seed", "seed (blank: random)", "")):
+                with Horizontal(classes="row"):
+                    yield Static(label)
+                    yield Input(value, id=f"render-{name}", compact=True)
+            yield Select([("The style playing now", ""), *((f"Journey: {name}", name) for name in BUILTIN)],
+                         value="", allow_blank=False, id="render-journey")
+            yield Checkbox("Procedural instruments, even with the soundfont installed", id="render-procedural",
+                           compact=True)
+            yield Static("Rendered offline: what plays is not interrupted.", id="render-status", markup=False)
+            with Horizontal(id="buttons"):
+                yield Button("Render", id="render", variant="primary")
+                yield Button("Cancel", id="cancel")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()   # never a mood request for the app below
+        self._submit()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "render":
+            self._submit()
+        else:
+            self.action_cancel()
+
+    def _submit(self) -> None:
+        import math
+
+        from . import MAX_RENDER_SECONDS
+
+        status = self.query_one("#render-status", Static)
+        out = self.query_one("#render-path", Input).value.strip()
+        if not out:
+            status.update("type the WAV file to write")
+            return
+        try:
+            seconds = float(self.query_one("#render-seconds", Input).value)
+        except ValueError:
+            seconds = math.nan
+        if not 0 < seconds <= MAX_RENDER_SECONDS:   # also NaN
+            status.update(f"seconds must be a number above 0 and at most {MAX_RENDER_SECONDS:g}")
+            return
+        raw_seed = self.query_one("#render-seed", Input).value.strip()
+        seed = None
+        if raw_seed:
+            try:
+                seed = int(raw_seed)
+            except ValueError:
+                seed = -1
+            if seed < 0:
+                status.update("seed must be a non-negative integer")
+                return
+        journey = self.query_one("#render-journey", Select).value
+        procedural = self.query_one("#render-procedural", Checkbox).value
+        for name in ("render", "cancel"):
+            self.query_one(f"#{name}", Button).disabled = True
+        status.update("Rendering…")
+        self._render_wav(str(Path(out).expanduser()), seconds, seed, str(journey) if journey else None, procedural)
+
+    @work(thread=True, exclusive=True, group="render")
+    def _render_wav(self, out: str, seconds: float, seed: int | None, journey: str | None, procedural: bool) -> tuple[bool, str]:
+        """(True, the line render prints) or (False, why it failed); the dialog reacts when the worker ends."""
+        from . import RenderError, render_style
+
+        try:
+            return True, render_style(out, seconds, seed, self.style, procedural, journey)
+        except RenderError as e:
+            return False, str(e)
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        if event.worker.group != "render" or event.state != WorkerState.SUCCESS:
+            return
+        ok, message = event.worker.result or (False, "")
+        if ok:
+            self.dismiss(message)
+            return
+        for name in ("render", "cancel"):
+            self.query_one(f"#{name}", Button).disabled = False
+        self.query_one("#render-status", Static).update(message)
+
+    def action_cancel(self) -> None:
+        if not self.query_one("#cancel", Button).disabled:   # a render in progress finishes first
+            self.dismiss(None)
+
+
 class JourneyPickerModal(ModalScreen[str | None]):
     """Pick a journey: "create" first, then the built-ins, then the saved ones alphabetically, then "open" (a file);
     `v` shows the highlighted one, `d` deletes a saved one.
@@ -1191,6 +1308,26 @@ class JourneyPickerModal(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+# Every CLI command and `ctl` action, with the TUI action that does the same (a key, and always the palette).
+# tests/test_parity.py walks the real parser: a new command fails it until it is mapped here, or in NOT_IN_TUI with
+# the reason it has no action.
+PARITY: dict[str, str] = {
+    "ctl play": "toggle", "ctl pause": "toggle", "ctl toggle": "toggle", "ctl next": "next", "ctl stop": "quit",
+    "ctl tempo": "controls", "ctl glide": "controls", "ctl binaural": "binaural", "ctl say": "say",
+    "ctl record": "record",
+    "journey play": "journey_picker", "journey list": "journey_picker", "journey show": "journey_picker",
+    "journey delete": "journey_picker", "journey create": "journey_picker", "journey validate": "journey_open",
+    "journey save": "journey_save_as", "journey stop": "journey_menu", "journey restart": "journey_menu",
+    "journey skip": "journey_menu", "journey edit": "journey_edit",
+    "voices add": "voices", "voices list": "voices", "voices remove": "voices",
+    "setup-voices": "voices", "setup-samples": "voices",
+    "render": "render",
+}
+NOT_IN_TUI: dict[str, str] = {
+    "ctl status": "the TUI shows the state all the time (title, mood, tempo, journey, binaural, recording)",
+}
+
+
 class StreamApp(App):
     TITLE = "gentle-stream"
     SUB_TITLE = "real-time generative music"
@@ -1224,6 +1361,7 @@ class StreamApp(App):
         Binding("B", "binaural", "Binaural"),
         Binding("t", "say", "Say"),
         Binding("v", "voices", "Voices"),
+        Binding("w", "render", "Render"),
         Binding("plus,equals_sign", "volume(5)", "Vol +5"),
         Binding("minus", "volume(-5)", "Vol -5"),
         Binding("up", "volume(1)", "Vol +1"),
@@ -1377,6 +1515,7 @@ class StreamApp(App):
             ("Say a phrase", "Speak a phrase over the music, choosing voice, rate and effect (t)", "say"),
             ("Voices and samples", ("Add, list or remove voice packs; install the FreePats choir or the FluidR3_GM "
                                     "soundfont (v)"), "voices"),
+            ("Render to a file", "Render the style playing now or a journey into a WAV file (w)", "render"),
             ("Record the session", "Start or stop recording what you hear into a WAV file (r)", "record"),
             ("Back", "Leave the app, the music keeps playing (b)", "back"),
             ("Quit", "Leave the app and stop the music (q)", "quit"),
@@ -1416,6 +1555,14 @@ class StreamApp(App):
     def action_voices(self) -> None:
         """Voice packs and the downloads, as `voices`, `setup-voices` and `setup-samples` do."""
         self.push_screen(VoicesModal())
+
+    def action_render(self) -> None:
+        """Render to a WAV file, as `gentle-stream render` does."""
+        def done(line: str | None) -> None:
+            if line:
+                self._status(escape(line))
+
+        self.push_screen(RenderModal(self.player.now.style), done)
 
     def action_record(self) -> None:
         """Start recording (asks for the file) or stop and say where it was saved."""
