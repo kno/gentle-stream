@@ -15,7 +15,7 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
 | :--- | :--- | :--- | :--- | :--- |
 | T0 M10 plan in the roadmap | S0 | inline | `docs/m10-plan` | done (`a35fe49`) |
 | T1 PM-036 record the session | S1 | inline | `feat/session-record` | done (PM-036 commit; base `docs/m10-plan`) |
-| T2 PM-037 open-ended stages | S2 | inline | `feat/open-stages` | pending |
+| T2 PM-037 open-ended stages | S2 | inline | `feat/open-stages` | done (PM-037 commit; base `4347a90`) |
 | T3 PM-038 point-list curves | S3 | inline | `feat/point-curves` | pending |
 | T4 PM-039 journeys from the TUI | S4, S0 | inline | `feat/tui-journeys` | pending |
 | T5 PM-040 live controls from the TUI | S5, S0 | inline | `feat/tui-controls` | pending |
@@ -48,3 +48,21 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
   reaches. RED ImportError (both test files); GREEN 24; 7 mutations each fail tests. The new RecordDialog BINDINGS
   list repeats the file's existing RUF012 pattern.
 - L5: PM-036 suite job-24 failed one test I had left stale (the state key order test lists the last keys; `recording` is appended last as its rule says); fixed. A daemon left after that run was not a test daemon (no private XDG_RUNTIME_DIR, started near the end): the user's real player, left alone. Rerun job-25: 1316 passed, 3 deselected, 0 test daemons left. T1 verified.
+- L6: PM-037. An open stage is `Stage(seconds=inf, ramp=R)` ("seconds": "open", "ramp" 10-14400, default 120):
+  progress is measured over the ramp (`Stage.span`), so values reach their targets and hold; cumulative ends after it
+  are infinite, so later stages wait. Skip on an open stage closes it where it is (`Journey.closed(index, seconds)`)
+  and the next stage starts from the bar after. Snapshot gains `open` (this stage) and `open_ahead` (a later one), the
+  TUI shows "open"/"open-ended", `journey list` "open-ended", `stage_diff` "open (ramp N s)", the edit CLI's clock
+  "open". The NL rules offer it. Open stages are excluded from the 43200 s total. Regression I introduced and fixed:
+  I had extended the PM-007 error message for invalid seconds with `or "open"`, which broke four PM-007 tests pinning
+  the exact text; the original message is kept. Mutation work: updating the engine's driving journey on close had no
+  observable effect (same fields, identity never compared) and was removed; the open-stage target tempo was untested
+  (my first test had one stage, where "at infinity" lands in the same stage) and is now tested with a later stage.
+  RED 15 failed; GREEN 16; the snapshot key-order test gains "open", "open_ahead".
+- L7: User asked whether sound and the whole screen could go to a streaming service such as YouTube; after three
+  options were described, user (verbatim): "añadelo al roadmap, pero solo la opción 3, dependerá de librerías nuevas
+  y de configuración de api keys, seguramente". Added as M11 / PM-045 in commit f86d809 (on feat/open-stages, before
+  the PM-037 commit): the player renders its own broadcast view and feeds an RTMP(S) encoder. Clarified: YouTube Live
+  ingest needs a stream key, not an API key; OAuth/Data API out of scope. Encoder, frame drawing dependency and public
+  content rules recorded as open decisions; nothing implemented.
+- L7: User: "pues adelante". PM-037 suite job-26: 1332 passed, 3 deselected, 0 test daemons. T2 verified.

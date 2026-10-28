@@ -468,7 +468,11 @@ class Engine:
             running = replace(running, start_sample=self.samples_out)
             self._running = running
         elif running is not None and control == "skip":
-            index, _, _ = running.journey.at((self.samples_out - running.start_sample) / self.sr, running.start)
+            now = (self.samples_out - running.start_sample) / self.sr
+            index, _, _ = running.journey.at(now, running.start)
+            if running.journey.stages[index].open:   # an open stage ends where it is (PM-037)
+                begin = running.journey._ends[index - 1] if index else 0.0
+                running = replace(running, journey=running.journey.closed(index, now - begin))
             next_start = running.journey._ends[index]
             running = replace(running, start_sample=self.samples_out - round(next_start * self.sr))
             self._running = running

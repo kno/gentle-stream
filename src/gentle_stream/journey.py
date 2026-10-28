@@ -53,6 +53,7 @@ MAX_PHRASES = 12                  # spoken phrases a stage may have, each 1 to M
 MAX_PHRASE = 80
 PHRASE_EVERY = (10.0, 3600.0)     # seconds between a stage's phrases
 DEFAULT_PHRASE_EVERY = 120.0
+DEFAULT_RAMP = 120.0              # seconds an open stage's values take to reach their targets
 
 
 def drums_for_energy(energy: float) -> str:
@@ -99,9 +100,23 @@ class Stage:
     transition: int | None = None                         # bars over which a genre step crossfades, None: at once
     phrases: tuple[str, ...] = ()                         # spoken during the stage, one per `phrase_every` seconds
     phrase_every: float = DEFAULT_PHRASE_EVERY
+    ramp: float | None = None                             # an open stage (seconds infinite): its ramp's length
+
+    @property
+    def open(self) -> bool:
+        """Whether the stage lasts until the listener moves on (PM-037)."""
+        return self.ramp is not None
+
+    @property
+    def span(self) -> float:
+        """The seconds its values take to reach their targets: the stage, or an open stage's ramp."""
+        return self.ramp if self.ramp is not None else self.seconds
 
     def __post_init__(self) -> None:
-        if not math.isfinite(self.seconds) or self.seconds <= 0:
+        if self.ramp is not None:
+            if not (math.isinf(self.seconds) and math.isfinite(self.ramp) and self.ramp > 0):
+                raise ValueError(f"stage {self.name!r}: an open stage has infinite seconds and a ramp above 0")
+        elif not math.isfinite(self.seconds) or self.seconds <= 0:
             raise ValueError(f"stage {self.name!r}: seconds must be above 0")
         if self.genre is not None and self.genre not in _genre_names():
             raise ValueError(f"stage {self.name!r}: unknown genre {self.genre!r}")
@@ -138,7 +153,7 @@ class Stage:
     def __hash__(self) -> int:
         return hash((self.name, self.seconds, self.genre, self.curve, frozenset(self.to.items()),
                      frozenset(self.binaural.items()), frozenset(self.layers.items()), self.drums, self.transition,
-                     self.phrases, self.phrase_every))
+                     self.phrases, self.phrase_every, self.ramp))
 
 
 @dataclass(frozen=True)
@@ -157,6 +172,8 @@ class JourneySnapshot:
     seconds_left: float | None
     binaural: dict[str, float] | None = None   # the binaural values at the bar's start, when the journey moves them
     override: tuple[str, dict[str, float]] | None = None   # a mood's offsets on the journey's fields for this stage
+    open: bool = False         # the stage lasts until the listener moves on (no time left)
+    open_ahead: bool = False   # a later stage does: the journey has no end time yet
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -169,7 +186,8 @@ class JourneySnapshot:
                        str(data["stage_name"]), float(data["progress"]), float(data["bpm"]),
                        float(data["target_bpm"]),
                        None if data["seconds_left"] is None else float(data["seconds_left"]),
-                       _binaural_values(data.get("binaural")), _override(data.get("override")))
+                       _binaural_values(data.get("binaural")), _override(data.get("override")),
+                       data.get("open") is True, data.get("open_ahead") is True)
         except (KeyError, TypeError, ValueError):
             return None
         return snap
@@ -307,9 +325,19 @@ class Journey:
             if not isinstance(raw, Mapping):
                 raise ValueError(f"stage {number} must be an object")
             seconds = raw.get("seconds")
-            if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) or not 10 <= seconds <= 14400:
-                raise ValueError(f'stage {number}: "seconds" must be a number between 10 and 14400')
-            total += float(seconds)
+            ramp = None
+            if seconds == "open":   # PM-037: lasts until skipped or edited; its values ramp over "ramp" seconds
+                ramp = raw.get("ramp", DEFAULT_RAMP)
+                if isinstance(ramp, bool) or not isinstance(ramp, (int, float)) or not 10 <= ramp <= 14400:
+                    raise ValueError(f'stage {number}: "ramp" must be a number between 10 and 14400')
+                seconds, ramp = math.inf, float(ramp)
+            else:
+                if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) \
+                        or not 10 <= seconds <= 14400:
+                    raise ValueError(f'stage {number}: "seconds" must be a number between 10 and 14400')
+                if "ramp" in raw:
+                    raise ValueError(f'stage {number}: "ramp" is only for "seconds": "open"')
+                total += float(seconds)
             stage_name = raw.get("name", f"Stage {number}")
             if not isinstance(stage_name, str):
                 raise ValueError(f"stage {number}: \"name\" must be a string")
@@ -341,7 +369,7 @@ class Journey:
                                 _parse_binaural(raw.get("binaural", {}), number, warnings),
                                 _parse_layers(raw.get("layers", {}), number), _parse_drums(raw.get("drums"), number),
                                 _parse_transition(raw.get("transition"), number),
-                                *_parse_phrases(raw.get("phrases"), raw.get("phrase_every"), number)))
+                                *_parse_phrases(raw.get("phrases"), raw.get("phrase_every"), number), ramp))
         if total > 12 * 60 * 60:
             raise ValueError('combined stage duration must be at most 43200 seconds')
         journey_name = data.get("name", name)
@@ -364,7 +392,9 @@ class Journey:
     def to_dict(self) -> dict:
         stages_list = []
         for s in self.stages:
-            stage_dict = {"name": s.name, "seconds": s.seconds, "to": dict(s.to)}
+            stage_dict = {"name": s.name, "seconds": "open" if s.open else s.seconds, "to": dict(s.to)}
+            if s.ramp is not None:
+                stage_dict["ramp"] = s.ramp
             if s.genre is not None:
                 stage_dict["genre"] = s.genre
             if s.curve != "linear":
@@ -452,7 +482,7 @@ class Journey:
         index = min(bisect_right(self._ends, t), len(self.stages) - 1)
         begin = self._ends[index - 1] if index else 0.0
         stage = self.stages[index]
-        progress = min(1.0, (t - begin) / stage.seconds)
+        progress = min(1.0, (t - begin) / stage.span)
         for previous in self.stages[:index]:
             values.update(getattr(previous, targets))
         for name, target in getattr(stage, targets).items():
@@ -478,12 +508,24 @@ class Journey:
         target = bpm
         if "bpm" in self.fields:   # the stage's end tempo, clamped and rounded as the engine applies it
             lo, hi = GLIDE_FIELDS["bpm"]
-            target = round(min(hi, max(lo, self.at(self._ends[index], start)[2]["bpm"])), 1)
+            stage_end = (self._ends[index - 1] if index else 0.0) + self.stages[index].span   # the ramp's end, if open
+            target = round(min(hi, max(lo, self.at(stage_end, start)[2]["bpm"])), 1)
         t = max(0.0, float(t))
-        left = None if self.end == "sustain" and t >= self.seconds else max(0.0, self.seconds - t)
+        is_open = self.stages[index].open
+        ahead = not is_open and not math.isfinite(self.seconds)
+        if is_open or ahead:
+            left = None
+        else:
+            left = None if self.end == "sustain" and t >= self.seconds else max(0.0, self.seconds - t)
         binaural = self.binaural_at(t, binaural_start) if self.owns_binaural and binaural_start else None
         return JourneySnapshot(self.name, self.title, index + 1, len(self.stages), self.stages[index].name,
-                               progress, float(bpm), target, left, binaural)
+                               progress, float(bpm), target, left, binaural, None, is_open, ahead)
+
+    def closed(self, index: int, seconds: float) -> Journey:
+        """This journey with open stage `index` closed after `seconds` (`journey skip` on an open stage)."""
+        stages = list(self.stages)
+        stages[index] = replace(stages[index], seconds=max(seconds, 1e-3), ramp=None)
+        return replace(self, stages=tuple(stages))
 
 
 def map_position(old: Journey, t: float, new: Journey) -> float:
@@ -504,6 +546,10 @@ def _number(value: float) -> str:
     return f"{value:g}"
 
 
+def _length(stage: Stage) -> str:
+    return f"open (ramp {_number(stage.ramp)} s)" if stage.ramp is not None else f"{_number(stage.seconds)} s"
+
+
 def stage_diff(old: Journey, new: Journey) -> list[str]:
     """One line per stage: `=` kept, `~` changed (what changed), `+` added, `-` removed, matched by name (any case),
     in the new order with removed stages last."""
@@ -513,11 +559,11 @@ def stage_diff(old: Journey, new: Journey) -> list[str]:
         before = by_name.pop(stage.name.casefold(), None)
         if before is None:
             extra = f", genre {stage.genre}" if stage.genre else ""
-            lines.append(f"  + {stage.name}: {_number(stage.seconds)} s{extra}")
+            lines.append(f"  + {stage.name}: {_length(stage)}{extra}")
             continue
         changes = []
-        if before.seconds != stage.seconds:
-            changes.append(f"{_number(before.seconds)} s -> {_number(stage.seconds)} s")
+        if (before.seconds, before.ramp) != (stage.seconds, stage.ramp):
+            changes.append(f"{_length(before)} -> {_length(stage)}")
         for key in sorted(set(before.to) | set(stage.to)):
             a, b = before.to.get(key), stage.to.get(key)
             if a != b:
@@ -536,8 +582,8 @@ def stage_diff(old: Journey, new: Journey) -> list[str]:
         if changes:
             lines.append(f"  ~ {stage.name}: {'; '.join(changes)}")
         else:
-            lines.append(f"  = {stage.name}: {_number(stage.seconds)} s")
-    lines += [f"  - {stage.name}: {_number(stage.seconds)} s" for stage in by_name.values()]
+            lines.append(f"  = {stage.name}: {_length(stage)}")
+    lines += [f"  - {stage.name}: {_length(stage)}" for stage in by_name.values()]
     return lines
 
 

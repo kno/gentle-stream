@@ -82,6 +82,8 @@ def setup_samples() -> int:
 
 
 def _clock(seconds: float) -> str:
+    if not math.isfinite(seconds):
+        return "open"
     total = max(0, round(seconds))
     return f"{total // 60}:{total % 60:02d}"
 
@@ -439,8 +441,8 @@ def journey_command(action: str, name: str | None = None, *, prompt: str | None 
         for j in BUILTIN.values():
             print(f"{j.name:<{width}}  {j.description}")
         for saved_name, journey in saved:
-            minutes = journey.seconds / 60
-            print(f"{saved_name:<{width}}  {len(journey.stages)} stages, {minutes:g} minutes")
+            length = f"{journey.seconds / 60:g} minutes" if math.isfinite(journey.seconds) else "open-ended"
+            print(f"{saved_name:<{width}}  {len(journey.stages)} stages, {length}")
         if store.error:
             print(f"gentle-stream: {store.error}", file=sys.stderr)
         return 0

@@ -155,6 +155,8 @@ Fields and ranges: {ranges}
 The continuous "voice" field controls a wordless choir (0 = off, 1 = full level); use "to": {{"voice": 0.5}}
 to bring it in or out over a stage. It never sings words.
 Curves: {', '.join(CURVES)}. Ends: sustain or release. Stage seconds: 10-14400 each, 43200 total.
+When the request asks to keep going until the listener stops or moves on, a stage may use "seconds": "open" with an
+optional "ramp" (10-14400 seconds, default 120) for its values to reach their targets; it lasts until skipped.
 Return only JSON with version, name, title, description, end, and stages. Each stage has name, seconds, to, and
 optional genre, curve, layers and binaural; to contains fields only.
 Optional "layers" per stage switches parts off or on from that stage: {{"drums": false, "lead": true}};

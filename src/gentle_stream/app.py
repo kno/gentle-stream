@@ -94,7 +94,12 @@ def journey_line(snap: JourneySnapshot | None, into_bar: float = 0.0) -> str:
         return ""
     bpm, target = round(snap.bpm), round(snap.target_bpm)
     tempo = f"{bpm} bpm" if bpm == target else f"{bpm} → {target} bpm"
-    left = "sustaining" if snap.seconds_left is None else f"{format_time(snap.seconds_left - into_bar)} left"
+    if snap.open:              # the stage lasts until the listener moves on
+        left = "open"
+    elif snap.open_ahead:      # a later stage does: no end time yet
+        left = "open-ended"
+    else:
+        left = "sustaining" if snap.seconds_left is None else f"{format_time(snap.seconds_left - into_bar)} left"
     line = (f"Journey: {snap.title} · stage {snap.stage}/{snap.stages} \"{snap.stage_name}\" · "
             f"{round(snap.progress * 100)}% · {tempo} · {left}")
     if snap.override is not None:   # a mood adjusting the journey's fields for the rest of the stage
