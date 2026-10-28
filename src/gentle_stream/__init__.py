@@ -25,7 +25,8 @@ background playback:
   gentle-stream ctl play|pause|toggle|next|stop|status controls it from any terminal
   gentle-stream ctl tempo BPM [--over SECONDS] glides the live tempo (default: 60 seconds)
   gentle-stream ctl glide FIELD=VALUE... [--over SECONDS] glides energy, brightness, space, swing, vinyl,
-  lead_density or bpm in place, without restarting the piece (a new mood or next cancels glides)
+  lead_density, voice (the wordless choir) or bpm in place, without restarting the piece (a new mood or next
+  cancels glides)
   gentle-stream ctl binaural on [--carrier HZ] [--beat HZ] [--level L] fades in an optional binaural texture
   under the music: a carrier - beat/2 tone on the left and carrier + beat/2 on the right (headphones; defaults
   200, 6, 0.05); ctl binaural set --beat 10 [--over SECONDS] glides only the values given; ctl binaural off

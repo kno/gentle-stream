@@ -38,6 +38,7 @@ import numpy as np
 
 from . import genres
 from . import samples as _samples
+from . import vocals
 from .binaural import Binaural, BinauralLayer, glide_seconds
 from .composer import Composer, harmonic_handoff
 from .genres.base import Genre, Master, Piece
@@ -53,7 +54,7 @@ IR_SEED = 1
 RAMP = 0.05   # seconds over which a changed master gain glides to its new value
 # the continuous style fields a live glide may move, with their bounds (as `Style.from_dict` clamps them)
 GLIDE_FIELDS = {"bpm": (50.0, 140.0), "energy": (0.0, 1.0), "brightness": (0.0, 1.0), "space": (0.0, 1.0),
-                "swing": (0.0, 0.3), "vinyl": (0.0, 1.0), "lead_density": (0.0, 1.0)}
+                "swing": (0.0, 0.3), "vinyl": (0.0, 1.0), "lead_density": (0.0, 1.0), "voice": (0.0, 1.0)}
 MAX_GLIDE_SECONDS = 3600.0
 
 
@@ -516,6 +517,8 @@ class Engine:
         if plan.layers & self._masked:
             plan = replace(plan, layers=plan.layers - self._masked)
         incoming.genre.schedule(incoming.piece, plan)
+        if incoming.style.voice > 0:
+            vocals.schedule(incoming.piece, plan, incoming.style.voice)
         incoming.bar += 1
         done, total = self._fade
         g_out, g_in = crossfade_gains(np.clip((done + np.arange(n)) / total, 0.0, 1.0)[:, None])
@@ -530,6 +533,8 @@ class Engine:
             p = replace(p, layers=p.layers - self._masked)
         self.section, self.layers = p.section, p.layers
         self.genre.schedule(self._piece, p)
+        if self.style.voice > 0:   # the wordless choir, in every genre (off: nothing runs, nothing changes)
+            vocals.schedule(self._piece, p, self.style.voice)
 
     def _glide(self, name: str, value: float, n: int, span: int) -> np.ndarray | float:
         """`value`, or an (n, 1) ramp to it over the first `span` samples when it changed since the last bar."""

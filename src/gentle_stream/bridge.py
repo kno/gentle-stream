@@ -48,6 +48,7 @@ Reply with ONLY one JSON object, no prose, with exactly these fields:
 - "vinyl": 0-1 (crackle)
 - "space": 0-1 (room size)
 - "lead_density": 0-1 (how often the melody plays)
+- "voice": 0-1 (a soft wordless "aah" choir under the music; 0 = none, use it only when the request suggests voices)
 
 Genres (lofi is the default: change the genre only when the request suggests another one, by naming it or by a
 style, era, instrument or scene that clearly belongs to it; a request that only adjusts the music keeps the

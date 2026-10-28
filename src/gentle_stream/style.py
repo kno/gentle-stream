@@ -76,6 +76,7 @@ class Style:
     vinyl: float = 0.5         # crackle amount
     space: float = 0.5         # room size/wetness
     lead_density: float = 0.5  # how often the motif plays
+    voice: float = 0.0         # wordless choir level (0 = none); presets saved before it load with 0
 
     @classmethod
     def from_dict(cls, data: dict, base: Style | None = None) -> Style:
@@ -110,6 +111,7 @@ class Style:
             vinyl=_clamp(data.get("vinyl"), 0, 1, b.vinyl),
             space=_clamp(data.get("space"), 0, 1, b.space),
             lead_density=_clamp(data.get("lead_density"), 0, 1, b.lead_density),
+            voice=_clamp(data.get("voice"), 0, 1, b.voice),
         )
 
     def to_dict(self) -> dict:

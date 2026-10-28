@@ -69,7 +69,8 @@ def test_a_constant_style_renders_exactly_as_before_live_glides(label, genre):
 
 # ------------------------------------------------------------ engine glides
 def test_glide_fields_are_the_continuous_style_fields():
-    assert set(GLIDE_FIELDS) == {"bpm", "energy", "brightness", "space", "swing", "vinyl", "lead_density"}
+    assert set(GLIDE_FIELDS) == {"bpm", "energy", "brightness", "space", "swing", "vinyl", "lead_density",
+                                 "voice"}
 
 
 def test_a_glide_moves_every_named_field_in_place_without_a_new_piece():
