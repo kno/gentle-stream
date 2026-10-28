@@ -25,9 +25,20 @@ melody."
 | T2 PM-023 sampled choir | S2 | inline | `feat/sampled-choir` | done (`226de88`; separate cleanup `ca1601f`) |
 | T3 PM-024 vocals in journeys and status | S3 | inline | `feat/vocal-status` | done (PM-024 work-unit commit; base `226de88`) |
 | T4 PM-025 wordless vocal melody | S4 | inline | `feat/vocal-melody` | done (PM-025 work-unit commit; base `d61af53`) |
-| T5 PM-026 vocal harmonies | S5 | inline | `feat/vocal-harmonies` | pending |
+| T5 PM-026 vocal harmonies | S5 | inline | `feat/vocal-harmonies` | done (PM-026 work-unit commit; base `0a50b86`) |
 
 ## Log
+
+- L16: Full non-slow suite job-11 exited 0: 1063 passed, 3 deselected. T5 verified. M7 implemented; pending: the maintainer's listening pass (choir pad, vocal melody, harmonies) and pushing the five M7 branches.
+
+- L15: PM-026 decisions: "high energy" = plan energy >= 0.7 for one part (the composer's COUNTER_ENERGY) and >= 0.9 for
+  two (measured: style energy 0.5 gives B 0.80 and B' 0.95; 0.2 never reaches it). Each harmony note keeps the melody
+  rhythm and takes the chord tone below the voice above at the first interval in (3, 4, 8, 9, 5, 7, 6, ...), never the
+  melody's pitch class. This follows the melody in parallel thirds/sixths instead of reusing `Composer._nearest` (the
+  roadmap's hint), because nearest-pitch search can pick a second or a tone above the melody. Parts panned -0.45/+0.45,
+  0.55x the melody gain, high-passed at 180 Hz (roadmap risk: muddiness). RED: ImportError (no harmony_parts). GREEN:
+  16 harmony tests + 91 across the vocal files. Mutations (non-chord tones, melody pitch class, part cap, high-pass)
+  each fail tests; the high-pass mutation first survived, so a filter test was added. Ruff and Pyright clean.
 
 - L14: Full non-slow suite job-10 exited 0: 1047 passed, 3 deselected (slow flagship tests; the flagship journey sets no voice). T4 verified; PM-026 next. Not done: manual listening of the vocal melody (roadmap demo `ctl glide voice=0.8` on lo-fi).
 

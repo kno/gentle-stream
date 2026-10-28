@@ -20,10 +20,10 @@ from functools import lru_cache
 
 import numpy as np
 
-from .composer import BarPlan, Chord
+from .composer import BarPlan, Chord, Note
 from .genres.base import Piece
 from .samples import Program, SampleInstruments
-from .synth import SR, adsr, bp, mtof, osc
+from .synth import SR, adsr, bp, hp, mtof, osc
 
 # vowel -> (F1, F2, F3) in Hz; each formant's band-pass width and gain below
 FORMANTS = {"a": (800, 1200, 2500), "o": (500, 850, 2400), "u": (350, 650, 2300)}
@@ -37,6 +37,15 @@ PANS = (-0.35, 0.0, 0.35)
 SYNTH_GENRES = ("synthwave", "electro", "electrohouse", "dubstep", "chiptune")
 CHOIR_AAHS, VOICE_OOHS, SYNTH_VOICE = 52, 53, 54   # General MIDI programs, 0-based
 VELOCITY = 0.8
+MELODY_PAN = 0.1
+# PM-026: harmony parts under the vocal melody, one from ONE_PART_ENERGY, two from TWO_PART_ENERGY (never more)
+ONE_PART_ENERGY = 0.7       # where the composer brings in the counter-melody too (`composer.COUNTER_ENERGY`)
+TWO_PART_ENERGY = 0.9
+HARMONY_PANS = (-0.45, 0.45)
+HARMONY_GAIN = 0.55         # each part relative to the melody
+HARMONY_HIGHPASS = 180      # Hz: keeps two low parts from clouding the mix
+# semitones below the voice above: thirds, then sixths, then fourths/fifths; the rest only as a last resort
+BELOW = (3, 4, 8, 9, 5, 7, 6, 10, 11, 2, 1)
 
 
 @lru_cache(maxsize=512)
@@ -158,18 +167,64 @@ def melodic_note(midi: int, seconds: float, vowel: str, previous: int | None, ge
     return x * env
 
 
-def _melody(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstruments | None) -> None:
-    beat = 60 / piece.style.bpm
-    vowel = ("o", "u")[(plan.section_bar // 4) % 2]
-    previous = piece.state.get("vocal_previous")
+def _chord_pcs(plan: BarPlan, ton: int, beat: float) -> set[int]:
+    chord = plan.passing if plan.passing is not None and beat >= 2 else plan.chord
+    return {(ton + plan.key_offset + t) % 12 for t in chord.tones[:4]}
+
+
+def _below(midi: int, pcs: set[int], avoid: set[int]) -> int:
+    """The chord tone below `midi` at the most consonant interval in `BELOW`, never a pitch class in `avoid`."""
+    for d in BELOW:
+        if (midi - d) % 12 in pcs and (midi - d) % 12 not in avoid:
+            return midi - d
+    return midi - 3   # unreachable: a chord's tones leave no gap of a whole octave
+
+
+def harmony_parts(plan: BarPlan, ton: int, limit: int = 2) -> list[tuple[Note, ...]]:
+    """The harmony lines under `plan`'s melody: none below ONE_PART_ENERGY, one, or two from TWO_PART_ENERGY.
+
+    Each note keeps the melody note's rhythm and is a chord tone of the chord sounding at its beat, a third or
+    sixth below the voice above when the chord has one, so the parts move with the melody. A part never takes the
+    melody's pitch class, so there is no unison or octave with it and no parallel octaves."""
+    if not plan.melody or plan.energy < ONE_PART_ENERGY:
+        return []
+    count = min(limit, 2 if plan.energy >= TWO_PART_ENERGY else 1)
+    parts: list[list[Note]] = [[] for _ in range(count)]
     for note in plan.melody:
-        start = plan.bar * 4 + note.beat
+        pcs, above = _chord_pcs(plan, ton, note.beat), note.midi
+        avoid = {note.midi % 12}
+        for part in parts:
+            above = _below(above, pcs, avoid)
+            avoid.add(above % 12)
+            part.append(Note(note.beat, above, note.length))
+    return [tuple(part) for part in parts]
+
+
+def _sing(piece: Piece, line, key: str, vowel: str, bar: int, pan: float, gain: float,
+          sampled: SampleInstruments | None, highpass: int = 0) -> None:
+    """One vocal line in the bar, gliding between connected close notes (state kept under `key`)."""
+    beat = 60 / piece.style.bpm
+    previous = piece.state.get(key)
+    for note in line:
+        start = bar * 4 + note.beat
         connected = previous is not None and abs(previous[1] - start) < 1e-6
         midi = previous[0] if previous is not None and connected else None
         audio = melodic_note(note.midi, note.length * beat, vowel, midi, piece.style.genre, sampled, piece.sr)
-        piece.add(audio, note.beat * beat, 0.1, 0.2 * voice)
+        if highpass:
+            audio = np.asarray(hp(audio, highpass, piece.sr))
+        piece.add(audio, note.beat * beat, pan, gain)
         previous = (note.midi, start + note.length)
-    piece.state["vocal_previous"] = previous if plan.melody else None
+    piece.state[key] = previous if line else None
+
+
+def _melody(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstruments | None) -> None:
+    vowel = ("o", "u")[(plan.section_bar // 4) % 2]
+    _sing(piece, plan.melody, "vocal_previous", vowel, plan.bar, MELODY_PAN, 0.2 * voice, sampled)
+    parts = harmony_parts(plan, piece.ton)
+    for i, pan in enumerate(HARMONY_PANS):
+        line = parts[i] if i < len(parts) else ()
+        _sing(piece, line, f"vocal_harmony_{i}", vowel, plan.bar, pan, 0.2 * voice * HARMONY_GAIN, sampled,
+              HARMONY_HIGHPASS)
 
 
 def schedule(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstruments | None = None) -> None:
@@ -177,7 +232,8 @@ def schedule(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstrumen
     if voice >= 0.5 and "lead" in plan.layers:
         _melody(piece, plan, voice, sampled)
         return
-    piece.state.pop("vocal_previous", None)
+    for key in ("vocal_previous", *(f"vocal_harmony_{i}" for i in range(len(HARMONY_PANS)))):
+        piece.state.pop(key, None)   # the pad breaks the line: the next melody starts without a glide
     notes, piece.state["choir_center"] = choir_notes(plan, piece.ton, piece.state.get("choir_center"))
     vowel = "a" if plan.section in ("A", "B", "A'", "B'") else "o"
     beat = 60.0 / piece.style.bpm

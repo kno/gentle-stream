@@ -234,6 +234,8 @@ Journeys can bring the choir in and out with a stage target such as `"to": {"voi
 
 At `voice >= 0.5`, when the lead layer plays, the singer replaces the genre's instrumental lead with the composer's wordless melody. Connected notes up to four semitones apart glide over 90 ms; larger intervals and notes after rests start at their target pitch. Short overlapping releases provide legato, and vibrato enters after 300 ms and grows on long notes. The vowel alternates between "o" and "u" every four bars within a section. Sampled melodies retain the soundfont timbre through variable-rate playback; without samples the same articulation uses a procedural formant voice.
 
+At high section energy the singer is doubled by harmony parts: one from energy 0.7 (where the counter-melody also enters), two from 0.9, never more. Each harmony note keeps the melody's rhythm and is a chord tone of the chord sounding at its beat, a third or sixth below the voice above when the chord offers one, so the parts move with the melody and never double it at the unison or octave. The parts sit left and right of the melody, quieter, and high-passed at 180 Hz so they do not cloud the mix.
+
 Below that threshold, or when no lead layer plays, the choir remains a pad. Its vowel follows the song form: "aah" where the melody plays, "ooh" in the intro, breakdown and release. Each procedural voice is a band-limited source through three vowel formants (around 800, 1200 and 2500 Hz for "aah"), with a vibrato that enters after the onset and a little breath. With `voice` at 0 nothing of it runs, so the music is exactly as before; saved prompts from before it load with `voice` 0.
 
 <div align="right"><a href="#top">Back to top</a></div>
