@@ -330,6 +330,9 @@ class Engine:
         self.bar = voice.bar
         self.section = self.composer.plan(self.bar).section
 
+    # whether a voice that can sing melodies is available (an M8 voice pack); the GM and procedural voices only pad
+    melodic_vocals: bool = False
+
     @property
     def vocals_backend(self) -> str:
         """Who sings the choir: "sampled" (FluidR3_GM) when the soundfont is in use, else "procedural"."""
@@ -521,9 +524,9 @@ class Engine:
         plan = incoming.composer.plan(incoming.bar)
         if plan.layers & self._masked:
             plan = replace(plan, layers=plan.layers - self._masked)
-        incoming.genre.schedule(incoming.piece, vocals.instrumental_plan(plan, incoming.style.voice))
+        incoming.genre.schedule(incoming.piece, vocals.instrumental_plan(plan, incoming.style.voice, self.melodic_vocals))
         if incoming.style.voice > 0:
-            vocals.schedule(incoming.piece, plan, incoming.style.voice, self._sampled)
+            vocals.schedule(incoming.piece, plan, incoming.style.voice, self._sampled, self.melodic_vocals)
         incoming.bar += 1
         done, total = self._fade
         g_out, g_in = crossfade_gains(np.clip((done + np.arange(n)) / total, 0.0, 1.0)[:, None])
@@ -537,9 +540,9 @@ class Engine:
         if p.layers & self._masked:
             p = replace(p, layers=p.layers - self._masked)
         self.section, self.layers = p.section, p.layers
-        self.genre.schedule(self._piece, vocals.instrumental_plan(p, self.style.voice))
+        self.genre.schedule(self._piece, vocals.instrumental_plan(p, self.style.voice, self.melodic_vocals))
         if self.style.voice > 0:   # the wordless choir, in every genre (off: nothing runs, nothing changes)
-            vocals.schedule(self._piece, p, self.style.voice, self._sampled)
+            vocals.schedule(self._piece, p, self.style.voice, self._sampled, self.melodic_vocals)
 
     def _glide(self, name: str, value: float, n: int, span: int) -> np.ndarray | float:
         """`value`, or an (n, 1) ramp to it over the first `span` samples when it changed since the last bar."""

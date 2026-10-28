@@ -29,6 +29,8 @@ melody."
 
 ## Log
 
+- L21: PM-025 gate (on feat/vocal-melody): `Engine.melodic_vocals` (False until an M8 voice pack provides a melodic voice) is passed to `vocals.instrumental_plan` and `vocals.schedule`; without it the genre keeps its lead and the choir pads at any `voice`. RED 5 failed -> GREEN 82 passed across the vocal test files; the PM-023 level test's melody case now enables the melodic voice explicitly (its melody-level mutation still fails a test). Removing the gate fails 3 tests. README states that melody mode waits for a voice pack.
+
 - L14: Full non-slow suite job-10 exited 0: 1047 passed, 3 deselected (slow flagship tests; the flagship journey sets no voice). T4 verified; PM-026 next. Not done: manual listening of the vocal melody (roadmap demo `ctl glide voice=0.8` on lo-fi).
 
 - L13: Full non-slow suite job-9 exited 1: 1042 passed, 2 failed. The PM-023 level test ran at voice 0.6, which PM-025 turns into melody mode; sampled melody was up to 4.7 dB quieter (procedural notes were peak-normalised, sampled ones scaled by the pad reference RMS). Test split into pad (0.4) and melody (0.6) cases; RED 2 failed (lofi, ambient melody). Fix: both melodic backends scaled to one `melody_rms` reference after the glide. GREEN 79 passed across the vocal test files; measured melody differences -2.6..+1.7 dB, pad unchanged (-0.2..-1.6 dB). Removed an unused `noqa` I added in PM-023. Ruff and Pyright clean on touched files. Remaining pi-lens reports (bridge.py I001, client.py SIM105, engine.py I001) exist on lines this work did not change and the project ruff config does not flag them; left alone. Full suite job-10 running.

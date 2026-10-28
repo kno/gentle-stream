@@ -37,6 +37,10 @@ PANS = (-0.35, 0.0, 0.35)
 SYNTH_GENRES = ("synthwave", "electro", "electrohouse", "dubstep", "chiptune")
 CHOIR_AAHS, VOICE_OOHS, SYNTH_VOICE = 52, 53, 54   # General MIDI programs, 0-based
 VELOCITY = 0.8
+# PM-025: the vocal melody needs a voice that sings melodies convincingly. The General MIDI choirs and the
+# procedural formant voice do not (listening review: metallic, flute-like), so melody mode waits for an M8 voice
+# pack: until the engine reports a melodic voice, the choir is a pad at any level.
+MELODY_VOICE = 0.5
 
 
 @lru_cache(maxsize=512)
@@ -105,9 +109,12 @@ def choir_notes(plan: BarPlan, ton: int, center: float | None) -> tuple[list[tup
     return notes, center
 
 
-def instrumental_plan(plan: BarPlan, voice: float) -> BarPlan:
-    """At melodic vocal levels, reserve the lead layer for the singer, not the genre instrument."""
-    return replace(plan, layers=plan.layers - {"lead"}) if voice >= 0.5 and "lead" in plan.layers else plan
+def instrumental_plan(plan: BarPlan, voice: float, melodic: bool = False) -> BarPlan:
+    """With a melodic voice at melodic vocal levels, reserve the lead layer for the singer, not the genre's
+    instrument. Without one (`melodic` False) the genre keeps its lead at any `voice`."""
+    if melodic and voice >= MELODY_VOICE and "lead" in plan.layers:
+        return replace(plan, layers=plan.layers - {"lead"})
+    return plan
 
 
 def _formants(source: np.ndarray, vowel: str, sr: int) -> np.ndarray:
@@ -172,9 +179,11 @@ def _melody(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstrument
     piece.state["vocal_previous"] = previous if plan.melody else None
 
 
-def schedule(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstruments | None = None) -> None:
-    """Sing the melody at voice >= 0.5 when lead plays; otherwise retain the choir pad."""
-    if voice >= 0.5 and "lead" in plan.layers:
+def schedule(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstruments | None = None,
+             melodic: bool = False) -> None:
+    """Sing the melody when a melodic voice is available (`melodic`), `voice` >= MELODY_VOICE and the lead plays;
+    otherwise sing the choir pad."""
+    if melodic and voice >= MELODY_VOICE and "lead" in plan.layers:
         _melody(piece, plan, voice, sampled)
         return
     piece.state.pop("vocal_previous", None)

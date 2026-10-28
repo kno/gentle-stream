@@ -130,20 +130,23 @@ def test_acoustic_genres_sing_choir_aahs_or_voice_oohs_and_synth_genres_synth_vo
     assert choir_program(genre, vowel).program == program
 
 
-def choir_level(genre, sampled, voice=0.6, bars=12):
-    """RMS (dB) of the choir alone: the same engine with and without it, subtracted."""
+def choir_level(genre, sampled, voice=0.6, bars=12, melodic=False):
+    """RMS (dB) of the choir alone: the same engine with and without it, subtracted. `melodic` enables the vocal
+    melody (PM-025), which otherwise waits for an M8 voice pack."""
     with_choir = Engine(Style(genre=genre, voice=voice), seed=3, samples=sampled)
     without = Engine(Style(genre=genre, voice=0.0), seed=3, samples=sampled)
+    with_choir.melodic_vocals = without.melodic_vocals = melodic
     x = np.concatenate([with_choir.render_bar().astype(float) - without.render_bar().astype(float)
                         for _ in range(bars)])
     return 20 * np.log10(np.sqrt(np.mean(np.square(x))))
 
 
 @needs_sf2
-@pytest.mark.parametrize("voice", [0.4, 0.6], ids=["pad", "melody"])   # melody mode from voice 0.5 (PM-025)
+@pytest.mark.parametrize("voice, melodic", [(0.4, False), (0.6, True)], ids=["pad", "melody"])
 @pytest.mark.parametrize("genre", ["lofi", "ambient", "synthwave"])
-def test_the_sampled_choir_matches_the_procedural_level_within_3_db(genre, voice):
-    assert abs(choir_level(genre, True, voice) - choir_level(genre, False, voice)) <= 3.0
+def test_the_sampled_choir_matches_the_procedural_level_within_3_db(genre, voice, melodic):
+    sampled = choir_level(genre, True, voice, melodic=melodic)
+    assert abs(sampled - choir_level(genre, False, voice, melodic=melodic)) <= 3.0
 
 
 @needs_sf2

@@ -55,23 +55,51 @@ def test_close_notes_slide_then_reach_target(backend, interval):
     assert abs(1200 * np.log2(late / mtof(midi))) < 30
 
 
-def test_vocal_mode_replaces_only_the_genre_lead_at_threshold():
+def test_vocal_mode_replaces_only_the_genre_lead_at_threshold_with_a_melodic_voice():
     plan = Composer(Style(), 3, 50).plan(8)
     plan = replace(plan, layers=frozenset({"lead", "bass"}), melody=(Note(0, 64, 1),))
-    assert vocals.instrumental_plan(plan, 0.499) is plan
-    changed = vocals.instrumental_plan(plan, 0.5)
+    assert vocals.instrumental_plan(plan, 0.499, melodic=True) is plan
+    changed = vocals.instrumental_plan(plan, 0.5, melodic=True)
     assert changed.layers == frozenset({"bass"})
     assert changed.melody == plan.melody and changed.bass == plan.bass
 
 
-def test_engine_routes_original_melody_to_vocals_but_not_genre(monkeypatch):
+def test_without_a_melodic_voice_the_genre_keeps_its_lead_at_any_voice():
+    plan = replace(Composer(Style(), 3, 50).plan(8), layers=frozenset({"lead", "bass"}), melody=(Note(0, 64, 1),))
+    assert vocals.instrumental_plan(plan, 1.0) is plan
+
+
+def engine_with(plan_layers, monkeypatch, melodic):
     engine = Engine(Style(voice=0.8), seed=3, samples=False)
-    plan = replace(engine.composer.plan(0), layers=frozenset({"lead"}), melody=(Note(0, 64, 1),))
+    engine.melodic_vocals = melodic
+    plan = replace(engine.composer.plan(0), layers=plan_layers, melody=(Note(0, 64, 1),))
     monkeypatch.setattr(engine.composer, "plan", lambda bar: plan)
-    received = []
+    received, sung = [], []
     monkeypatch.setattr(type(engine.genre), "schedule", lambda self, piece, p: received.append(p))
-    sung = []
-    monkeypatch.setattr(vocals, "schedule", lambda piece, p, *args: sung.append(p))
+    monkeypatch.setattr(vocals, "schedule", lambda piece, p, voice, sampled, melodic: sung.append((p, melodic)))
     engine.render_bar()
+    return plan, received, sung
+
+
+def test_engine_routes_original_melody_to_vocals_but_not_genre_with_a_melodic_voice(monkeypatch):
+    plan, received, sung = engine_with(frozenset({"lead"}), monkeypatch, melodic=True)
     assert "lead" not in received[0].layers
-    assert sung[0] == plan
+    assert sung[0] == (plan, True)
+
+
+def test_until_a_voice_pack_provides_a_melodic_voice_the_engine_keeps_the_lead_and_the_choir_pads(monkeypatch):
+    assert Engine(Style(voice=0.8), seed=3, samples=False).melodic_vocals is False   # no M8 voice pack yet
+    plan, received, sung = engine_with(frozenset({"lead"}), monkeypatch, melodic=False)
+    assert received[0] == plan
+    assert sung[0] == (plan, False)
+
+
+def test_without_a_melodic_voice_the_choir_schedules_the_pad_even_at_high_voice(monkeypatch):
+    from gentle_stream.genres.base import Piece
+
+    monkeypatch.setattr(vocals, "_melody", lambda *a: pytest.fail("the vocal melody ran"))
+    style = Style(voice=0.9)
+    piece = Piece(style, np.random.default_rng(0), None, 50, SR, np.zeros((SR * 8, 2)))
+    plan = replace(Composer(style, 3, 50).plan(8), layers=frozenset({"lead"}))
+    vocals.schedule(piece, plan, 0.9)
+    assert "choir_center" in piece.state                # the pad voiced its chord
