@@ -521,7 +521,7 @@ class Engine:
         plan = incoming.composer.plan(incoming.bar)
         if plan.layers & self._masked:
             plan = replace(plan, layers=plan.layers - self._masked)
-        incoming.genre.schedule(incoming.piece, plan)
+        incoming.genre.schedule(incoming.piece, vocals.instrumental_plan(plan, incoming.style.voice))
         if incoming.style.voice > 0:
             vocals.schedule(incoming.piece, plan, incoming.style.voice, self._sampled)
         incoming.bar += 1
@@ -537,7 +537,7 @@ class Engine:
         if p.layers & self._masked:
             p = replace(p, layers=p.layers - self._masked)
         self.section, self.layers = p.section, p.layers
-        self.genre.schedule(self._piece, p)
+        self.genre.schedule(self._piece, vocals.instrumental_plan(p, self.style.voice))
         if self.style.voice > 0:   # the wordless choir, in every genre (off: nothing runs, nothing changes)
             vocals.schedule(self._piece, p, self.style.voice, self._sampled)
 

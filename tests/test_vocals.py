@@ -5,7 +5,7 @@ import time
 import numpy as np
 import pytest
 
-from gentle_stream import genres
+from gentle_stream import genres, samples
 from gentle_stream.composer import Composer
 from gentle_stream.engine import GLIDE_FIELDS, SR, Engine
 from gentle_stream.presets import PresetStore
@@ -114,8 +114,6 @@ def test_the_mood_prompt_offers_the_voice_field():
 
 
 # ------------------------------------------------------------ PM-023: the sampled choir
-from gentle_stream import samples  # noqa: E402
-
 REAL = samples.soundfont_path()
 needs_sf2 = pytest.mark.skipif(REAL is None or samples.load_renderer(REAL) is None,
                                reason="FluidR3_GM or FluidSynth not installed (gentle-stream setup-samples)")
@@ -142,9 +140,10 @@ def choir_level(genre, sampled, voice=0.6, bars=12):
 
 
 @needs_sf2
+@pytest.mark.parametrize("voice", [0.4, 0.6], ids=["pad", "melody"])   # melody mode from voice 0.5 (PM-025)
 @pytest.mark.parametrize("genre", ["lofi", "ambient", "synthwave"])
-def test_the_sampled_choir_matches_the_procedural_level_within_3_db(genre):
-    assert abs(choir_level(genre, True) - choir_level(genre, False)) <= 3.0
+def test_the_sampled_choir_matches_the_procedural_level_within_3_db(genre, voice):
+    assert abs(choir_level(genre, True, voice) - choir_level(genre, False, voice)) <= 3.0
 
 
 @needs_sf2

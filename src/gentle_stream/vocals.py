@@ -15,6 +15,7 @@ the breakdown and the release.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from functools import lru_cache
 
 import numpy as np
@@ -104,8 +105,79 @@ def choir_notes(plan: BarPlan, ton: int, center: float | None) -> tuple[list[tup
     return notes, center
 
 
+def instrumental_plan(plan: BarPlan, voice: float) -> BarPlan:
+    """At melodic vocal levels, reserve the lead layer for the singer, not the genre instrument."""
+    return replace(plan, layers=plan.layers - {"lead"}) if voice >= 0.5 and "lead" in plan.layers else plan
+
+
+def _formants(source: np.ndarray, vowel: str, sr: int) -> np.ndarray:
+    x = np.zeros(len(source))
+    for f, w, g in zip(FORMANTS[vowel], WIDTHS, GAINS, strict=True):
+        x += g * np.asarray(bp(source, f - w / 2, f + w / 2, sr))
+    return x
+
+
+def _rms(x: np.ndarray) -> float:
+    return float(np.sqrt(np.mean(np.square(x)))) if len(x) else 0.0
+
+
+@lru_cache(maxsize=8)
+def melody_rms(sr: int = SR) -> float:
+    """RMS of the procedural melodic reference note (middle C, 1 s, "o") at peak 1: the level every melodic note
+    is scaled to, sampled or procedural, so both backends sing the melody equally loud."""
+    x = _formants(osc("saw", mtof(60), sr, sr), "o", sr)
+    return _rms(x / max(float(np.max(np.abs(x))), 1e-9))
+
+
+def melodic_note(midi: int, seconds: float, vowel: str, previous: int | None, genre: str,
+                 sampled: SampleInstruments | None = None, sr: int = SR) -> np.ndarray:
+    """An articulated vowel: 90 ms close-note glide, delayed 18-cent vibrato, and a short legato release.
+
+    Sampled voices retain their soundfont timbre via variable-rate playback of an isolated sustained note.
+    No pitch-bend state is written to the shared FluidSynth renderer or its cached arrays. Either backend is
+    scaled to `melody_rms` over the note after its glide, so the level does not depend on the backend.
+    """
+    tail = 0.06
+    n = int((seconds + tail) * sr)
+    t = np.arange(n) / sr
+    cents = 18 * np.clip((t - 0.3) / 0.5, 0, 1) * np.sin(2 * np.pi * 5.2 * t)
+    if previous is not None and 0 < abs(previous - midi) <= 4:
+        cents += (previous - midi) * 100 * np.clip(1 - t / 0.09, 0, 1)
+    rate = 2 ** (cents / 1200)
+    if sampled is not None:
+        # Sustain beyond the largest possible playback offset; our envelope owns note-off.
+        source = sampled.play(choir_program(genre, vowel, sr), midi, (seconds + tail) * 1.3 + 0.1, VELOCITY)
+        positions = np.concatenate(([0.0], np.cumsum(rate[:-1])))
+        x = np.interp(positions, np.arange(len(source)), source)
+    else:
+        x = _formants(osc("saw", mtof(midi) * rate, n, sr), vowel, sr)
+    steady = x[int(0.1 * sr):] if n > int(0.2 * sr) else x
+    x = x * (melody_rms(sr) / max(_rms(steady), 1e-9))
+    attack = 0.01 if previous is not None else 0.04
+    env = adsr(n, sr, attack=min(attack, seconds / 3), decay=0, sustain=1, release=tail, hold=seconds)
+    return x * env
+
+
+def _melody(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstruments | None) -> None:
+    beat = 60 / piece.style.bpm
+    vowel = ("o", "u")[(plan.section_bar // 4) % 2]
+    previous = piece.state.get("vocal_previous")
+    for note in plan.melody:
+        start = plan.bar * 4 + note.beat
+        connected = previous is not None and abs(previous[1] - start) < 1e-6
+        midi = previous[0] if previous is not None and connected else None
+        audio = melodic_note(note.midi, note.length * beat, vowel, midi, piece.style.genre, sampled, piece.sr)
+        piece.add(audio, note.beat * beat, 0.1, 0.2 * voice)
+        previous = (note.midi, start + note.length)
+    piece.state["vocal_previous"] = previous if plan.melody else None
+
+
 def schedule(piece: Piece, plan: BarPlan, voice: float, sampled: SampleInstruments | None = None) -> None:
-    """Add the choir's notes for `plan`'s bar to `piece` at `voice` (0-1), sung by `sampled` when it is there."""
+    """Sing the melody at voice >= 0.5 when lead plays; otherwise retain the choir pad."""
+    if voice >= 0.5 and "lead" in plan.layers:
+        _melody(piece, plan, voice, sampled)
+        return
+    piece.state.pop("vocal_previous", None)
     notes, piece.state["choir_center"] = choir_notes(plan, piece.ton, piece.state.get("choir_center"))
     vowel = "a" if plan.section in ("A", "B", "A'", "B'") else "o"
     beat = 60.0 / piece.style.bpm

@@ -24,10 +24,18 @@ melody."
 | T1 PM-022 procedural wordless choir | S1 | inline | `feat/wordless-choir` | done (PM-022 commit) |
 | T2 PM-023 sampled choir | S2 | inline | `feat/sampled-choir` | done (`226de88`; separate cleanup `ca1601f`) |
 | T3 PM-024 vocals in journeys and status | S3 | inline | `feat/vocal-status` | done (PM-024 work-unit commit; base `226de88`) |
-| T4 PM-025 wordless vocal melody | S4 | inline | `feat/vocal-melody` | pending |
+| T4 PM-025 wordless vocal melody | S4 | inline | `feat/vocal-melody` | done (PM-025 work-unit commit; base `d61af53`) |
 | T5 PM-026 vocal harmonies | S5 | inline | `feat/vocal-harmonies` | pending |
 
 ## Log
+
+- L14: Full non-slow suite job-10 exited 0: 1047 passed, 3 deselected (slow flagship tests; the flagship journey sets no voice). T4 verified; PM-026 next. Not done: manual listening of the vocal melody (roadmap demo `ctl glide voice=0.8` on lo-fi).
+
+- L13: Full non-slow suite job-9 exited 1: 1042 passed, 2 failed. The PM-023 level test ran at voice 0.6, which PM-025 turns into melody mode; sampled melody was up to 4.7 dB quieter (procedural notes were peak-normalised, sampled ones scaled by the pad reference RMS). Test split into pad (0.4) and melody (0.6) cases; RED 2 failed (lofi, ambient melody). Fix: both melodic backends scaled to one `melody_rms` reference after the glide. GREEN 79 passed across the vocal test files; measured melody differences -2.6..+1.7 dB, pad unchanged (-0.2..-1.6 dB). Removed an unused `noqa` I added in PM-023. Ruff and Pyright clean on touched files. Remaining pi-lens reports (bridge.py I001, client.py SIM105, engine.py I001) exist on lines this work did not change and the project ruff config does not flag them; left alone. Full suite job-10 running.
+
+- L12: PM-025 RED: 20 failed before implementation. GREEN: 20 passed on both sampled and procedural paths (autocorrelation at note centres <30 cents, close-note pitch slides, threshold and engine routing); Pyright clean, fresh seven-path LSP probe clean. Added 90 ms variable-rate sampled portamento, procedural equivalent, delayed vibrato, connected-note state, four-bar vowel choice, and lead masking on outgoing/incoming engine paths. README documents the requested behavior change. Full non-slow suite job-9 running; no completion or commit yet.
+
+- L11: User selected "1" for PM-025 backend: sampled when available, procedural fallback, with pitch processing. Preserve the sampled choir timbre for melody; do not silently switch sampled melody to procedural. PM-025 replaces the genre lead at voice >= 0.5 when that layer plays, with 60–120 ms portamento for close connected notes, delayed vibrato and phrase vowels. Work-unit base: d61af53.
 
 - L10: PM-024 full non-slow suite job-6 exited 0: 1024 passed, 3 deselected. Eight-path LSP clean and three focused tests passed. Native assessment remains unavailable (package-local-binary-missing), not approved. Work-unit review boundary is 226de88..HEAD, not the accumulated stack. T3 verified; PM-025 next.
 
