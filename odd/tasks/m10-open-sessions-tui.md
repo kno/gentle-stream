@@ -140,3 +140,4 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
   after strengthening two tests (procedural only changes bytes with a soundfont, so a spy checks the options; the
   playing style is now a non-default one). README: parity table and the `w` row; --help lists `w`.
 - L22: PM-044 suite job-34: 1424 passed, 3 deselected, 0 test daemons; test_tui_render.py re-run after a lint-only edit. T9 verified; M10 implementation complete (slow tests next).
+- L23: Slow tests job-35: 3 passed, 0 test daemons. M10 closed. The whole stack is linear from origin/main; feat/offline-render, feat/journey-genre-steps and feat/tui-journey-picker add no commits over their parent (no PR of their own).
