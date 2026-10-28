@@ -22,7 +22,7 @@ time during it; no clicks at either end."
 | Task | Specs | Route | Branch | Commit |
 | :--- | :--- | :--- | :--- | :--- |
 | T1 PM-016 harmonic handoff | S1 | inline | `feat/harmonic-handoff` | done (PM-016 commit) |
-| T2 PM-017 motif across stages | S2 | inline | `feat/motif-continuity` | pending |
+| T2 PM-017 motif across stages | S2 | inline | `feat/motif-continuity` | done (PM-017 commit) |
 | T3 PM-018 layer entrances | S3 | inline | `feat/stage-layers` | pending |
 | T4 PM-019 drum ramp | S4 | inline | `feat/drum-ramp` | pending |
 | T5 PM-020 two-genre crossfade | S5 | inline | `feat/genre-crossfade` | pending |
@@ -38,3 +38,7 @@ time during it; no clicks at either end."
   relative collection, pivot B7 before C lydian -> E minor, supported mode keeps D minor with its pivot, no-journey plans
   unchanged). Mutation (pivot disabled) -> 2 RED. Full suite 885 passed, 27 skipped, 6 known daemon teardown errors;
   pyright clean. Not done: the roadmap's before/after WAV listening note (needs the maintainer's ears).
+- L4: T2 evidence: RED 6 failed (next-keeps-fresh pinned green) -> green; default Composer plans unchanged and golden
+  hashes pass; head carried in scale steps (realised in E minor), augmented x2 above a 1.5 tempo ratio, kept through
+  later cycles, carried by a journey genre step. Full suite 892 passed, 27 skipped, 5 known daemon teardown errors;
+  pyright clean. Native review assess unavailable (package-local binary missing).

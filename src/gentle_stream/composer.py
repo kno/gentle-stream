@@ -30,6 +30,7 @@ ENERGY = {"intro": .3, "A": .55, "B": .8, "A'": .62, "breakdown": .25, "B'": .95
 MAIN = ("A", "B", "A'", "B'", "release")   # sections that carry the melody and close on the tonic
 COUNTER_ENERGY = 0.7
 LIFT_CHANCE = 0.5
+AUGMENT_RATIO = 1.5   # a carried motif head plays at half speed when the new tempo is this much faster
 # cadence chords per mode: (pre-dominant, dominant) scale degrees; the dominant resolves to the tonic
 CADENCES = {"minor": (4, 5), "major": (4, 5), "dorian": (4, 5), "phrygian": (7, 2), "lydian": (5, 2),
             "mixolydian": (4, 7)}
@@ -139,14 +140,17 @@ class _Bar:
 class Composer:
     def __init__(self, style: Style, seed: int, ton: int,
                  chord_hook: Callable[[Chord, tuple[int, ...]], Chord] | None = None,
-                 skip_intro: bool = False):
+                 skip_intro: bool = False, motif: tuple | None = None, tempo_ratio: float = 1.0):
+        """`motif` is the head of the previous piece's motif (`head`), carried across a genre step: it opens this
+        piece's motif, in scale steps, so it sounds in the new key; at a new tempo more than AUGMENT_RATIO times
+        faster it is augmented (twice as long). Without it the piece invents its own."""
         self.style, self.ton = style, ton
         self.chord_hook = chord_hook
         self.skip_intro = skip_intro
         self.rng = np.random.default_rng([seed, 0xC0])
         self.scale_iv = MODES[style.mode]
         self.ninth = {d: bool(self.rng.random() < 0.55) for d in range(1, 8)}
-        self.motif = self._make_motif()
+        self.motif = self._make_motif() if motif is None else self._carry(motif, tempo_ratio)
         self.anchor = self._anchor()
         self.prog_b: tuple[int, ...] | None = None
         self.cycle = 0
@@ -273,6 +277,18 @@ class Composer:
                     d, leap = 3, True
                 step = int(np.clip(step + d, -5, 5))
         return tuple(out)
+
+    @property
+    def head(self) -> tuple:
+        """The first bar of the motif: what a genre step carries into the next piece."""
+        return tuple(note for note in self.motif if note[0] < 4)
+
+    def _carry(self, head: tuple, tempo_ratio: float) -> tuple:
+        """A motif opening with the carried `head` and a fresh tail (or the head alone, augmented over both bars)."""
+        if tempo_ratio > AUGMENT_RATIO:
+            return tuple((beat * 2, step, length * 2) for beat, step, length in head)
+        rh = RHYTHMS[int(self.rng.integers(len(RHYTHMS)))]
+        return head + self._line(((1, rh),), head[-1][1] - 1)
 
     def _develop(self, motif):
         """Keep the head (first bar), grow a new tail: the piece's identity stays, the phrase moves on."""

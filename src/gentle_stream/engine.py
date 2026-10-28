@@ -270,7 +270,9 @@ class Engine:
         return 240.0 / self.style.bpm
 
     # ------------------------------------------------------------ piece setup
-    def _start_piece(self, style: Style, skip_intro: bool = False) -> None:
+    def _start_piece(self, style: Style, skip_intro: bool = False, motif: tuple | None = None) -> None:
+        """A new piece in `style`; `motif` is the previous piece's motif head, carried across a genre step."""
+        tempo_ratio = style.bpm / self.style.bpm if motif is not None else 1.0
         self.style = style
         self.piece_seconds = 0.0
         self.genre = genres.get(style.genre)
@@ -281,7 +283,8 @@ class Engine:
         self.bar = 0
         ton = 48 + KEYS.index(style.key)
         self.ton = ton - 12 if ton > 54 else ton
-        self.composer = Composer(style, self.seed, self.ton, self.genre.chord, skip_intro=skip_intro)
+        self.composer = Composer(style, self.seed, self.ton, self.genre.chord, skip_intro=skip_intro, motif=motif,
+                                 tempo_ratio=tempo_ratio)
         self.section = self.composer.plan(0).section
         self._piece = Piece(style, self.rng, self.inst, self.ton, self.sr, self._acc)
         self.genre.start(self._piece)
@@ -331,7 +334,8 @@ class Engine:
             self._start_piece(replace(self.style.variation(self._root_rng), **values))
         elif switch_genre and target_genre is not None:
             key, mode = harmonic_handoff(self.style.key, self.style.mode, genres.get(target_genre).modes)
-            self._start_piece(replace(self.style, genre=target_genre, key=key, mode=mode, **values), skip_intro=True)
+            self._start_piece(replace(self.style, genre=target_genre, key=key, mode=mode, **values), skip_intro=True,
+                              motif=self.composer.head)
         self._apply_glides()
         if journey is not None:   # starts here, at t = 0, from the values this bar already has
             playing = self._binaural.setting.to_dict() if self._binaural.active and self._binaural.setting else None
