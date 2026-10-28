@@ -19,7 +19,7 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
 | T3 PM-038 point-list curves | S3 | inline | `feat/point-curves` | done (PM-038 commit; base `10c82c5`) |
 | T4 PM-039 journeys from the TUI | S4, S0 | inline | `feat/tui-journeys` | done (PM-039 commit; base `a886ff7`) |
 | T5 PM-040 live controls from the TUI | S5, S0 | inline | `feat/tui-controls` | done (PM-040 commit; base `a5b5c64`) |
-| T6 PM-041 binaural from the TUI | S6, S0 | inline | `feat/tui-binaural` | pending |
+| T6 PM-041 binaural from the TUI | S6, S0 | inline | `feat/tui-binaural` | done (PM-041 commit; base `ef9030e`) |
 | T7 PM-042 spoken phrases from the TUI | S7, S0 | inline | `feat/tui-say` | pending |
 | T8 PM-043 voices and samples from the TUI | S8, S0 | inline | `feat/tui-voices` | pending |
 | T9 PM-044 render and the parity guard | S9, S0 | inline | `feat/tui-render` | pending |
@@ -99,3 +99,12 @@ pero hay que hacer que todo se pueda hacer desde la TUI".
   compact rows fix it. RED ImportError; GREEN 9; 5 mutations each fail tests.
 - L13: PM-040 suite job-29 failed one test that predates M10: tests/test_main.py journey list counted the user's real saved journey "Desayuno" (created in the app at 16:11, not by any test: the string is in no file of the repo). Many tests did not isolate XDG_CONFIG_HOME. New tests/conftest.py gives every test a private empty config dir by default (tests that set their own still override); the failing test passes with the user's file present. Separate commit. The user's file was only read, never written. Rerun job-30 (test_tui_binaural.py, the PM-041 RED, excluded).
 - L14: Rerun job-30: 1374 passed, 3 deselected, 0 test daemons (PM-041 RED file excluded). Isolation committed separately. T5 verified.
+- L15: PM-041. `B` (b is Back) opens BinauralModal: carrier, beat, level (the playing values, or the defaults
+  when off) and a glide time. Off: Apply = `set_binaural(Binaural, over)`, the CLI's `binaural on` request; on: Apply
+  = `glide_binaural(changed values, over)`, the CLI's `binaural set` with only what changed; Off button =
+  `set_binaural(None)`. Ranges checked with Binaural's own messages before sending; a journey that owns the layer is
+  refused with the CLI's message; the copy makes no claim about effects (tested). The in-process Player gains
+  set_binaural and glide_binaural (refusing a set while off with the daemon's message). Two mutations first survived
+  because the local engine receives the same call for on and set; a test now checks the requests themselves, as the
+  acceptance criterion says. RED ImportError; GREEN 13.
+- L16: PM-041 suite job-31: 1387 passed, 3 deselected, 0 test daemons. T6 verified.

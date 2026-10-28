@@ -150,6 +150,18 @@ class Player:
         """Glide the tempo in place, as the background player's `tempo` (`ctl tempo`)."""
         self.engine.queue_tempo(bpm, seconds)
 
+    def set_binaural(self, setting: Binaural | None, seconds: float = 0.0) -> None:
+        """Head for `setting` (None fades it out), as the background player's `binaural` (`ctl binaural on|off`)."""
+        self.engine.queue_binaural(setting, seconds)
+
+    def glide_binaural(self, values: dict[str, float], seconds: float = 0.0) -> None:
+        """Glide only the given carrier, beat or level, as the background player's `binaural_set`; refused while the
+        layer is off, with the same message."""
+        current = self.engine.binaural
+        if current is None:
+            raise ValueError("binaural is off; turn it on first")
+        self.engine.queue_binaural(Binaural.from_dict({**current.to_dict(), **values}), seconds)
+
     def set_style(self, style: Style) -> None:
         """The new style starts at the next rendered bar, after the audio already buffered."""
         self.engine.queue_style(style)

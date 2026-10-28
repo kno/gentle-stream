@@ -740,6 +740,108 @@ class ControlsModal(ModalScreen[dict | None]):
         self.dismiss(None)
 
 
+class BinauralModal(ModalScreen[str | None]):
+    """The binaural layer (PM-041): Apply turns it on with these values when it is off (`ctl binaural on`), or
+    glides the changed ones when it plays (`ctl binaural set`); Off fades it out (`ctl binaural off`). Ranges are
+    checked here, before anything is sent. A listening texture only: no claim about any effect."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    DEFAULT_CSS = """
+    BinauralModal { align: center middle; }
+    BinauralModal > Vertical { width: 64; height: auto; border: round $primary; padding: 0 1; background: $surface; }
+    BinauralModal .heading { color: $primary; text-style: bold; }
+    BinauralModal .row { height: 1; }
+    BinauralModal .row Static { width: 22; }
+    BinauralModal .row Input { width: 1fr; }
+    BinauralModal #binaural-status { color: $text-muted; }
+    BinauralModal #buttons { height: auto; }
+    BinauralModal Button { margin-right: 1; }
+    """
+
+    def __init__(self, player, setting: Binaural | None):
+        super().__init__()
+        self.player, self.setting = player, setting
+
+    def compose(self) -> ComposeResult:
+        shown = self.setting or Binaural()
+        with Vertical():
+            yield Static(f"Binaural layer · {'on' if self.setting else 'off'}", classes="heading")
+            for name, label, value in (("carrier", "carrier (40-1000 Hz)", shown.carrier),
+                                       ("beat", "beat (0.5-40 Hz)", shown.beat),
+                                       ("level", "level (0-0.08)", shown.level),
+                                       ("over", "over (0-3600 s)", 60)):
+                with Horizontal(classes="row"):
+                    yield Static(label)
+                    yield Input(f"{value:g}", id=f"binaural-{name}", compact=True)
+            yield Static("A quiet tone on each ear, the beat apart; headphones recommended. It is only a listening "
+                         "texture.", id="binaural-status", markup=False)
+            with Horizontal(id="buttons"):
+                yield Button("Turn on" if self.setting is None else "Apply", id="apply", variant="primary")
+                yield Button("Off", id="off", disabled=self.setting is None)
+                yield Button("Cancel", id="cancel")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()   # never a mood request for the app below
+        self._apply()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "apply":
+            self._apply()
+        elif event.button.id == "off":
+            self._send(lambda: self.player.set_binaural(None, self._over() or 0.0), "off")
+        else:
+            self.action_cancel()
+
+    def _over(self) -> float | None:
+        import math
+        try:
+            over = float(self.query_one("#binaural-over", Input).value)
+        except ValueError:
+            return None
+        return over if math.isfinite(over) and 0 <= over <= 3600 else None
+
+    def _send(self, request, outcome: str) -> None:
+        from .client import PlayerError
+
+        try:
+            request()
+        except (ValueError, PlayerError) as e:   # a journey owns the layer, or it went off: the CLI's message
+            self.query_one("#binaural-status", Static).update(str(e))
+            return
+        self.dismiss(outcome)
+
+    def _apply(self) -> None:
+        status = self.query_one("#binaural-status", Static)
+        values: dict[str, float] = {}
+        for name in ("carrier", "beat", "level"):
+            try:
+                values[name] = float(self.query_one(f"#binaural-{name}", Input).value)
+            except ValueError:
+                status.update(f"{name} must be a number")
+                return
+        try:
+            setting = Binaural.from_dict(values)
+        except ValueError as e:
+            status.update(str(e))
+            return
+        over = self._over()
+        if over is None:
+            status.update("over must be between 0 and 3600 seconds")
+            return
+        if self.setting is None:
+            self._send(lambda: self.player.set_binaural(setting, over), "on")
+            return
+        changed = {name: value for name, value in setting.to_dict().items()
+                   if abs(value - getattr(self.setting, name)) > 1e-9}
+        if not changed:
+            self.dismiss(None)
+            return
+        self._send(lambda: self.player.glide_binaural(changed, over), "set")
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class JourneyPickerModal(ModalScreen[str | None]):
     """Pick a journey: "create" first, then the built-ins, then the saved ones alphabetically, then "open" (a file);
     `v` shows the highlighted one, `d` deletes a saved one.
@@ -847,6 +949,7 @@ class StreamApp(App):
         Binding("J", "journey_picker", "Journeys"),
         Binding("r", "record", "Record"),
         Binding("c", "controls", "Controls"),
+        Binding("B", "binaural", "Binaural"),
         Binding("plus,equals_sign", "volume(5)", "Vol +5"),
         Binding("minus", "volume(-5)", "Vol -5"),
         Binding("up", "volume(1)", "Vol +1"),
@@ -996,6 +1099,7 @@ class StreamApp(App):
             ("Volume down", "Five steps quieter (-)", "volume(-5)"),
             ("Live controls", "Glide tempo, energy, brightness, space, swing, vinyl, melody density or voice (c)",
              "controls"),
+            ("Binaural", "Turn the binaural layer on or off, or glide its carrier, beat and level (B)", "binaural"),
             ("Record the session", "Start or stop recording what you hear into a WAV file (r)", "record"),
             ("Back", "Leave the app, the music keeps playing (b)", "back"),
             ("Quit", "Leave the app and stop the music (q)", "quit"),
@@ -1012,6 +1116,15 @@ class StreamApp(App):
                 self._status(f"Gliding {escape(changes)} over {result['over']:g} s")
 
         self.push_screen(ControlsModal(self.player, self.player.now.style, driven), applied)
+
+    def action_binaural(self) -> None:
+        """The binaural layer, as `ctl binaural on|set|off` does."""
+        def done(outcome: str | None) -> None:
+            if outcome:
+                setting = self.player.binaural
+                self._status(f"Binaural {outcome}" + (f": {escape(binaural_line(setting))}" if setting else ""))
+
+        self.push_screen(BinauralModal(self.player, self.player.binaural), done)
 
     def action_record(self) -> None:
         """Start recording (asks for the file) or stop and say where it was saved."""

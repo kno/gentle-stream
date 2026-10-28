@@ -18,6 +18,7 @@ CONTROLS = """controls:
   j        journey menu: restart, skip a stage, stop, edit in words, or save the running journey
   J        journeys: create, play, show (v) or delete (d) one, or open a JSON journey file
   c        live controls: glide tempo, energy, brightness, space, swing, vinyl, melody density, voice
+  B        binaural layer: turn it on or off, or glide its carrier, beat and level
   r        record the session into a WAV file; r again stops and saves it
   ctrl+p   command palette: every action, found by typing its name
   + / -    volume up / down by 5%
