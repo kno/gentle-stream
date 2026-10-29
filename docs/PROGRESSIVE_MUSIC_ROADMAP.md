@@ -1146,6 +1146,8 @@ by the background player itself.
 | **M7 Vocal textures** | PM-022–026 | Wordless choir pads, vocal melody and harmonies in every genre | Mood "ethereal choir"; flagship peak | 79.5 h | Built-in voices only |
 | **M8 Own voices** | PM-027–030 | User and CC0 voice packs with licensing | `setup-voices`, `voices list` | 93 h | No formant-preserving shift |
 | **M9 Words and full orchestration** | PM-031–035 | Spoken phrases; the full experience from the product vision is requested and adjusted in words | The vision's sentence typed into `J` | 108.5 h | No singing synthesis or text-to-song |
+| **M10 Open sessions and the TUI** | PM-036–044 | Record the session, open-ended stages, point-list curves, and everything the CLI does from the TUI (journeys, live controls, binaural, phrases, voices, render), guarded by a parity test | Any CLI command has its key or palette entry | — | — |
+| **M11 Live broadcast** | PM-045 | The player broadcasts to YouTube Live or any RTMP(S) ingest with a picture of what plays; the key never leaves the process; mute here, choose the output, always start, and resume where it was | An unlisted YouTube Live broadcast of `ambient-to-synthwave` (done 2026-10-29) | — | Picture is one 16:9 layout (no separate vertical format); load-sensitive at a saturated CPU |
 
 ---
 
