@@ -242,3 +242,4 @@ saved on stop and every few seconds (so a crash resumes too); `gentle-stream --f
   journey and stage), --fresh, help. A test helper first pulled faster than the producer renders (reading silence);
   it now plays only rendered audio. Mutations: 5 of 5 after asserting the audible (not rendered) journey time.
 - L30: T10 suite job-52: 1581 passed, 3 deselected, 0 test daemons. T10 verified. One warning surfaced (jazz swirl: float32 sin(pi) < 0, ** 1.5 -> NaN in the brush swirl's last sample; it did not reach the output in 240 rendered jazz bars); fixed separately.
+- L31: The jazz swirl NaN: the cause is float64 rounding, not float32 (corrected): pi * t[-1] / t[-1] lands a hair past pi for about 214 of 3000 durations (0.012, 0.027, 0.172 s...), the sine is ~-1e-16 and its 1.5 power NaN. Fixed by clipping the sine at 0 (only those samples change). RED: RuntimeWarning as error on those durations; GREEN with the jazz tests (18).

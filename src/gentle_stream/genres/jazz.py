@@ -153,7 +153,8 @@ class Voices:
         n = int((dur + 0.15) * self.sr); t = self._t(n)
         x = np.resize(np.roll(self._swish, -int(self.rng.integers(len(self._swish)))), n)
         circle = 0.65 + 0.35 * np.sin(2 * np.pi * t / max(dur / 2, 0.05) - np.pi / 2)
-        return x * np.sin(np.pi * t / t[-1]) ** 1.5 * circle
+        rise = np.clip(np.sin(np.pi * t / t[-1]), 0.0, None)   # rounding can put the last angle past pi: < 0
+        return x * rise ** 1.5 * circle
 
     def tap(self, vel=1.0):
         return self.lofi.brush() * vel
