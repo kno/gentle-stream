@@ -40,7 +40,7 @@ therapeutic claims in any overlay; tests with a fake encoder and a local sink, n
 | :--- | :--- | :--- | :--- | :--- |
 | T0 Record the decisions | S0 | inline | `docs/m11-decisions` | done (`f1a5ed8`) |
 | T1 Ingest URL and stream key storage (`stream key set/clear`, `stream url`, `stream show`) | S2, S5 | inline | `feat/stream-key` | done (T1 commit; base `f1a5ed8`) |
-| T2 RTMP(S) publisher (handshake, connect, publish, FLV tags as messages) and a fake local server | S2, S3 | inline | `feat/rtmp-publish` | pending |
+| T2 RTMP(S) publisher (handshake, connect, publish, FLV tags as messages) and a fake local server | S2, S3 | inline | `feat/rtmp-publish` | done (T2 commit; base `cfcba4f`) |
 | T3 Broadcast view: 1280x720 frames with Pillow from the player snapshot | S5 | inline | `feat/broadcast-view` | pending |
 | T4 Encoder pipeline: ffmpeg (raw video + PCM in, FLV out), bounded queues fed from the callback | S1, S3 | inline | `feat/broadcast-encoder` | pending |
 | T5 Player/daemon/ctl: `ctl stream start/stop`, status keys, safe sources while broadcasting | S1-S5 | inline | `feat/broadcast-ctl` | pending |
@@ -62,3 +62,13 @@ therapeutic claims in any overlay; tests with a fake encoder and a local sink, n
   Parity: the three `stream` commands are listed in NOT_IN_TUI as "gap ... (PM-045 T6)" until the TUI action exists.
   Mutations: 9 of 9 caught after adding URL cases; __format__ removed (str() already masks). RED ImportError; GREEN 31.
 - L5: T1 suite job-36: 1455 passed, 3 deselected, 0 test daemons. T1 verified.
+- L6: T2. New rtmp.py: AMF0 encode/decode (object, ECMA array for ffmpeg's onMetaData), flv_tags (pipe-safe short
+  reads), ChunkWriter/ChunkReader (type-0 headers, type-3 continuations with the extended timestamp, Set Chunk Size
+  applied), Publisher: handshake, connect (app from the URL path, tcUrl = the URL, no key), releaseStream/FCPublish/
+  createStream/publish (the key only as the stream name, inside the connection), FLV tags as messages (metadata as
+  @setDataFrame), chunk size 4096, RTMPS through TLS, a reader thread answering pings and noting errors or a closed
+  connection, a clean end (FCUnpublish, deleteStream). Server text passes through `_hide`, which masks the key.
+  Tests: tests/rtmp_fake.py (a local ingest), TLS with a throwaway openssl certificate, and ffmpeg as a real RTMP
+  server (`-listen 1`): what it receives decodes as audio + video lasting the whole 2 s. Mutations: 8 of 8 caught
+  after making a continuation chunk carry an extended timestamp and recording the peer's chunk size.
+- L7: T2 suite job-37: 1469 passed, 3 deselected, 0 test daemons. T2 verified.
