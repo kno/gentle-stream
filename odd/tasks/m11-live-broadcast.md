@@ -52,7 +52,8 @@ automatic answer is a layout whose text stays in the centre column a 9:16 crop k
 | T4 Encoder pipeline: ffmpeg (raw video + PCM in, FLV out), bounded queues fed from the callback | S1, S3 | inline | `feat/broadcast-encoder` | done (T4 commit; base `9d523aa`) |
 | T5 Player/daemon/ctl: `ctl stream start/stop`, status keys, safe sources while broadcasting | S1-S5 | inline | `feat/broadcast-ctl` | done (T5 commit; base `3d4bc5c`) |
 | T5b Picture fixes from the first live test: missing glyphs, a layout that survives the mobile crop, constant 2500k at 30 fps | S6 | inline | `feat/broadcast-layout` | done (T5b commit; base `d911a42`) |
-| T6 TUI action, parity map, README, sentinel-key leak test over every surface | S2, S3, S5 | inline | `feat/broadcast-tui` | pending |
+| T5c Video paced by the clock (second live test still "Mala") | S1, S6 | inline | `feat/broadcast-tui` (own commit) | done (T5c commit; confirmed live, L19) |
+| T6 TUI action, parity map, README, sentinel-key leak test over every surface | S2, S3, S5 | inline | `feat/broadcast-tui` | done (T6 commit) |
 
 ## Log
 
@@ -130,3 +131,29 @@ automatic answer is a layout whose text stays in the centre column a 9:16 crop k
   glyphs present (system font and forced Pillow font), text only inside the crop column, long lines wrap, spectrum
   spans the width, encoder 30 fps/2500k/keyframe 2 s. Mutations: 6 of 6.
 - L15: T5b suite job-41: 1512 passed, 3 deselected, 0 test daemons. T5b verified.
+- L16: Second live test, maintainer verbatim: "sigue dando mensaje de calidad mala, analiza porqué". Evidence from the
+  running player (new code: -r 30 -b:v 2500k): 5156 drops in 666 s, ffmpeg at 10.6% CPU, x264 720p30 at 39x real
+  time here: not CPU. Cause: frames were counted, not clocked (wait 1/30 s, then draw ~6 ms: ~26 fps real) while
+  ffmpeg stamps rawvideo by frame count, so the video fell behind the audio, ffmpeg stopped reading the audio to wait,
+  the audio queue filled and broadcast blocks were dropped (gaps), and the ingest got less than real time. T5c:
+  _draw_video sends frame n at n / FPS from the start and repeats a late picture for each frame time it missed. RED: a
+  20 ms view sent 33 frames in 2 s; GREEN: 30 a second. With frames sent at once, a broken video pipe raced the
+  watcher in the failing-encoder test; writers and the publisher now defer to the encoder's exit (_encoder_ended).
+- L17: T6. BroadcastModal on `L` and in the palette: URL (saved with streamconf.save_url, its message), the key line
+  of `stream show`, a password Input for the key (saved 0600, the field emptied whatever happens), clear, start/stop in
+  a worker (connecting takes a moment), errors kept in the dialog. The state line shows "● LIVE m:ss" or "LIVE failed
+  (L)" (S3 in the TUI). PARITY maps `ctl stream` and the `stream` commands to "broadcast"; NOT_IN_TUI holds only
+  `ctl status` again. S2 sentinel searches: the TUI screen (export_screenshot) while typing, after saving, while live,
+  after a failure; and tests/test_stream_leaks.py, a real broadcast through the background player: `stream show`,
+  `ctl stream start`, `ctl status`, every process's arguments (`ps -axo command`), an ingest refusing with the stream
+  name in its description, and player.log; the key reached the ingest as the stream name (so the sentinel was live).
+  Mutations: 5 of 5 (key kept in the field, not masked, no LIVE, failure not shown, URL not saved).
+- L18: Suite job-42: 2 failed, 1521 passed. (1) test_ctl_stream_without_a_player reached the maintainer's real player
+  (no private XDG_RUNTIME_DIR) and sent it `stream start`; it refused ("already broadcasting"), nothing changed, its
+  status was checked right after (playing, broadcasting, 0 drops in 190 s: the restarted player already ran the
+  T5c working tree). Fix: tests/conftest.py gives every test a private short XDG_RUNTIME_DIR under /tmp (the daemon
+  tests' own fixture still overrides it); with the real player running, the test now finds no player. (2) The
+  thread-leak test looked for any `rtmp-reader` in the process, also those left by test_rtmp.py publishers never
+  closed; it now checks only the threads of the broadcast it starts.
+- L19: Maintainer, verbatim, after restarting the player on the T5c working tree: "si, ya no da error" (YouTube no longer reports bad health; the player showed 0 dropped frames in 190 s). S6 confirmed live.
+- L20: Suite job-43: 1523 passed, 3 deselected, 0 test daemons. T5c and T6 verified; M11 implementation complete.

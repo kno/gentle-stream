@@ -170,6 +170,7 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 | `v` | Voices and samples: the voice packs as `voices list` shows them (`*` is the one the choir sings); add a pack by its folder or remove the highlighted one, as `voices add` / `voices remove`; install the FreePats choir or the FluidR3_GM soundfont, as `setup-voices` / `setup-samples`, with a progress bar while the interface keeps working; a failed install leaves nothing behind and says why |
 | `r` | Record the session: asks for a WAV file (a dated one in your home folder is proposed), then saves everything you hear until you press `r` again; the state line shows `● REC` and the length |
 | `w` | Render to a file: the style playing now or a built-in journey, a length, a seed (blank: random, then shown) and the procedural instruments if you want them, written in the background by the same function as `gentle-stream render`, so the same options give the same bytes; what plays is not interrupted |
+| `L` | Live broadcast: the ingest URL and the stream key (typed masked, saved in a file only you can read, never shown), and start or stop the broadcast, as `gentle-stream stream` and `ctl stream start/stop`; while it runs the state line shows `● LIVE` and its length, or `LIVE failed` when it stopped on an error (the music plays on) |
 | `ctrl+p` | Command palette: every action of the app, keyed or not, found by typing part of its name |
 | `+` / `-` | Volume up / down by 5% |
 | `↑` / `↓` | Volume up / down by 1% |
@@ -190,6 +191,7 @@ Everything the command line does can be done from the TUI too: by its key, or by
 | `ctl binaural on/set/off` | `B` |
 | `ctl say` (with `--voice`, `--rate`, `--effect`, `--list-voices`) | `t` |
 | `ctl record start/stop` | `r` |
+| `ctl stream start/stop`, `stream url`, `stream key set/clear`, `stream show` | `L` |
 | `ctl status` | always on screen |
 | `journey play`, `list`, `show`, `delete`, `create` | `J` journeys |
 | `journey validate` | `J` → Open file |

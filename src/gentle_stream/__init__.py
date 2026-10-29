@@ -23,6 +23,7 @@ CONTROLS = """controls:
   v        voice packs: add, list, remove; install the FreePats choir or FluidR3_GM
   r        record the session into a WAV file; r again stops and saves it
   w        render the current style or a journey into a WAV file, as gentle-stream render
+  L        live broadcast: ingest URL, stream key (never shown), start or stop
   ctrl+p   command palette: every action, found by typing its name
   + / -    volume up / down by 5%
   ↑ / ↓    volume up / down by 1%

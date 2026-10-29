@@ -1193,6 +1193,151 @@ class RenderModal(ModalScreen[str | None]):
             self.dismiss(None)
 
 
+class BroadcastModal(ModalScreen[str | None]):
+    """The live broadcast (PM-045), as `gentle-stream stream url|key` and `ctl stream start|stop`: the ingest URL, the
+    stream key (typed masked, saved 0600, cleared from the field, never shown), and start or stop. Starting and
+    stopping run in a worker (connecting or letting ffmpeg finish takes a moment); errors stay in the dialog."""
+
+    BINDINGS = [Binding("escape", "cancel", "Close")]
+    DEFAULT_CSS = """
+    BroadcastModal { align: center middle; }
+    BroadcastModal > Vertical { width: 78; max-width: 100%; height: auto; border: round $primary; padding: 0 1;
+                                background: $surface; }
+    BroadcastModal .heading { color: $primary; text-style: bold; }
+    BroadcastModal .row { height: auto; }
+    BroadcastModal .row Input { width: 1fr; }
+    BroadcastModal #live-key-state, BroadcastModal #live-status { color: $text-muted; }
+    BroadcastModal Button { margin-left: 1; }
+    BroadcastModal #buttons Button { margin-left: 0; margin-right: 1; }
+    BroadcastModal #buttons { height: auto; }
+    """
+
+    def __init__(self, player):
+        super().__init__()
+        self.player = player
+
+    def compose(self) -> ComposeResult:
+        from .streamconf import EXAMPLE_URL, load_url
+
+        live = (self.player.streaming or {}).get("running")
+        with Vertical():
+            yield Static("Live broadcast · YouTube Live or any RTMP(S) ingest", classes="heading")
+            with Horizontal(classes="row"):
+                yield Input(load_url() or "", placeholder=EXAMPLE_URL, id="live-url")
+                yield Button("Save URL", id="save-url")
+            yield Static("", id="live-key-state", markup=False)
+            with Horizontal(classes="row"):
+                yield Input(placeholder="paste the stream key", password=True, id="live-key")
+                yield Button("Save key", id="save-key")
+                yield Button("Clear key", id="clear-key")
+            yield Static(self._describe(), id="live-status", markup=False)
+            with Horizontal(id="buttons"):
+                if live:
+                    yield Button("Stop broadcast", id="stop", variant="error")
+                else:
+                    yield Button("Start broadcast", id="start", variant="primary")
+                yield Button("Close", id="cancel")
+
+    def on_mount(self) -> None:
+        self._show_key_state()
+
+    def _show_key_state(self) -> None:
+        from .streamconf import show_lines
+
+        self.query_one("#live-key-state", Static).update(show_lines()[1])
+
+    def _describe(self) -> str:
+        streaming = self.player.streaming
+        if not streaming:
+            return "Not broadcasting. The music keeps playing here whatever happens to the broadcast."
+        if streaming.get("running"):
+            return (f"Broadcasting to {streaming['target']} · {format_time(streaming['seconds'])} · "
+                    f"{streaming['dropped_frames']} frames dropped")
+        return f"The broadcast failed: {streaming.get('error')}"
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()   # never a mood request for the app below
+        if event.input.id == "live-url":
+            self._save_url()
+        else:
+            self._save_key()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        handlers = {"save-url": self._save_url, "save-key": self._save_key, "clear-key": self._clear_key,
+                    "start": lambda: self._run("start"), "stop": lambda: self._run("stop")}
+        handlers.get(event.button.id or "", self.action_cancel)()
+
+    def _say(self, message: str) -> None:
+        self.query_one("#live-status", Static).update(message)
+
+    def _save_url(self) -> None:
+        from .streamconf import StreamConfigError, save_url
+
+        try:
+            self._say(f"Ingest URL saved: {save_url(self.query_one('#live-url', Input).value)}")
+        except StreamConfigError as e:
+            self._say(str(e))
+
+    def _save_key(self) -> None:
+        from .streamconf import StreamConfigError, save_key
+
+        field = self.query_one("#live-key", Input)
+        try:
+            path = save_key(field.value)
+        except StreamConfigError as e:
+            self._say(str(e))
+            return
+        finally:
+            field.value = ""            # never kept in the widget
+        self._say(f"Stream key saved in {path} (readable only by you)")
+        self._show_key_state()
+
+    def _clear_key(self) -> None:
+        from .streamconf import clear_key
+
+        removed = clear_key()
+        self._say(f"Stream key removed from {removed}" if removed else "No stream key saved")
+        self._show_key_state()
+
+    def _run(self, action: str) -> None:
+        for button in self.query("#buttons Button").results(Button):
+            button.disabled = True
+        self._say("Connecting…" if action == "start" else "Ending the broadcast…")
+        self._broadcast(action)
+
+    @work(thread=True, exclusive=True, group="live")
+    def _broadcast(self, action: str) -> tuple[bool, str]:
+        """(True, what the app's status line says) or (False, why it failed); the dialog reacts when it ends."""
+        from .broadcast import BroadcastError
+        from .client import PlayerError
+
+        try:
+            if action == "start":
+                return True, f"Broadcasting to {self.player.stream_start()['target']}"
+            ended = self.player.stream_stop()
+        except (BroadcastError, PlayerError) as e:
+            return False, str(e)
+        if ended is None:
+            return False, "not broadcasting"
+        seconds = round(float(ended["seconds"]))
+        return True, (f"Broadcast to {ended['target']} ended after {seconds // 60}:{seconds % 60:02d} "
+                      f"({ended['dropped_frames']} frames dropped)")
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        if event.worker.group != "live" or event.state != WorkerState.SUCCESS:
+            return
+        ok, message = event.worker.result or (False, "")
+        if ok:
+            self.dismiss(message)
+            return
+        for button in self.query("#buttons Button").results(Button):
+            button.disabled = False
+        self._say(message)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class JourneyPickerModal(ModalScreen[str | None]):
     """Pick a journey: "create" first, then the built-ins, then the saved ones alphabetically, then "open" (a file);
     `v` shows the highlighted one, `d` deletes a saved one.
@@ -1276,7 +1421,8 @@ class JourneyPickerModal(ModalScreen[str | None]):
 PARITY: dict[str, str] = {
     "ctl play": "toggle", "ctl pause": "toggle", "ctl toggle": "toggle", "ctl next": "next", "ctl stop": "quit",
     "ctl tempo": "controls", "ctl glide": "controls", "ctl binaural": "binaural", "ctl say": "say",
-    "ctl record": "record",
+    "ctl record": "record", "ctl stream": "broadcast",
+    "stream key": "broadcast", "stream url": "broadcast", "stream show": "broadcast",
     "journey play": "journey_picker", "journey list": "journey_picker", "journey show": "journey_picker",
     "journey delete": "journey_picker", "journey create": "journey_picker", "journey validate": "journey_open",
     "journey save": "journey_save_as", "journey stop": "journey_menu", "journey restart": "journey_menu",
@@ -1287,10 +1433,6 @@ PARITY: dict[str, str] = {
 }
 NOT_IN_TUI: dict[str, str] = {
     "ctl status": "the TUI shows the state all the time (title, mood, tempo, journey, binaural, recording)",
-    "ctl stream": "gap: not yet in the TUI (PM-045 T6)",
-    "stream key": "gap: not yet in the TUI (PM-045 T6)",
-    "stream url": "gap: not yet in the TUI (PM-045 T6)",
-    "stream show": "gap: not yet in the TUI (PM-045 T6)",
 }
 
 
@@ -1328,6 +1470,7 @@ class StreamApp(App):
         Binding("t", "say", "Say"),
         Binding("v", "voices", "Voices"),
         Binding("w", "render", "Render"),
+        Binding("L", "broadcast", "Live"),
         Binding("plus,equals_sign", "volume(5)", "Vol +5"),
         Binding("minus", "volume(-5)", "Vol -5"),
         Binding("up", "volume(1)", "Vol +1"),
@@ -1416,6 +1559,11 @@ class StreamApp(App):
         elapsed, remaining = format_time(p.elapsed_seconds), format_time(p.cycle_remaining_seconds)
         recording = p.recording
         rec = f" · [b $error]● REC[/] {format_time(recording[1])}" if recording is not None else ""
+        streaming = p.streaming
+        if streaming and streaming.get("running"):
+            rec += f" · [b $error]● LIVE[/] {format_time(streaming['seconds'])}"
+        elif streaming and streaming.get("error"):
+            rec += " · [b $warning]LIVE failed[/] (L)"
         w["state"].update(f"{state} · piece {now.piece} · bar {now.bar + 1} · "
                           f"{elapsed} · -{remaining} · vol {round(p.volume * 100)}%{rec}")
 
@@ -1482,6 +1630,8 @@ class StreamApp(App):
             ("Voices and samples", ("Add, list or remove voice packs; install the FreePats choir or the FluidR3_GM "
                                     "soundfont (v)"), "voices"),
             ("Render to a file", "Render the style playing now or a journey into a WAV file (w)", "render"),
+            ("Live broadcast", "Broadcast to YouTube Live or any RTMP(S) ingest; set its URL and stream key (L)",
+             "broadcast"),
             ("Record the session", "Start or stop recording what you hear into a WAV file (r)", "record"),
             ("Back", "Leave the app, the music keeps playing (b)", "back"),
             ("Quit", "Leave the app and stop the music (q)", "quit"),
@@ -1529,6 +1679,14 @@ class StreamApp(App):
                 self._status(escape(line))
 
         self.push_screen(RenderModal(self.player.now.style), done)
+
+    def action_broadcast(self) -> None:
+        """The live broadcast, as `gentle-stream stream` and `ctl stream start|stop` do."""
+        def done(message: str | None) -> None:
+            if message:
+                self._status(escape(message))
+
+        self.push_screen(BroadcastModal(self.player), done)
 
     def action_record(self) -> None:
         """Start recording (asks for the file) or stop and say where it was saved."""
