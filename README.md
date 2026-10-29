@@ -520,6 +520,11 @@ The music keeps playing locally whatever happens to the broadcast: the audio is 
 so a slow network or encoder only drops broadcast frames (counted in the status), and a failed broadcast is reported
 in the status without stopping the music. Stopping the player ends the broadcast.
 
+If YouTube Studio keeps the event at "Preparing stream" while `ctl status` shows the broadcast running with no
+error, the event is waiting on another stream key: a scheduled event can have its own key, and YouTube may create a
+new event after a reconnection. Copy that event's key, run `gentle-stream stream key set`, then `ctl stream stop` and
+`ctl stream start`. If Studio does receive data but the event does not start, its "Auto-start" is off: press "Go live".
+
 While broadcasting, only what may be broadcast is used: phrases are spoken with `espeak-ng` (the macOS `say` voices
 are licensed for personal use only), and a voice pack whose manifest says `"redistributable": false` gives way to the
 built-in choir; both come back when the broadcast stops. A journey with phrases refuses to start a broadcast when
