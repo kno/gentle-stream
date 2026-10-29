@@ -167,7 +167,7 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 | `c` | Live controls: tempo, energy, brightness, space, swing, vinyl, melody density and voice with their values; change any of them and Apply glides the changed ones over the given seconds (0 to 3600, default 60), as `ctl tempo` and `ctl glide` do; fields the running journey drives are marked (journey) and locked |
 | `B` | Binaural layer: carrier, beat, level and a glide time; when the layer is off the dialog turns it on (`ctl binaural on`), when it plays Apply glides the values you changed (`ctl binaural set`) and Off fades it out (`ctl binaural off`); ranges are checked before anything is sent; refused, with the CLI's message, while a journey owns the layer |
 | `t` | Say a phrase over the music, as `ctl say`: the text, a voice from the list the system's text-to-speech program offers (or its default), a rate in words per minute and an effect (`dry`, `space`, `radio`); the phrase is rendered in the background and starts at the next phrase boundary; a missing program, an empty phrase or a rate out of range are shown in the dialog |
-| `v` | Voices and samples: the voice packs as `voices list` shows them (`*` is the one the choir sings); add a pack by its folder or remove the highlighted one, as `voices add` / `voices remove`; install the FreePats choir or the FluidR3_GM soundfont, as `setup-voices` / `setup-samples`, with a progress bar while the interface keeps working; a failed install leaves nothing behind and says why |
+| `v` | Voices and samples: the voice packs as `voices list` shows them (`*` is the one the choir sings); add a pack by its folder or remove the highlighted one, as `voices add` / `voices remove`; install the FreePats choir, the FluidR3_GM soundfont or the Piper voice, as `setup-voices` / `setup-samples` / `setup-speech`, with a progress bar while the interface keeps working; a failed install leaves nothing behind and says why |
 | `r` | Record the session: asks for a WAV file (a dated one in your home folder is proposed), then saves everything you hear until you press `r` again; the state line shows `● REC` and the length |
 | `w` | Render to a file: the style playing now or a built-in journey, a length, a seed (blank: random, then shown) and the procedural instruments if you want them, written in the background by the same function as `gentle-stream render`, so the same options give the same bytes; what plays is not interrupted |
 | `L` | Live broadcast: the ingest URL and the stream key (typed masked, saved in a file only you can read, never shown), and start or stop the broadcast, as `gentle-stream stream` and `ctl stream start/stop`; while it runs the state line shows `● LIVE` and its length, or `LIVE failed` when it stopped on an error (the music plays on) |
@@ -203,7 +203,7 @@ Everything the command line does can be done from the TUI too: by its key, or by
 | `journey save` | `j` → Save as, or `J` → Open file → Save as |
 | `journey stop`, `restart`, `skip` | `j` journey controls |
 | `journey edit` | `j` → Edit with words |
-| `voices add`, `list`, `remove`, `setup-voices`, `setup-samples` | `v` voices and samples |
+| `voices add`, `list`, `remove`, `setup-voices`, `setup-samples`, `setup-speech` | `v` voices and samples |
 | `render` | `w` |
 
 ### Flags
@@ -243,7 +243,7 @@ gentle-stream ctl stop     # ends the background player
 | `ctl glide FIELD=VALUE... [--over SECONDS]` | Glide `energy`, `brightness`, `space`, `swing`, `vinyl`, `lead_density`, `voice` or `bpm` in place (default 60 seconds) | `0`; `1` when nothing plays or the player refuses; `2` for a malformed or discrete field |
 | `ctl say TEXT [--voice NAME] [--rate WPM] [--effect dry\|radio\|space]` | Speak TEXT (at most 200 characters) over the music from the next phrase boundary, the music ducked 3 dB; `ctl say --list-voices` lists the system voices | `0` (an unknown voice falls back to the default with a warning); `1` when nothing plays, no text-to-speech program is found, or it fails; `2` without TEXT or with a rate outside 80-400 |
 | `ctl record start FILE.wav [--force]` / `ctl record stop` | Record exactly what the background player plays (volume and pauses included) into a 16-bit stereo WAV, until `stop` or until the player stops; an existing file needs `--force` | `0`; `1` when nothing plays, a recording is running, the folder does not exist, the file exists without `--force`, or (stop) nothing records; `2` for a malformed command |
-| `ctl stream start` / `ctl stream stop` | Broadcast what the background player plays, with a picture of it, to the ingest set with `gentle-stream stream url` and `stream key set` (see [Live broadcast](#live-broadcast)); `stop` reports how long it ran and the frames dropped | `0`; `1` when nothing plays, no URL or key is set, a broadcast is running, the journey speaks phrases without `espeak-ng`, the ingest refuses it, or (stop) nothing broadcasts; `2` for a malformed command |
+| `ctl stream start` / `ctl stream stop` | Broadcast what the background player plays, with a picture of it, to the ingest set with `gentle-stream stream url` and `stream key set` (see [Live broadcast](#live-broadcast)); `stop` reports how long it ran and the frames dropped | `0`; `1` when nothing plays, no URL or key is set, a broadcast is running, the journey speaks phrases with neither Piper nor `espeak-ng`, the ingest refuses it, or (stop) nothing broadcasts; `2` for a malformed command |
 | `ctl mute` / `ctl unmute` | Silence the background player's speakers, or bring them back; the music keeps playing, and a broadcast or a recording keeps the sound (`ctl status` reports `"muted"`) | `0`; `1` when nothing plays; `2` with an argument |
 | `ctl output` / `ctl output NAME` / `ctl output default` | List the audio outputs (`*` where it plays, the system default marked); with a name, play on that device from now on, live, and remember it for the next start; `default` follows the system's again. A one-channel output (headphones in hands-free mode) gets both channels mixed. If the chosen output does not open, the system default is used; if no output opens at all, the player still runs, silent here, so a broadcast or a recording goes on (`ctl status` reports `"output"`: name, channels, silent, error) | `0`; `1` when nothing plays or no output has that name |
 | `ctl binaural on [--carrier HZ] [--beat HZ] [--level L] [--over SECONDS]`, `ctl binaural set ... [--over SECONDS]`, `ctl binaural off` | Fade the binaural texture in or out, or glide it to new values (see [Binaural](#binaural)); nothing on stdout | `0`; `1` when nothing plays or `set` finds it off; `2` for a value out of range, options with `off`, or `set` without one |
@@ -331,7 +331,16 @@ Add `"melody": true` to a pack's manifest to let it sing the vocal melody and it
 gentle-stream ctl say "Keep going"
 ```
 
-The phrase is spoken by the system's text-to-speech program, `say` on macOS or `espeak-ng` on Linux (install it with your package manager); without one, the command answers "no text-to-speech backend found". The player renders it before answering, so a failure is reported and the music is left exactly as it was. The phrase starts on the next phrase boundary (every four bars), centred and level-normalised, and the music dips 3 dB under it with 50 ms ramps in and out. Phrases asked for in a row play one after another, each on its own boundary. The text is given to the program on its standard input, never as an argument, and generated audio stays on your machine.
+The phrase is spoken by a text-to-speech program: Piper with the voice `setup-speech` installs (see below), else the system's, `say` on macOS or `espeak-ng` on Linux (install it with your package manager); without one, the command answers "no text-to-speech backend found". The player renders it before answering, so a failure is reported and the music is left exactly as it was. The phrase starts on the next phrase boundary (every four bars), centred and level-normalised, and the music dips 3 dB under it with 50 ms ramps in and out. Phrases asked for in a row play one after another, each on its own boundary. The text is given to the program on its standard input, never as an argument, and generated audio stays on your machine.
+
+A more natural Spanish voice comes from [Piper](https://github.com/OHF-Voice/piper1-gpl), a separate program (GPL-3.0) that gentle-stream runs but never imports:
+
+```bash
+uv tool install piper-tts         # the program (or: pip install piper-tts)
+gentle-stream setup-speech        # the voice: carlfm, Spanish (Spain), male
+```
+
+`setup-speech` downloads the carlfm voice from a pinned revision of `rhasspy/piper-voices`, checks each file against a pinned SHA-256, and installs it under `~/.cache/gentle-stream/speech/carlfm/` with a `LICENSES.txt`; on any failure nothing is left behind, and running it again does not download twice. It was chosen by ear among the voices whose license allows a broadcast: its recordings are in the public domain and it was trained from scratch, while almost every other Spanish Piper voice was fine-tuned from an English voice whose recordings are licensed for research only. Once both are there, every phrase is spoken with Piper, locally and while broadcasting, and `ctl say --list-voices` lists `carlfm`; `--rate` sets Piper's speed (175 words per minute is its own). Phrases rendered before keep their voice until the player restarts.
 
 A phrase can choose how it sounds:
 
@@ -525,10 +534,10 @@ error, the event is waiting on another stream key: a scheduled event can have it
 new event after a reconnection. Copy that event's key, run `gentle-stream stream key set`, then `ctl stream stop` and
 `ctl stream start`. If Studio does receive data but the event does not start, its "Auto-start" is off: press "Go live".
 
-While broadcasting, only what may be broadcast is used: phrases are spoken with `espeak-ng` (the macOS `say` voices
-are licensed for personal use only), and a voice pack whose manifest says `"redistributable": false` gives way to the
+While broadcasting, only what may be broadcast is used: phrases are spoken with Piper (`setup-speech`) or else
+`espeak-ng` (the macOS `say` voices are licensed for personal use only), and a voice pack whose manifest says `"redistributable": false` gives way to the
 built-in choir; both come back when the broadcast stops. A journey with phrases refuses to start a broadcast when
-`espeak-ng` is not installed, and says so. Nothing on the picture makes any claim about the listener.
+neither is installed, and says so. Nothing on the picture makes any claim about the listener.
 
 ## Token usage
 

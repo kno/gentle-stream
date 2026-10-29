@@ -215,10 +215,9 @@ class Player:
     # ------------------------------------------------------------ broadcasting
     def stream_start(self):
         """Broadcast what plays to the configured ingest (`gentle-stream stream url/key`): its status, or
-        BroadcastError with the reason. While it runs, phrases are spoken with espeak-ng and a voice pack that may not
-        be redistributed gives way to the built-in choir."""
-        import shutil
-
+        BroadcastError with the reason. While it runs, phrases are spoken with Piper or espeak-ng and a voice pack that
+        may not be redistributed gives way to the built-in choir."""
+        from . import speech
         from .broadcast import Broadcast, BroadcastError
         from .broadcast_view import BroadcastUnavailable, BroadcastView, view_text
         from .streamconf import StreamConfigError, load_key, load_url
@@ -237,10 +236,10 @@ class Player:
         except (StreamConfigError, BroadcastUnavailable) as e:
             raise BroadcastError(str(e)) from None
         phrases = self.engine.journey_phrases()
-        if phrases and shutil.which("espeak-ng") is None:
-            raise BroadcastError("the journey speaks phrases, and a broadcast speaks them with espeak-ng, which is "
-                                 "not installed (macOS voices are licensed for personal use only); install espeak-ng "
-                                 "or stop the journey")
+        if phrases and not speech.can_broadcast():
+            raise BroadcastError("the journey speaks phrases, and a broadcast speaks them with Piper or espeak-ng, "
+                                 "and neither is installed (macOS voices are licensed for personal use only); run "
+                                 "gentle-stream setup-speech, install espeak-ng, or stop the journey")
         self._safe_sources(True, phrases)
         broadcast = Broadcast(url, key, self.engine.sr, view, lambda: view_text(self),
                               lambda: self.spectrum_levels(48))
@@ -269,11 +268,11 @@ class Player:
         return broadcast.status() if broadcast is not None else None
 
     def _safe_sources(self, on: bool, phrases: tuple[str, ...]) -> None:
-        """Only what may be broadcast while `on`: espeak-ng for phrases, no pack that may not be redistributed; the
+        """Only what may be broadcast while `on`: Piper or espeak-ng for phrases, no pack that may not be redistributed; the
         usual sources again when off. The journey's phrases are rendered again with the program now in use."""
         from . import speech
 
-        speech.use_only("espeak-ng" if on else None)
+        speech.use_only(speech.BROADCAST_SAFE if on else None)
         if on:
             pack = self.engine.voices
             if pack is not None and not pack.pack.redistributable:

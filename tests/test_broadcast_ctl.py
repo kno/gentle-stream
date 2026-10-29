@@ -243,9 +243,9 @@ def test_phrases_without_espeak_ng_refuse_the_broadcast_with_the_reason(ingest, 
         player.journey_start(journey.to_dict())
         with pytest.raises(BroadcastError) as raised:
             player.stream_start()
-        assert str(raised.value) == ("the journey speaks phrases, and a broadcast speaks them with espeak-ng, which "
-                                     "is not installed (macOS voices are licensed for personal use only); install "
-                                     "espeak-ng or stop the journey")
+        assert str(raised.value) == ("the journey speaks phrases, and a broadcast speaks them with Piper or "
+                                     "espeak-ng, and neither is installed (macOS voices are licensed for personal use "
+                                     "only); run gentle-stream setup-speech, install espeak-ng, or stop the journey")
         assert player.streaming is None
     finally:
         player.close()
@@ -259,7 +259,7 @@ def test_without_phrases_a_missing_espeak_ng_does_not_stop_a_broadcast(ingest, m
         assert player.stream_start()["running"]
         from gentle_stream.speech import SpeechError
 
-        with pytest.raises(SpeechError, match="while broadcasting, phrases are spoken with espeak-ng"):
+        with pytest.raises(SpeechError, match="while broadcasting, phrases are spoken with Piper .* or espeak-ng"):
             player.say("Hello")
     finally:
         player.close()

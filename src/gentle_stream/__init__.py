@@ -63,7 +63,11 @@ saved prompts live in $XDG_CONFIG_HOME/gentle-stream/presets.json (default ~/.co
 
 sampled instruments (optional):
   gentle-stream setup-samples downloads the FluidR3_GM soundfont (MIT) once into the user cache;
-  with FluidSynth installed it replaces the procedural instruments. Nothing is downloaded otherwise."""
+  with FluidSynth installed it replaces the procedural instruments. Nothing is downloaded otherwise.
+
+spoken phrases (optional):
+  gentle-stream setup-speech downloads the Piper voice carlfm (public domain) once into the user cache;
+  with Piper installed (uv tool install piper-tts) every phrase is spoken with it, also while broadcasting."""
 
 
 def setup_samples() -> int:
@@ -269,6 +273,34 @@ def list_voices() -> int:
         return 1
     for name, language in found:
         print(f"{name}  {language}")
+    return 0
+
+
+def setup_speech(key: str) -> int:
+    from . import speechsetup
+    from .samples import SetupError
+
+    voice = speechsetup.CATALOG[key]
+    if key in speechsetup.installed():
+        print(speechsetup.installed_message(key, speechsetup.speech_dir() / key, already=True))
+        return 0
+    print(f"downloading the Piper voice {key} ({voice.language}; {voice.license}) at revision {voice.revision[:7]}")
+
+    def progress(done: int, total: int | None) -> None:
+        if sys.stdout.isatty():
+            mb = done / 1e6
+            line = f"  {mb:6.1f} MB" if not total else f"  {100 * done // total:3d}%  {mb:6.1f} / {total / 1e6:.1f} MB"
+            print("\r" + line, end="", flush=True)
+
+    try:
+        folder = speechsetup.setup_speech(key, progress=progress)
+    except SetupError as e:
+        print()
+        print(f"gentle-stream: setup-speech failed: {e}", file=sys.stderr)
+        return 1
+    if sys.stdout.isatty():
+        print()
+    print(speechsetup.installed_message(key, folder, already=False))
     return 0
 
 
@@ -737,6 +769,16 @@ def build_parser() -> argparse.ArgumentParser:
                     "the cache dir with its LICENSES.txt, and make it the choir's voice.")
     setup_voices_parser.add_argument("pack", choices=tuple(VOICE_CATALOG), metavar="PACK",
                                      help=f"the pack to install: {', '.join(VOICE_CATALOG)}")
+    from .speechsetup import CATALOG as SPEECH_CATALOG
+
+    setup_speech_parser = sub.add_parser(
+        "setup-speech", help="download a Piper voice (public domain) for spoken phrases, once",
+        description="Download a Piper voice whose license allows a broadcast (pinned revision and SHA-256) and "
+                    "install it under the cache dir with its LICENSES.txt. Phrases are then spoken with it, locally "
+                    "and while broadcasting, once the Piper program is installed (uv tool install piper-tts).")
+    setup_speech_parser.add_argument("voice", nargs="?", default="carlfm", choices=tuple(SPEECH_CATALOG),
+                                     metavar="VOICE", help=f"the voice to install: {', '.join(SPEECH_CATALOG)} "
+                                                           "(default: %(default)s)")
     ctl_parser = sub.add_parser("ctl", help="control the music playing in the background")
     ctl_parser.add_argument("action", choices=("play", "pause", "toggle", "next", "stop", "status", "tempo",
                                                "glide", "binaural", "say", "record", "stream", "mute", "unmute",
@@ -911,6 +953,8 @@ def main(argv: list[str] | None = None) -> int:
         return render(args.out, args.seconds, args.seed, args.genre, args.mood_file, args.procedural, args.journey)
     if args.command == "setup-voices":
         return setup_voices(args.pack)
+    if args.command == "setup-speech":
+        return setup_speech(args.voice)
     if args.command == "setup-samples":
         from . import samples
 

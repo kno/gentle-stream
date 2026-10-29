@@ -932,7 +932,7 @@ class SayModal(ModalScreen[tuple[str, list[str]] | None]):
 
 class VoicesModal(ModalScreen[None]):
     """Voice packs and the optional downloads (PM-043), with the functions of `voices add|list|remove`,
-    `setup-voices` and `setup-samples`, so the store and caches end up as the CLI leaves them. A download runs in
+    `setup-voices`, `setup-samples` and `setup-speech`, so the store and caches end up as the CLI leaves them. A download runs in
     a worker with a progress bar; the dialog stays open until it ends."""
 
     BINDINGS = [Binding("escape", "cancel", "Close")]
@@ -963,11 +963,13 @@ class VoicesModal(ModalScreen[None]):
                 yield Button("Add", id="add", variant="primary")
                 yield Button("Remove", id="remove")
             with Horizontal(classes="buttons"):
-                yield Button("Install FreePats choir", id="setup-voices")
-                yield Button("Install FluidR3_GM", id="setup-samples")
+                yield Button("FreePats choir", id="setup-voices")
+                yield Button("FluidR3_GM", id="setup-samples")
+                yield Button("Piper voice", id="setup-speech")
                 yield Button("Close", id="cancel")
             yield ProgressBar(id="voices-progress", show_eta=False)
-            yield Static("Downloads are optional, verified by SHA-256 and kept with their licenses.",
+            yield Static("Downloads (optional, verified by SHA-256, kept with their licenses): the choir, "
+                         "sampled instruments, a natural voice for phrases.",
                          id="voices-status", markup=False)
 
     def on_mount(self) -> None:
@@ -995,7 +997,7 @@ class VoicesModal(ModalScreen[None]):
             self._add()
         elif event.button.id == "remove":
             self._remove()
-        elif event.button.id in ("setup-voices", "setup-samples"):
+        elif event.button.id in ("setup-voices", "setup-samples", "setup-speech"):
             self._busy(True)
             self._install(event.button.id)
         else:
@@ -1033,12 +1035,12 @@ class VoicesModal(ModalScreen[None]):
 
     def _busy(self, busy: bool) -> None:
         self.busy = busy
-        for name in ("add", "remove", "setup-voices", "setup-samples"):
+        for name in ("add", "remove", "setup-voices", "setup-samples", "setup-speech"):
             self.query_one(f"#{name}", Button).disabled = busy
 
     @work(thread=True, exclusive=True, group="voices-setup")
     def _install(self, which: str) -> None:
-        from . import samples, voicesetup
+        from . import samples, speech, speechsetup, voicesetup
         from .voicepacks import PackError
 
         bar = self.query_one("#voices-progress", ProgressBar)
@@ -1054,6 +1056,11 @@ class VoicesModal(ModalScreen[None]):
                 already = voicesetup.installed(self.CHOIR)
                 folder = voicesetup.setup_voices(self.CHOIR, progress=progress)
                 message = voicesetup.installed_message(self.CHOIR, already or folder, already is not None)
+            elif which == "setup-speech":
+                already = "carlfm" in speechsetup.installed()
+                folder = speechsetup.setup_speech("carlfm", progress=progress)
+                message = speechsetup.installed_message("carlfm", folder, already)
+                speech.clear_cache()            # phrases rendered before are spoken again with the new voice
             else:
                 already = samples.soundfont_path()
                 sf2 = already or samples.setup_samples(progress=progress)
@@ -1515,7 +1522,7 @@ PARITY: dict[str, str] = {
     "journey save": "journey_save_as", "journey stop": "journey_menu", "journey restart": "journey_menu",
     "journey skip": "journey_menu", "journey edit": "journey_edit",
     "voices add": "voices", "voices list": "voices", "voices remove": "voices",
-    "setup-voices": "voices", "setup-samples": "voices",
+    "setup-voices": "voices", "setup-samples": "voices", "setup-speech": "voices",
     "render": "render",
 }
 NOT_IN_TUI: dict[str, str] = {

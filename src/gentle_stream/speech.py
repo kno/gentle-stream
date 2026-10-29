@@ -1,7 +1,9 @@
 """Spoken phrases over the music (`gentle-stream ctl say TEXT`, PM-031).
 
-A system text-to-speech program renders the phrase to a temporary WAV: `say` on macOS, else `espeak-ng` (Linux).
-The text is written to its standard input, never passed as an argument, so no phrase can look like an option.
+A text-to-speech program renders the phrase to a temporary WAV: Piper with a voice `setup-speech` installed
+(`speechsetup`), else `say` on macOS, else `espeak-ng` (Linux); while broadcasting only Piper or espeak-ng, whose
+voices may be broadcast (`use_only`). The text is written to the program's standard input, never passed as an
+argument, so no phrase can look like an option.
 `render` runs in the caller's thread (the background player's connection thread), never in the render thread: the
 engine only receives finished clips (`Engine.queue_speech`) and plays each one from the next phrase boundary (every
 four bars), mixed after the master chain like the binaural layer, with the music ducked `DUCK_DB` under it. Clips are
@@ -45,36 +47,64 @@ SPACE = 0.7             # room size of the `space` effect (as `Style.space`) and
 SPACE_SEND = 0.6
 IR_SEED = 7
 NO_BACKEND = "no text-to-speech backend found (macOS has say; on Linux install espeak-ng)"
-BROADCAST_NEEDS = ("while broadcasting, phrases are spoken with {name} (macOS voices are licensed for personal use "
-                   "only), and {name} is not installed")
+BROADCAST_SAFE = ("piper", "espeak-ng")    # the programs whose voices may be broadcast
+BROADCAST_NEEDS = ("while broadcasting, phrases are spoken with Piper (gentle-stream setup-speech) or espeak-ng "
+                   "(macOS voices are licensed for personal use only), and neither is installed")
+PIPER_WPM = 175         # the rate Piper's length scale 1.0 stands for (say's and espeak-ng's default too)
 
 
 class SpeechError(Exception):
     """A phrase that cannot be spoken; the message is meant for the terminal."""
 
 
-_ONLY: str | None = None   # while broadcasting: the one program whose voices may be broadcast
+_ONLY: tuple[str, ...] | None = None   # while broadcasting: the programs whose voices may be broadcast
 
 
-def use_only(name: str | None) -> None:
-    """Speak only with `name` (a broadcast: macOS voices are licensed for personal use, espeak-ng's may be
-    broadcast), or with the usual choice again for None; phrases rendered before are forgotten."""
+def use_only(names: tuple[str, ...] | None) -> None:
+    """Speak only with the first of `names` found (a broadcast: macOS voices are licensed for personal use,
+    BROADCAST_SAFE's may be broadcast), or with the usual choice again for None; phrases rendered before are
+    forgotten."""
     global _ONLY
-    _ONLY = name
+    _ONLY = names
     clear_cache()
+
+
+def _which(name: str) -> str | None:
+    """The program's path; Piper's only with a voice installed for it."""
+    if name == "piper":
+        from . import speechsetup
+
+        return speechsetup.program() if speechsetup.installed() else None
+    return shutil.which(name)
+
+
+def can_broadcast() -> bool:
+    """Whether a program whose voices may be broadcast (BROADCAST_SAFE) is there to speak phrases."""
+    return any(_which(name) for name in BROADCAST_SAFE)
 
 
 def backend() -> tuple[str, str] | None:
     """(name, path) of the text-to-speech program to use, or None."""
-    for name in (_ONLY,) if _ONLY else ("say", "espeak-ng"):
-        path = shutil.which(name)
+    for name in _ONLY if _ONLY else ("piper", "say", "espeak-ng"):
+        path = _which(name)
         if path:
             return name, path
     return None
 
 
+def _piper_model(voice: str | None) -> Path:
+    """The installed Piper model for `voice` (a name `voices` lists), or the first one."""
+    from . import speechsetup
+
+    models = speechsetup.installed()
+    return models.get(voice or "", next(iter(models.values())))
+
+
 def _command(name: str, path: str, out: Path, voice: str | None = None, rate: int | None = None) -> list[str]:
     """The program's command line: each option its own argument, the text never on it (it goes to stdin)."""
+    if name == "piper":
+        cmd = [path, "-m", str(_piper_model(voice)), "-f", str(out)]
+        return cmd + ["--length-scale", str(round(PIPER_WPM / rate, 3))] if rate is not None else cmd
     if name == "say":
         cmd = [path, "-o", str(out), "--data-format=LEI16@22050"]
         cmd += ["-v", voice] if voice else []
@@ -87,12 +117,16 @@ def _command(name: str, path: str, out: Path, voice: str | None = None, rate: in
 
 
 def voices() -> list[tuple[str, str]]:
-    """The system voices as (name, language) for `say`, (language, name) for `espeak-ng` (whose `-v` takes the
+    """The voices as (name, language) for Piper and `say`, (language, name) for `espeak-ng` (whose `-v` takes the
     language code); raises SpeechError without a program."""
     found = backend()
     if found is None:
         raise SpeechError(NO_BACKEND)
     name, path = found
+    if name == "piper":
+        from . import speechsetup
+
+        return [(key, speechsetup.CATALOG[key].language) for key in speechsetup.installed()]
     args = [path, "-v", "?"] if name == "say" else [path, "--voices"]
     try:
         done = subprocess.run(args, capture_output=True, text=True, timeout=TIMEOUT, check=False)
@@ -179,7 +213,7 @@ def _speak(text: str, sr: int, voice: str | None, rate: int | None) -> np.ndarra
     """The program's output for the phrase, at `sr`, before any effect or normalisation."""
     found = backend()
     if found is None:
-        raise SpeechError(BROADCAST_NEEDS.format(name=_ONLY) if _ONLY else NO_BACKEND)
+        raise SpeechError(BROADCAST_NEEDS if _ONLY else NO_BACKEND)
     name, path = found
     with tempfile.TemporaryDirectory(prefix="gentle-stream-say-") as tmp:
         out = Path(tmp) / "phrase.wav"

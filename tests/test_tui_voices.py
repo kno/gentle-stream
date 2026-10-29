@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from textual.widgets import Button, Input, OptionList, ProgressBar
 
-from gentle_stream import main, samples, voicepacks, voicesetup
+from gentle_stream import main, samples, speechsetup, voicepacks, voicesetup
 from gentle_stream.app import StreamApp, VoicesModal
 from tests.test_app import FakeShell, make_app
 from tests.test_samples import SF2, make_deb
@@ -209,6 +209,41 @@ async def test_a_failed_soundfont_install_says_why_and_leaves_nothing(tmp_path, 
 
 
 @pytest.mark.asyncio
+async def test_installing_the_piper_voice_leaves_what_setup_speech_leaves(capsys, dirs, tmp_path, monkeypatch):
+    from tests.test_piper_voice import serve_carlfm
+
+    serve_carlfm(tmp_path, monkeypatch)
+    app, _ = make_app(FakeShell())
+    async with app.run_test() as pilot:
+        screen = await open_voices(pilot)
+        await press(pilot, "setup-speech")
+        folder = speechsetup.speech_dir() / "carlfm"
+        assert status(screen) == speechsetup.installed_message("carlfm", folder, already=False)
+        await press(pilot, "setup-speech")                                     # a second time: as the CLI says
+        assert status(screen) == speechsetup.installed_message("carlfm", folder, already=True)
+    by_tui = tree(tmp_path / "A")
+    assert "cache/gentle-stream/speech/carlfm/LICENSES.txt" in by_tui
+    dirs("B")
+    assert cli(capsys, "setup-speech")[0] == 0
+    assert tree(tmp_path / "B") == by_tui
+
+
+@pytest.mark.asyncio
+async def test_a_failed_piper_voice_install_says_why_and_leaves_no_file(tmp_path, monkeypatch):
+    from tests.test_piper_voice import serve_carlfm
+
+    voice = serve_carlfm(tmp_path, monkeypatch)
+    files = {**voice.files, "MODEL_CARD": (voice.files["MODEL_CARD"][0], "0" * 64)}
+    monkeypatch.setitem(speechsetup.CATALOG, "carlfm", speechsetup.SpeechVoice(**{**voice.__dict__, "files": files}))
+    app, _ = make_app(FakeShell())
+    async with app.run_test() as pilot:
+        screen = await open_voices(pilot)
+        await press(pilot, "setup-speech")
+        assert status(screen).startswith("setup-speech failed: checksum mismatch")
+    assert tree(tmp_path / "A") == {}
+
+
+@pytest.mark.asyncio
 async def test_a_download_shows_progress_and_the_ui_stays_responsive(monkeypatch):
     release, reached = threading.Event(), threading.Event()
 
@@ -248,7 +283,7 @@ async def test_everything_fits_in_80_by_24():
     app, _ = make_app(FakeShell())
     async with app.run_test(size=(80, 24)) as pilot:
         screen = await open_voices(pilot)
-        for name in ("voices-list", "voices-folder", "add", "remove", "setup-voices", "setup-samples", "cancel",
-                     "voices-progress", "voices-status"):
+        for name in ("voices-list", "voices-folder", "add", "remove", "setup-voices", "setup-samples",
+                     "setup-speech", "cancel", "voices-progress", "voices-status"):
             region = screen.query_one(f"#{name}").region
             assert region.width > 0 and region.right <= 80 and region.bottom <= 24, name
