@@ -40,8 +40,8 @@ therapeutic claims in any overlay; tests with a fake encoder and a local sink, n
 | :--- | :--- | :--- | :--- | :--- |
 | T0 Record the decisions | S0 | inline | `docs/m11-decisions` | done (`f1a5ed8`) |
 | T1 Ingest URL and stream key storage (`stream key set/clear`, `stream url`, `stream show`) | S2, S5 | inline | `feat/stream-key` | done (T1 commit; base `f1a5ed8`) |
-| T2 RTMP(S) publisher (handshake, connect, publish, FLV tags as messages) and a fake local server | S2, S3 | inline | `feat/rtmp-publish` | done (T2 commit; base `cfcba4f`) |
-| T3 Broadcast view: 1280x720 frames with Pillow from the player snapshot | S5 | inline | `feat/broadcast-view` | pending |
+| T2 RTMP(S) publisher (handshake, connect, publish, FLV tags as messages) and a fake local server | S2, S3 | inline | `feat/rtmp-publish` | done (`901bc99`; base `cfcba4f`) |
+| T3 Broadcast view: 1280x720 frames with Pillow from the player snapshot | S5 | inline | `feat/broadcast-view` | done (T3 commit; base `901bc99`) |
 | T4 Encoder pipeline: ffmpeg (raw video + PCM in, FLV out), bounded queues fed from the callback | S1, S3 | inline | `feat/broadcast-encoder` | pending |
 | T5 Player/daemon/ctl: `ctl stream start/stop`, status keys, safe sources while broadcasting | S1-S5 | inline | `feat/broadcast-ctl` | pending |
 | T6 TUI action, parity map, README, sentinel-key leak test over every surface | S2, S3, S5 | inline | `feat/broadcast-tui` | pending |
@@ -72,3 +72,13 @@ therapeutic claims in any overlay; tests with a fake encoder and a local sink, n
   server (`-listen 1`): what it receives decodes as audio + video lasting the whole 2 s. Mutations: 8 of 8 caught
   after making a continuation chunk carry an extended timestamp and recording the peer's chunk size.
 - L7: T2 suite job-37: 1469 passed, 3 deselected, 0 test daemons. T2 verified.
+- L8: T3. Pillow added as the optional extra `broadcast` (and to the dev group so the tests run); ImportError ->
+  BroadcastUnavailable "a live broadcast needs Pillow: pip install 'gentle-stream[broadcast]'". New lines.py holds
+  format_time, journey_line and binaural_line (app.py imports them, so the TUI and the picture share one wording).
+  broadcast_view.py: ViewText (the TUI's lines, empty when the TUI hides them), view_text(player), BroadcastView.frame
+  (raw RGB24 1280x720; text drawn with Pillow's default FreeType font once per change and cached; spectrum bars
+  painted with numpy, rose-to-muted gradient; long lines cut with an ellipsis inside the margins). RED ImportError;
+  a test compared absolute sums against a non-black background and was corrected to measure against the quiet frame.
+  Mutations: 4 of 5 caught after adding the silent-vocals test; `if line:` -> True is equivalent (empty text draws
+  nothing). 11 focused tests.
+- L9: T3 suite job-38: 1480 passed, 3 deselected, 0 test daemons. T3 verified. (The session lost the record of the T2 push: feat/rtmp-publish was committed but not on fork; pushed with T3.)
