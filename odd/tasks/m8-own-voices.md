@@ -96,3 +96,4 @@ idempotent)."
   idempotency, staging cleanup, final cleanup) each fail tests. End-to-end against the real archive in a temporary
   XDG dir: installed with 12 regions, second run "already installed" without downloading, render OK.
 - L13: PM-030 full non-slow suite job-17 exited 0: 1180 passed, 3 deselected, 0 orphan daemons. T4 verified; M8 implemented. Not pushed. Not done: listening to the FreePats choir and any voice pack marked `"melody": true`.
+- L-final: 2026-10-28 the maintainer listened to the FreePats Synth Pad Choir renders (listen/freepats-*.wav): "suena bien". Approved. Restarting the player after adding a voice pack is acceptable ("no importa que haya que reiniciar tras añadir un pack de voces"); no hot swap.

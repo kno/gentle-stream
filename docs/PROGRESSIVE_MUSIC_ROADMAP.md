@@ -1103,6 +1103,14 @@ by the background player itself.
   3. Content rules for public broadcast: spoken phrases with macOS `say` voices are licensed for personal use; the
      broadcast must either mute phrases or require `espeak-ng`/a voice whose license allows it. Packs whose manifest
      says `"redistributable": false` must not be broadcast either. No health or therapeutic claims in any overlay.
+- **Decisions taken (2026-10-29, maintainer):**
+  1. Encoder: the `ffmpeg` program, which only encodes (raw video and PCM in, FLV out on a pipe); gentle-stream itself
+     publishes the FLV over RTMP/RTMPS. Checked first: ffmpeg 9.0.2 rejects `-/rtmp_playpath FILE`, so with ffmpeg
+     publishing, the key could only travel in its command line. The publisher keeps it in the player process.
+  2. Frames: Pillow, as an optional extra.
+  3. Content: no refusal by default; while a broadcast runs, phrases are spoken with espeak-ng (never `say`) and the
+     choir sings with the built-in voice instead of a non-redistributable pack, which comes back when the broadcast
+     stops. The broadcast is refused, with the reason, only when phrases are in use and espeak-ng is not installed.
 - **Out of scope:** OAuth and the YouTube Data API, chat, overlays from other apps, recording the video locally (the
   audio recording of PM-036 stays), several simultaneous targets.
 - **Affected components:** new `broadcast.py` (frames, encoder process or binding, the feed); `player.py`,
