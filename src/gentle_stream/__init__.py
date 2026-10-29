@@ -719,6 +719,17 @@ def build_parser() -> argparse.ArgumentParser:
     voices_sub.add_parser("list", help="list packs with their license and attribution (* the active one)")
     voices_sub.add_parser("remove", help="unregister a pack; the built-in choir sings again").add_argument(
         "target", metavar="NAME")
+    stream_parser = sub.add_parser("stream", help="where a live broadcast goes: the ingest URL and the stream key",
+                                   description="Set the RTMP(S) ingest URL and the stream key of a live broadcast "
+                                               "(e.g. YouTube Live). The key is read from stdin only and kept in a "
+                                               "file only you can read, or taken from GENTLE_STREAM_KEY.")
+    stream_sub = stream_parser.add_subparsers(dest="stream_action", metavar="action", required=True)
+    key_parser = stream_sub.add_parser("key", help="set (from stdin, never as an argument) or clear the stream key")
+    key_parser.add_argument("key_action", choices=("set", "clear"))
+    key_parser.add_argument("stray", nargs="*", help=argparse.SUPPRESS)
+    stream_sub.add_parser("url", help="set the ingest URL, e.g. rtmps://a.rtmps.youtube.com/live2").add_argument(
+        "url", metavar="URL")
+    stream_sub.add_parser("show", help="show the ingest URL and whether a key is set (never the key)")
     return ap
 
 
@@ -771,6 +782,13 @@ def main(argv: list[str] | None = None) -> int:
                               gentle_shell=args.gentle_shell, dry_run=getattr(args, "dry_run", False),
                               source=getattr(args, "file", None), last=getattr(args, "last", False),
                               yes=getattr(args, "yes", False))
+    if args.command == "stream":
+        from .streamconf import stream_command
+
+        if getattr(args, "stray", None):   # never echoed: it may be the key itself
+            _command(_command(ap, "stream"), "key").error(
+                "the stream key is read from stdin, never from the command line")
+        return stream_command(args.stream_action, getattr(args, "key_action", None), getattr(args, "url", None))
     if args.command == "voices":
         from .voicepacks import voices_command
 

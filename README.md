@@ -465,6 +465,23 @@ A file or path that cannot be read or written prints one `gentle-stream: ...` li
 
 <div align="center"><img src="https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/rose.png" width="28" alt="" /></div>
 
+## Live broadcast
+
+Work in progress (PM-045): the player will send what plays, with a picture of it, to YouTube Live or any RTMP(S)
+ingest. First tell it where to send, once:
+
+```bash
+gentle-stream stream url rtmps://a.rtmps.youtube.com/live2   # the ingest URL from YouTube Studio
+gentle-stream stream key set                                 # paste the stream key; it is not shown
+gentle-stream stream show                                    # the URL, and whether a key is set
+gentle-stream stream key clear
+```
+
+The stream key lets anyone stream to your channel, so it is treated as a secret: it is read only from stdin (never as
+an argument, where other programs could see it in the process list), kept in
+`$XDG_CONFIG_HOME/gentle-stream/stream.key` with mode 0600 (a key file others can read is refused, as ssh does), or
+taken from the `GENTLE_STREAM_KEY` environment variable, which wins. It is never printed, logged or shown.
+
 ## Token usage
 
 After each interpretation the status line shows what that call used, and the model line keeps the session total:
