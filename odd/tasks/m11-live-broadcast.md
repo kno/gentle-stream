@@ -42,7 +42,7 @@ therapeutic claims in any overlay; tests with a fake encoder and a local sink, n
 | T1 Ingest URL and stream key storage (`stream key set/clear`, `stream url`, `stream show`) | S2, S5 | inline | `feat/stream-key` | done (T1 commit; base `f1a5ed8`) |
 | T2 RTMP(S) publisher (handshake, connect, publish, FLV tags as messages) and a fake local server | S2, S3 | inline | `feat/rtmp-publish` | done (`901bc99`; base `cfcba4f`) |
 | T3 Broadcast view: 1280x720 frames with Pillow from the player snapshot | S5 | inline | `feat/broadcast-view` | done (T3 commit; base `901bc99`) |
-| T4 Encoder pipeline: ffmpeg (raw video + PCM in, FLV out), bounded queues fed from the callback | S1, S3 | inline | `feat/broadcast-encoder` | pending |
+| T4 Encoder pipeline: ffmpeg (raw video + PCM in, FLV out), bounded queues fed from the callback | S1, S3 | inline | `feat/broadcast-encoder` | done (T4 commit; base `9d523aa`) |
 | T5 Player/daemon/ctl: `ctl stream start/stop`, status keys, safe sources while broadcasting | S1-S5 | inline | `feat/broadcast-ctl` | pending |
 | T6 TUI action, parity map, README, sentinel-key leak test over every surface | S2, S3, S5 | inline | `feat/broadcast-tui` | pending |
 
@@ -82,3 +82,18 @@ therapeutic claims in any overlay; tests with a fake encoder and a local sink, n
   Mutations: 4 of 5 caught after adding the silent-vocals test; `if line:` -> True is equivalent (empty text draws
   nothing). 11 focused tests.
 - L9: T3 suite job-38: 1480 passed, 3 deselected, 0 test daemons. T3 verified. (The session lost the record of the T2 push: feat/rtmp-publish was committed but not on fork; pushed with T3.)
+- L10: T4. Delegated to gentle-ai-worker (context backstop); it returned partial: broadcast.py without tests, with
+  defects found in review: `os.dup2(read_fd, 3)` in the parent (clobbers the daemon's own fd 3), the encoder left
+  running when connect fails, stop() waiting on ffmpeg before closing the video pipe (always the 2 s kill), the exit
+  code read with poll() right at stderr EOF (missed errors). Rewritten inline, tests first (RED against the worker's
+  code). broadcast.py: encoder_command(sr) has no URL/key and reads video from `pipe:{video_fd}` (the pipe's own
+  number, pass_fds); feed() = put_nowait or count a drop; threads write audio, draw 10 fps, write video, publish the
+  FLV and watch ffmpeg (stderr kept masked, an exit while broadcasting is the error, preferred over the publisher's
+  "no FLV" which it causes); stop() joins writers, kills a stuck encoder, closes its inputs, lets it finish, closes the
+  publish; status() BroadcastStatus. tests/fake_encoder.py (copy/stall/fail), tests/test_broadcast.py (8): audio
+  byte-for-byte, 500 feeds < 50 ms against a stalled encoder with drops counted, a failing encoder reported with the
+  key masked, unreachable ingest leaves no encoder, command without URL/key, the caller's fds untouched, stop
+  idempotent with no broadcast threads left, real ffmpeg to the local ingest (audio + video, key not in `ps`). One
+  flaky run traced to counting all threads; the test now checks the broadcast's own threads. Mutations: 5 of 6 caught;
+  "stderr not masked" is equivalent (stderr reaches the outside only through _fail, which masks again).
+- L11: T4 suite job-39: 1488 passed, 3 deselected, 0 test daemons, 0 encoder processes left. T4 verified.
