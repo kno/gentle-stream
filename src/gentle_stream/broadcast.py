@@ -148,7 +148,8 @@ class Broadcast:
             try:
                 write(data)
             except (OSError, ValueError):
-                self._fail(f"the encoder stopped reading its {what}")
+                if not self._encoder_ended():
+                    self._fail(f"the encoder stopped reading its {what}")
                 return
 
     def _write_audio(self) -> None:
@@ -162,16 +163,27 @@ class Broadcast:
             self._drain(self._video, lambda data: _write_all(fd, data), "video")
 
     def _draw_video(self) -> None:
-        while not self._stopping.wait(1 / FPS):
+        """FPS frames a second by the clock: frame n is due at n / FPS from the start, and a picture drawn late is
+        sent again for every frame time it missed. The encoder stamps frames by their count, so fewer frames than
+        the clock asks for would put the video behind the audio, and ffmpeg would stop reading the audio to wait."""
+        start, sent = time.monotonic(), 0
+        while not self._stopping.is_set():
+            due = int((time.monotonic() - start) * FPS) + 1
+            if sent >= due:
+                self._stopping.wait(max(0.0, start + sent / FPS - time.monotonic()))
+                continue
             try:
                 frame = self.view.frame(self.text(), self.levels())
             except Exception as e:  # noqa: BLE001  (any drawing failure ends the broadcast, reported)
                 self._fail(f"cannot draw the picture: {e}")
                 return
-            try:
-                self._video.put_nowait(frame)
-            except queue.Full:
-                self._dropped += 1
+            due = max(due, int((time.monotonic() - start) * FPS) + 1)
+            while sent < due:
+                try:
+                    self._video.put_nowait(frame)
+                except queue.Full:
+                    self._dropped += 1
+                sent += 1
 
     def _publish(self) -> None:
         stdout = self._process.stdout if self._process else None
@@ -180,12 +192,18 @@ class Broadcast:
         try:
             self._publisher.publish_from(stdout)
         except PublishError as e:
-            process = self._process
-            with suppress(subprocess.TimeoutExpired):
-                if process is not None:
-                    process.wait(2)   # the stream broke because the encoder ended? its exit says why
-            if process is None or process.poll() is None:
+            if not self._encoder_ended():
                 self._fail(str(e))
+
+    def _encoder_ended(self) -> bool:
+        """Whether the encoder has exited (waiting a moment for it): a broken pipe or stream it causes is reported
+        by `_watch`, with the encoder's own message, rather than as the pipe's error."""
+        process = self._process
+        if process is None:
+            return True
+        with suppress(subprocess.TimeoutExpired):
+            process.wait(2)
+        return process.poll() is not None
 
     def _watch(self) -> None:
         """Keep ffmpeg's last stderr lines; an exit while broadcasting is a failure."""

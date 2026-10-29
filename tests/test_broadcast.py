@@ -4,7 +4,6 @@ import itertools
 import shutil
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 
@@ -130,15 +129,16 @@ def test_the_callers_file_descriptors_are_left_alone(view, tmp_path):
     assert (tmp_path / "keep").read_text() == "still mine"
 
 
-def ours() -> list[str]:
-    return [t.name for t in threading.enumerate() if t.name.startswith(("broadcast-", "rtmp-reader"))]
-
-
 def test_stop_is_idempotent_and_leaves_no_threads_or_processes(view, tmp_path):
     ingest = FakeIngest()
     broadcast = make(ingest, view, "copy", tmp_path / "pcm")
     broadcast.start()
     process = broadcast._process
+    threads = [*broadcast._threads.values(), broadcast._publisher._reader_thread]   # this broadcast's own
+
+    def ours() -> list[str]:
+        return [t.name for t in threads if t is not None and t.is_alive()]
+
     broadcast.stop()
     broadcast.stop()
     ingest.wait()
@@ -177,3 +177,29 @@ def test_the_video_is_30_fps_at_a_constant_2500k_with_a_keyframe_every_2_s(view)
     pairs = dict(itertools.pairwise(command))
     assert pairs["-r"] == "30" and pairs["-g"] == "60"
     assert pairs["-b:v"] == pairs["-maxrate"] == "2500k" and pairs["-bufsize"] == "5000k"
+
+
+class SlowView(BroadcastView):
+    """Draws like BroadcastView but takes 20 ms a frame, as a loaded machine might."""
+
+    def frame(self, text, levels):
+        time.sleep(0.02)
+        return super().frame(text, levels)
+
+
+def test_the_video_keeps_30_frames_a_second_by_the_clock_even_when_drawing_is_slow(tmp_path):
+    """The first live tests said "bad": frames were counted, not clocked, so a late frame put the video behind the
+    audio, ffmpeg stopped reading the audio and broadcast blocks were dropped. Frames are now due by the clock; a late
+    one repeats the last picture, so the encoder always gets 30 a second."""
+    ingest, out = FakeIngest(), tmp_path / "pcm"
+    broadcast = Broadcast(ingest.url, StreamKey(KEY), SR, SlowView(), lambda: TEXT, lambda: np.zeros(48),
+                          encoder_command=[sys.executable, FAKE, "copy", str(out), "{video_fd}"])
+    broadcast.start()
+    started = time.monotonic()
+    time.sleep(2.0)
+    broadcast.stop()
+    elapsed = time.monotonic() - started
+    frames = int(Path(str(out) + ".video").read_text()) // (1280 * 720 * 3)
+    assert frames >= 0.95 * 30 * elapsed - 2, (frames, elapsed)
+    assert frames <= 30 * elapsed + 2
+    assert broadcast.status()["dropped_frames"] == 0
