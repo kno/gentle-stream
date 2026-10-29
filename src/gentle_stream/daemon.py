@@ -27,6 +27,7 @@ key kept in a 0600 file. Messages are JSON (never pickle), one request and one r
                                      it is heading to, or null)
     {"cmd": "binaural_set", "beat": 10, "seconds": 30}
                                      (glide only the given carrier, beat or level; refused while the layer is off)
+    {"cmd": "mute", "on": true}      (silence the speakers only; a broadcast or a recording keeps the sound)
     {"cmd": "stream_start"}          -> {"ok": true, "stream": {target, seconds, dropped_frames, error, running}}
                                      (broadcast to the configured ingest; the reason when it cannot start)
     {"cmd": "stream_stop"}           -> {"ok": true, "stream": {...}}, or {"ok": false, "error": "not broadcasting"}
@@ -146,6 +147,7 @@ def state(player, bands: int = 0) -> dict:
         "binaural": player.engine.binaural.to_dict() if player.engine.binaural is not None else None,
         "recording": _recording(player.recording),
         "stream": player.streaming,   # the broadcast's status (target without the key), or None
+        "muted": bool(player.muted),  # the speakers only; a broadcast or a recording keeps the sound
     }
     if bands > 0:
         out["spectrum"] = [round(float(v), 4) for v in player.spectrum_levels(min(bands, MAX_BANDS))]
@@ -257,6 +259,11 @@ def handle(player, request) -> dict:
                 player.record_start(path, bool(request.get("force", False)))
             except RecordError as e:
                 return {"ok": False, "error": str(e)}
+        elif cmd == "mute":
+            on = request.get("on")
+            if not isinstance(on, bool):
+                return {"ok": False, "error": "bad request: on must be true or false"}
+            player.set_muted(on)
         elif cmd == "stream_start":
             from .broadcast import BroadcastError
 

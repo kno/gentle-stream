@@ -1421,7 +1421,7 @@ class JourneyPickerModal(ModalScreen[str | None]):
 PARITY: dict[str, str] = {
     "ctl play": "toggle", "ctl pause": "toggle", "ctl toggle": "toggle", "ctl next": "next", "ctl stop": "quit",
     "ctl tempo": "controls", "ctl glide": "controls", "ctl binaural": "binaural", "ctl say": "say",
-    "ctl record": "record", "ctl stream": "broadcast",
+    "ctl record": "record", "ctl stream": "broadcast", "ctl mute": "mute", "ctl unmute": "mute",
     "stream key": "broadcast", "stream url": "broadcast", "stream show": "broadcast",
     "journey play": "journey_picker", "journey list": "journey_picker", "journey show": "journey_picker",
     "journey delete": "journey_picker", "journey create": "journey_picker", "journey validate": "journey_open",
@@ -1471,6 +1471,7 @@ class StreamApp(App):
         Binding("v", "voices", "Voices"),
         Binding("w", "render", "Render"),
         Binding("L", "broadcast", "Live"),
+        Binding("M", "mute", "Mute here"),
         Binding("plus,equals_sign", "volume(5)", "Vol +5"),
         Binding("minus", "volume(-5)", "Vol -5"),
         Binding("up", "volume(1)", "Vol +1"),
@@ -1559,6 +1560,8 @@ class StreamApp(App):
         elapsed, remaining = format_time(p.elapsed_seconds), format_time(p.cycle_remaining_seconds)
         recording = p.recording
         rec = f" · [b $error]● REC[/] {format_time(recording[1])}" if recording is not None else ""
+        if p.muted:
+            rec += " · [b $warning]MUTED here[/]"
         streaming = p.streaming
         if streaming and streaming.get("running"):
             rec += f" · [b $error]● LIVE[/] {format_time(streaming['seconds'])}"
@@ -1630,6 +1633,7 @@ class StreamApp(App):
             ("Voices and samples", ("Add, list or remove voice packs; install the FreePats choir or the FluidR3_GM "
                                     "soundfont (v)"), "voices"),
             ("Render to a file", "Render the style playing now or a journey into a WAV file (w)", "render"),
+            ("Mute here", "Silence the speakers; a broadcast or a recording keeps the sound (M)", "mute"),
             ("Live broadcast", "Broadcast to YouTube Live or any RTMP(S) ingest; set its URL and stream key (L)",
              "broadcast"),
             ("Record the session", "Start or stop recording what you hear into a WAV file (r)", "record"),
@@ -1679,6 +1683,12 @@ class StreamApp(App):
                 self._status(escape(line))
 
         self.push_screen(RenderModal(self.player.now.style), done)
+
+    def action_mute(self) -> None:
+        """Silence the speakers or bring them back, as `ctl mute` / `ctl unmute`."""
+        muted = not self.player.muted
+        self.player.set_muted(muted)
+        self._status("Muted here; a broadcast or a recording keeps the sound" if muted else "Sound back here")
 
     def action_broadcast(self) -> None:
         """The live broadcast, as `gentle-stream stream` and `ctl stream start|stop` do."""

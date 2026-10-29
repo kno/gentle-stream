@@ -171,6 +171,7 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 | `r` | Record the session: asks for a WAV file (a dated one in your home folder is proposed), then saves everything you hear until you press `r` again; the state line shows `● REC` and the length |
 | `w` | Render to a file: the style playing now or a built-in journey, a length, a seed (blank: random, then shown) and the procedural instruments if you want them, written in the background by the same function as `gentle-stream render`, so the same options give the same bytes; what plays is not interrupted |
 | `L` | Live broadcast: the ingest URL and the stream key (typed masked, saved in a file only you can read, never shown), and start or stop the broadcast, as `gentle-stream stream` and `ctl stream start/stop`; while it runs the state line shows `● LIVE` and its length, or `LIVE failed` when it stopped on an error (the music plays on) |
+| `M` | Mute here: silence the speakers (with a short fade) while the music keeps playing; a broadcast and a session recording keep the sound, and the state line shows `MUTED here`; `M` again brings it back |
 | `ctrl+p` | Command palette: every action of the app, keyed or not, found by typing part of its name |
 | `+` / `-` | Volume up / down by 5% |
 | `↑` / `↓` | Volume up / down by 1% |
@@ -192,6 +193,7 @@ Everything the command line does can be done from the TUI too: by its key, or by
 | `ctl say` (with `--voice`, `--rate`, `--effect`, `--list-voices`) | `t` |
 | `ctl record start/stop` | `r` |
 | `ctl stream start/stop`, `stream url`, `stream key set/clear`, `stream show` | `L` |
+| `ctl mute`, `ctl unmute` | `M` |
 | `ctl status` | always on screen |
 | `journey play`, `list`, `show`, `delete`, `create` | `J` journeys |
 | `journey validate` | `J` → Open file |
@@ -238,6 +240,7 @@ gentle-stream ctl stop     # ends the background player
 | `ctl say TEXT [--voice NAME] [--rate WPM] [--effect dry\|radio\|space]` | Speak TEXT (at most 200 characters) over the music from the next phrase boundary, the music ducked 3 dB; `ctl say --list-voices` lists the system voices | `0` (an unknown voice falls back to the default with a warning); `1` when nothing plays, no text-to-speech program is found, or it fails; `2` without TEXT or with a rate outside 80-400 |
 | `ctl record start FILE.wav [--force]` / `ctl record stop` | Record exactly what the background player plays (volume and pauses included) into a 16-bit stereo WAV, until `stop` or until the player stops; an existing file needs `--force` | `0`; `1` when nothing plays, a recording is running, the folder does not exist, the file exists without `--force`, or (stop) nothing records; `2` for a malformed command |
 | `ctl stream start` / `ctl stream stop` | Broadcast what the background player plays, with a picture of it, to the ingest set with `gentle-stream stream url` and `stream key set` (see [Live broadcast](#live-broadcast)); `stop` reports how long it ran and the frames dropped | `0`; `1` when nothing plays, no URL or key is set, a broadcast is running, the journey speaks phrases without `espeak-ng`, the ingest refuses it, or (stop) nothing broadcasts; `2` for a malformed command |
+| `ctl mute` / `ctl unmute` | Silence the background player's speakers, or bring them back; the music keeps playing, and a broadcast or a recording keeps the sound (`ctl status` reports `"muted"`) | `0`; `1` when nothing plays; `2` with an argument |
 | `ctl binaural on [--carrier HZ] [--beat HZ] [--level L] [--over SECONDS]`, `ctl binaural set ... [--over SECONDS]`, `ctl binaural off` | Fade the binaural texture in or out, or glide it to new values (see [Binaural](#binaural)); nothing on stdout | `0`; `1` when nothing plays or `set` finds it off; `2` for a value out of range, options with `off`, or `set` without one |
 | `journey play NAME\|FILE` | Run a built-in or saved journey (names ignore case) or a JSON file (see [Journeys](#journeys)); nothing on stdout | `0`; `1` when nothing plays or the name is unknown |
 | `journey restart` | Restart the running journey at its first stage on the next bar | `0`; `1` when nothing plays or no journey is running |
@@ -489,6 +492,8 @@ The stream key lets anyone stream to your channel, so it is treated as a secret:
 an argument, where other programs could see it in the process list), kept in
 `$XDG_CONFIG_HOME/gentle-stream/stream.key` with mode 0600 (a key file others can read is refused, as ssh does), or
 taken from the `GENTLE_STREAM_KEY` environment variable, which wins. It is never printed, logged or shown.
+
+To broadcast without hearing it yourself, mute here (`gentle-stream ctl mute`, or `M` in the TUI): the speakers go silent and the broadcast keeps the sound.
 
 Then, with the music playing:
 

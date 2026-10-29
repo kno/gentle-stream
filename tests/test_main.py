@@ -431,7 +431,7 @@ def test_ctl_status_reports_the_running_journey(runtime, capsys):
     wait_for(lambda: status()["journey"] is not None)
     state = status()
     assert list(state) == ["running", "playing", "name", "genre", "mood", "bpm", "target_bpm", "journey",
-                           "binaural", "stream"]
+                           "binaural", "stream", "muted"]
     journey = state["journey"]
     assert (journey["name"], journey["title"], journey["stage"], journey["stages"], journey["stage_name"]) == (
         "warm-up", "Warm-up", 1, 4, "Settle")

@@ -75,6 +75,8 @@ class Player:
         self.playing = True
         self.volume = float(np.clip(volume, 0, 1))
         self._gain = 0.0
+        self.muted = False                     # the speakers only: a broadcast and a recording keep the sound
+        self._monitor = 1.0                    # the speakers' gain, ramped like the volume
         self.position = 0                # samples played since start
         self.underruns = 0
         self.level = 0.0
@@ -215,6 +217,11 @@ class Player:
 
     def toggle(self) -> None:
         self.playing = not self.playing
+
+    def set_muted(self, muted: bool) -> None:
+        """Silence the speakers (or bring them back) from the next block, with a short ramp; the broadcast and the
+        session recording keep the sound, and the music keeps playing."""
+        self.muted = bool(muted)
 
     def set_volume(self, volume: float) -> None:
         self.volume = float(np.clip(volume, 0, 1))
@@ -445,3 +452,10 @@ class Player:
         self.level = float(np.sqrt(np.mean(mono ** 2)))
         n = min(frames, SPECTRUM_SIZE)
         self._tail = np.concatenate([self._tail[n:], mono[-n:]])
+        monitor = 0.0 if self.muted else 1.0   # last: what was fed and shown above is the music, unmuted
+        if monitor != 1.0 or self._monitor != 1.0:
+            mdiff = monitor - self._monitor
+            msteps = np.minimum(np.arange(1, frames + 1) * rate, abs(mdiff))
+            mgain = (self._monitor + np.sign(mdiff) * msteps).astype(np.float32)
+            self._monitor = float(mgain[-1]) if abs(mgain[-1] - monitor) > 1e-6 else monitor
+            outdata *= mgain[:, None]

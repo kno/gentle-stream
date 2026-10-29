@@ -171,6 +171,7 @@ class PlayerClient:
         self.cycle_remaining_seconds = float(state.get("cycle_remaining_seconds", 0.0))
         recording = state.get("recording")   # an older player does not report it: not recording
         self.recording = (recording["path"], float(recording["seconds"])) if isinstance(recording, dict) else None
+        self.muted = bool(state.get("muted", False))   # an older player does not report it: not muted
         stream = state.get("stream")   # an older player does not report it: not broadcasting
         self.streaming = stream if isinstance(stream, dict) else None
         binaural = state.get("binaural")   # an older player does not report it: off
@@ -288,6 +289,14 @@ class PlayerClient:
 
     def set_volume(self, volume: float) -> None:
         self._control("set_volume", volume=float(volume))
+
+    def mute(self, on: bool) -> None:
+        """Silence the speakers (on) or bring them back; a broadcast or a recording keeps the sound."""
+        self._control("mute", on=bool(on))
+
+    def set_muted(self, muted: bool) -> None:
+        """The same as `mute`, named like the in-process player's."""
+        self.mute(muted)
 
     def set_style(self, style: Style) -> None:
         self._control("set_style", style=style.to_dict())

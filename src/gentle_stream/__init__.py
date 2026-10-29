@@ -24,6 +24,7 @@ CONTROLS = """controls:
   r        record the session into a WAV file; r again stops and saves it
   w        render the current style or a journey into a WAV file, as gentle-stream render
   L        live broadcast: ingest URL, stream key (never shown), start or stop
+  M        mute here: silence the speakers; a broadcast or a recording keeps the sound
   ctrl+p   command palette: every action, found by typing its name
   + / -    volume up / down by 5%
   ↑ / ↓    volume up / down by 1%
@@ -133,6 +134,25 @@ def _journey_edit(prompt: str, *, model: str | None, gentle_shell: str, yes: boo
         print(f"gentle-stream: {OLDER_PLAYER if 'unknown command' in str(e) else e}", file=sys.stderr)
         return 1
     print(f'Edited journey "{edited.title or edited.name}"')
+    player.detach()
+    return 0
+
+
+def mute_ctl(on: bool) -> int:
+    """`ctl mute` / `ctl unmute`: silence the speakers of the background player, or bring them back; a broadcast
+    or a recording keeps the sound."""
+    from .client import NoPlayer, PlayerError, PlayerGone, connect
+
+    try:
+        player = connect()
+        player.mute(on)
+    except (NoPlayer, PlayerGone):
+        print("gentle-stream: nothing is playing", file=sys.stderr)
+        return 1
+    except PlayerError as e:
+        print(f"gentle-stream: {OLDER_PLAYER if 'unknown command' in str(e) else e}", file=sys.stderr)
+        return 1
+    print("Muted here; a broadcast or a recording keeps the sound" if on else "Sound back here")
     player.detach()
     return 0
 
@@ -275,7 +295,7 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
                           "mood": style.mood, "bpm": player.bpm, "target_bpm": player.target_bpm,
                           "journey": journey.to_dict() if journey is not None else None,
                           "binaural": player.binaural.to_dict() if player.binaural is not None else None,
-                          "stream": player.streaming},
+                          "stream": player.streaming, "muted": player.muted},
                          ensure_ascii=False))
     elif action in ("tempo", "glide"):
         try:
@@ -683,11 +703,12 @@ def build_parser() -> argparse.ArgumentParser:
                                      help=f"the pack to install: {', '.join(VOICE_CATALOG)}")
     ctl_parser = sub.add_parser("ctl", help="control the music playing in the background")
     ctl_parser.add_argument("action", choices=("play", "pause", "toggle", "next", "stop", "status", "tempo",
-                                               "glide", "binaural", "say", "record", "stream"))
+                                               "glide", "binaural", "say", "record", "stream", "mute", "unmute"))
     ctl_parser.add_argument("args", nargs="*", metavar="ARG",
                             help="tempo: BPM; glide: FIELD=VALUE...; binaural: on, off or set; say: TEXT (spoken "
                                  "over the music from the next phrase boundary); record: start FILE.wav or stop; stream: start or "
-                                 "stop (broadcast to the ingest set with `gentle-stream stream`)")
+                                 "stop (broadcast to the ingest set with `gentle-stream stream`); mute/unmute: "
+                                 "the speakers only (a broadcast or a recording keeps the sound)")
     ctl_parser.add_argument("--force", action="store_true", help="record start: replace an existing file")
     ctl_parser.add_argument("--over", type=float, default=60.0, metavar="SECONDS",
                             help="tempo, glide, binaural on/set while it plays: seconds to reach the target, 0-3600 "
@@ -793,6 +814,10 @@ def main(argv: list[str] | None = None) -> int:
             ctl_parser.error("--voice, --rate and --effect are only for say")
         if args.action != "record" and args.force:
             ctl_parser.error("--force is only for record")
+        if args.action in ("mute", "unmute"):
+            if args.args:
+                ctl_parser.error(f"{args.action} takes no arguments")
+            return mute_ctl(args.action == "mute")
         if args.action == "stream":
             if args.args not in (["start"], ["stop"]):
                 ctl_parser.error("stream requires start or stop")

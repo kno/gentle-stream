@@ -41,6 +41,10 @@ ajuste automáticamente?" — one video is sent and the service crops it, so the
 automatic answer is a layout whose text stays in the centre column a 9:16 crop keeps, the spectrum full width. Video:
 "Bitrate fijo 2500k y 30 fps (recomendado)".
 
+**S7** — Maintainer, verbatim (2026-10-29): "debes añadir cuanto antes la capacidad para mutear en local, pero seguir
+emitiendo". Chosen meaning (stated to the maintainer): muting acts on the speakers only; the broadcast and the session
+recording keep the sound at its volume; pause still stops the music for everyone.
+
 ## Tasks
 
 | Task | Specs | Route | Branch | Commit |
@@ -54,6 +58,7 @@ automatic answer is a layout whose text stays in the centre column a 9:16 crop k
 | T5b Picture fixes from the first live test: missing glyphs, a layout that survives the mobile crop, constant 2500k at 30 fps | S6 | inline | `feat/broadcast-layout` | done (T5b commit; base `d911a42`) |
 | T5c Video paced by the clock (second live test still "Mala") | S1, S6 | inline | `feat/broadcast-tui` (own commit) | done (T5c commit; confirmed live, L19) |
 | T6 TUI action, parity map, README, sentinel-key leak test over every surface | S2, S3, S5 | inline | `feat/broadcast-tui` | done (T6 commit) |
+| T7 Mute here, keep broadcasting (`ctl mute`/`unmute`, `M`, status) | S7 | inline | `feat/local-mute` | done (T7 commit; base `1052db8`) |
 
 ## Log
 
@@ -158,3 +163,15 @@ automatic answer is a layout whose text stays in the centre column a 9:16 crop k
 - L19: Maintainer, verbatim, after restarting the player on the T5c working tree: "si, ya no da error" (YouTube no longer reports bad health; the player showed 0 dropped frames in 190 s). S6 confirmed live.
 - L20: Suite job-43: 1523 passed, 3 deselected, 0 test daemons. T5c and T6 verified; M11 implementation complete.
 - L21: Slow tests job-44: 3 passed, 0 test daemons. M11 closed. PR order (stacked, each against the previous): docs/m11-decisions, feat/stream-key, feat/rtmp-publish, feat/broadcast-view, feat/broadcast-encoder, feat/broadcast-ctl, feat/broadcast-layout, feat/broadcast-tui.
+- L22: T7 (S7). Player.muted / set_muted: a monitor gain applied last in the audio callback, after the recorder and
+  the broadcast were fed and the level/spectrum measured, ramped over RAMP_SECONDS like the volume (no click); pause
+  still stops everything. Daemon `mute` {"on": bool} (bad value refused, unchanged), state key "muted" (last); client
+  mute()/muted; `ctl mute` / `ctl unmute` ("Muted here; a broadcast or a recording keeps the sound" / "Sound back
+  here"; arguments refused, exit 2), `ctl status` "muted" (additive, last; pins updated). TUI `M`, palette "Mute
+  here", state line "MUTED here"; PARITY maps both ctl actions. README: TUI key, ctl row, parity row, the broadcast
+  section. Tests (11): speakers silent after a ramp and back, broadcast and recording keep the music while muted,
+  pause, daemon, ctl, status, TUI, palette. Mutations: 3 of 3 (mute before feeding, no ramp, mute ignored); "no
+  ramp" first survived (the click check looked inside one block only): the first muted block must now start with the
+  music and go down (the 30 ms fade is longer than a 512-frame block). That stronger test was edited after job-45
+  collected the file; it passed 3 times on its own.
+- L23: T7 suite job-45: 1534 passed, 3 deselected, 0 test daemons. T7 verified.
