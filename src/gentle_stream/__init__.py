@@ -25,6 +25,8 @@ CONTROLS = """controls:
   w        render the current style or a journey into a WAV file, as gentle-stream render
   L        live broadcast: ingest URL, stream key (never shown), start or stop
   M        mute here: silence the speakers; a broadcast or a recording keeps the sound
+  o        audio output: play on another device, live; the choice is remembered
+  ?        every key and action, in a popup
   ctrl+p   command palette: every action, found by typing its name
   + / -    volume up / down by 5%
   ↑ / ↓    volume up / down by 1%
@@ -134,6 +136,37 @@ def _journey_edit(prompt: str, *, model: str | None, gentle_shell: str, yes: boo
         print(f"gentle-stream: {OLDER_PLAYER if 'unknown command' in str(e) else e}", file=sys.stderr)
         return 1
     print(f'Edited journey "{edited.title or edited.name}"')
+    player.detach()
+    return 0
+
+
+def output_ctl(name: str | None) -> int:
+    """`ctl output`: list the outputs (* where it plays); `ctl output NAME|default`: play on it, live."""
+    from .client import NoPlayer, PlayerError, PlayerGone, connect
+
+    try:
+        player = connect()
+        if name is None:
+            current = player.output.get("name")
+            for o in player.outputs():
+                channels = f"{o['channels']} channel{'s' if o['channels'] != 1 else ''}"
+                default = " · system default" if o["default"] else ""
+                print(f"{'*' if o['name'] == current else ' '} {o['name']} · {channels}{default}")
+            player.detach()
+            return 0
+        chosen = player.set_output(None if name == "default" else name)
+    except (NoPlayer, PlayerGone):
+        print("gentle-stream: nothing is playing", file=sys.stderr)
+        return 1
+    except PlayerError as e:
+        print(f"gentle-stream: {OLDER_PLAYER if 'unknown command' in str(e) else e}", file=sys.stderr)
+        return 1
+    if chosen["silent"]:
+        print(f"No output opened; playing silently here: {chosen['error']}")
+    else:
+        print(f"Playing on {chosen['name']}" + (" (the system default)" if name == "default" else ""))
+        if chosen["error"]:
+            print(f"gentle-stream: {chosen['error']}", file=sys.stderr)
     player.detach()
     return 0
 
@@ -295,7 +328,7 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
                           "mood": style.mood, "bpm": player.bpm, "target_bpm": player.target_bpm,
                           "journey": journey.to_dict() if journey is not None else None,
                           "binaural": player.binaural.to_dict() if player.binaural is not None else None,
-                          "stream": player.streaming, "muted": player.muted},
+                          "stream": player.streaming, "muted": player.muted, "output": player.output},
                          ensure_ascii=False))
     elif action in ("tempo", "glide"):
         try:
@@ -703,12 +736,14 @@ def build_parser() -> argparse.ArgumentParser:
                                      help=f"the pack to install: {', '.join(VOICE_CATALOG)}")
     ctl_parser = sub.add_parser("ctl", help="control the music playing in the background")
     ctl_parser.add_argument("action", choices=("play", "pause", "toggle", "next", "stop", "status", "tempo",
-                                               "glide", "binaural", "say", "record", "stream", "mute", "unmute"))
+                                               "glide", "binaural", "say", "record", "stream", "mute", "unmute",
+                                               "output"))
     ctl_parser.add_argument("args", nargs="*", metavar="ARG",
                             help="tempo: BPM; glide: FIELD=VALUE...; binaural: on, off or set; say: TEXT (spoken "
                                  "over the music from the next phrase boundary); record: start FILE.wav or stop; stream: start or "
                                  "stop (broadcast to the ingest set with `gentle-stream stream`); mute/unmute: "
-                                 "the speakers only (a broadcast or a recording keeps the sound)")
+                                 "the speakers only (a broadcast or a recording keeps the sound); output: list the "
+                                 "audio outputs, or NAME (or default) to play on one")
     ctl_parser.add_argument("--force", action="store_true", help="record start: replace an existing file")
     ctl_parser.add_argument("--over", type=float, default=60.0, metavar="SECONDS",
                             help="tempo, glide, binaural on/set while it plays: seconds to reach the target, 0-3600 "
@@ -814,6 +849,8 @@ def main(argv: list[str] | None = None) -> int:
             ctl_parser.error("--voice, --rate and --effect are only for say")
         if args.action != "record" and args.force:
             ctl_parser.error("--force is only for record")
+        if args.action == "output":
+            return output_ctl(" ".join(args.args) or None)
         if args.action in ("mute", "unmute"):
             if args.args:
                 ctl_parser.error(f"{args.action} takes no arguments")

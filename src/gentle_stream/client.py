@@ -172,6 +172,9 @@ class PlayerClient:
         recording = state.get("recording")   # an older player does not report it: not recording
         self.recording = (recording["path"], float(recording["seconds"])) if isinstance(recording, dict) else None
         self.muted = bool(state.get("muted", False))   # an older player does not report it: not muted
+        output = state.get("output")   # an older player does not report it: the system default, unknown name
+        self.output = output if isinstance(output, dict) else {"name": None, "channels": 2, "silent": False,
+                                                                  "error": None}
         stream = state.get("stream")   # an older player does not report it: not broadcasting
         self.streaming = stream if isinstance(stream, dict) else None
         binaural = state.get("binaural")   # an older player does not report it: off
@@ -289,6 +292,14 @@ class PlayerClient:
 
     def set_volume(self, volume: float) -> None:
         self._control("set_volume", volume=float(volume))
+
+    def outputs(self) -> list[dict]:
+        """The outputs to choose from: [{"name", "channels", "default"}]."""
+        return self._round_trip("outputs")["outputs"]
+
+    def set_output(self, name: str | None) -> dict:
+        """Play on the output called `name` (None: the system default); PlayerError for an unknown one."""
+        return self._round_trip("set_output", name=name)["output"]
 
     def mute(self, on: bool) -> None:
         """Silence the speakers (on) or bring them back; a broadcast or a recording keeps the sound."""

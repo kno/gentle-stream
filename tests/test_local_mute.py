@@ -109,7 +109,7 @@ def test_the_daemon_mutes_and_reports_it():
     from tests.test_daemon import fake_player
 
     player = fake_player()
-    assert state(player)["muted"] is False and list(state(player))[-1] == "muted"
+    assert state(player)["muted"] is False and list(state(player))[-2:] == ["muted", "output"]
     assert handle(player, {"cmd": "mute", "on": True})["ok"] and player.muted
     assert handle(player, {"cmd": "mute", "on": False})["ok"] and not player.muted
     assert handle(player, {"cmd": "mute", "on": "yes"}) == {"ok": False, "error": "bad request: on must be true or false"}
@@ -157,11 +157,12 @@ def test_ctl_status_reports_muted(monkeypatch, capsys):
     from gentle_stream import client
 
     fake = SimpleNamespace(now=SimpleNamespace(style=Style(name="X"), journey=None), playing=True, bpm=72.0,
-                           target_bpm=None, binaural=None, streaming=None, muted=True, detach=lambda: None)
+                           target_bpm=None, binaural=None, streaming=None, muted=True, output={"name": "X"},
+                           detach=lambda: None)
     monkeypatch.setattr(client, "connect", lambda: fake)
     assert main(["ctl", "status"]) == 0
     status = json.loads(capsys.readouterr().out)
-    assert status["muted"] is True and list(status)[-1] == "muted"
+    assert status["muted"] is True and list(status)[-2:] == ["muted", "output"]
 
 
 # ------------------------------------------------------------ the TUI

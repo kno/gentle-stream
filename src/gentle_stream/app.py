@@ -1338,6 +1338,92 @@ class BroadcastModal(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class OutputModal(ModalScreen[str | None]):
+    """Pick the audio output (S8), as `ctl output`: the system default first, then every device that plays; dismisses
+    with "default" or the device's name."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    DEFAULT_CSS = """
+    OutputModal { align: center middle; }
+    OutputModal > Vertical { width: 64; max-width: 100%; height: auto; border: round $primary; padding: 0 1;
+                             background: $surface; }
+    OutputModal .heading { color: $primary; text-style: bold; }
+    OutputModal #outputs { height: auto; max-height: 12; }
+    OutputModal #output-note { color: $text-muted; }
+    """
+
+    def __init__(self, player):
+        super().__init__()
+        self.player = player
+
+    def compose(self) -> ComposeResult:
+        found = self.player.outputs()
+        system = next((o["name"] for o in found if o["default"]), "none found")
+        options = [Option(f"System default ({system})", id="default")]
+        for o in found:
+            channels = f"{o['channels']} channel{'s' if o['channels'] != 1 else ''}"
+            options.append(Option(f"{o['name']} · {channels}", id=f"out:{o['name']}"))
+        out = self.player.output
+        here = "no sound here: " + str(out["error"]) if out["silent"] else f"playing on {out['name']}"
+        with Vertical():
+            yield Static("Audio output · a broadcast and a recording are not affected", classes="heading")
+            yield OptionList(*options, id="outputs")
+            yield Static(here, id="output-note", markup=False)
+
+    def on_mount(self) -> None:
+        self.query_one("#outputs", OptionList).focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        option_id = event.option.id or "default"
+        self.dismiss("default" if option_id == "default" else option_id.removeprefix("out:"))
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+KEY_LABELS = {"space": "space", "slash": "/", "question_mark": "?", "plus,equals_sign": "+", "minus": "-",
+              "up": "↑", "down": "↓", "escape": "esc"}
+
+
+class HelpModal(ModalScreen[None]):
+    """Every key and every action (the footer has no room for them all), built from the app's own bindings and
+    command palette, so a new action shows up here by itself. Scrolls in a small terminal; `?` or escape closes it."""
+
+    BINDINGS = [Binding("escape,question_mark", "cancel", "Close")]
+    DEFAULT_CSS = """
+    HelpModal { align: center middle; }
+    HelpModal > Vertical { width: 84; max-width: 100%; height: auto; max-height: 100%; border: round $primary;
+                           padding: 0 1; background: $surface; }
+    HelpModal .heading { color: $primary; text-style: bold; }
+    HelpModal VerticalScroll { height: auto; max-height: 1fr; }
+    HelpModal .help-section { color: $accent; text-style: bold; margin-top: 1; }
+    HelpModal #help-hint { color: $text-muted; }
+    """
+
+    def __init__(self, bindings, actions):
+        super().__init__()
+        self.bindings, self.actions = bindings, actions
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static("Keys · every action is also in the command palette (ctrl+p)", classes="heading")
+            with VerticalScroll():
+                yield Static("Keys", classes="help-section")
+                for binding in self.bindings:
+                    label = KEY_LABELS.get(binding.key, binding.key)
+                    yield Static(f"{label:<9} {binding.description}", classes="help-row", markup=False)
+                yield Static(f"{'ctrl+p':<9} Command palette: every action, found by typing its name",
+                             classes="help-row", markup=False)
+                yield Static("Command palette (ctrl+p, then type)", classes="help-section")
+                for title, help_text, _ in self.actions:
+                    yield Static(f"{title} · {help_text}", classes="help-row", markup=False)
+            yield Static("↑/↓ or the wheel to scroll · ? or esc to close", id="help-hint")
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class JourneyPickerModal(ModalScreen[str | None]):
     """Pick a journey: "create" first, then the built-ins, then the saved ones alphabetically, then "open" (a file);
     `v` shows the highlighted one, `d` deletes a saved one.
@@ -1422,6 +1508,7 @@ PARITY: dict[str, str] = {
     "ctl play": "toggle", "ctl pause": "toggle", "ctl toggle": "toggle", "ctl next": "next", "ctl stop": "quit",
     "ctl tempo": "controls", "ctl glide": "controls", "ctl binaural": "binaural", "ctl say": "say",
     "ctl record": "record", "ctl stream": "broadcast", "ctl mute": "mute", "ctl unmute": "mute",
+    "ctl output": "output",
     "stream key": "broadcast", "stream url": "broadcast", "stream show": "broadcast",
     "journey play": "journey_picker", "journey list": "journey_picker", "journey show": "journey_picker",
     "journey delete": "journey_picker", "journey create": "journey_picker", "journey validate": "journey_open",
@@ -1472,6 +1559,8 @@ class StreamApp(App):
         Binding("w", "render", "Render"),
         Binding("L", "broadcast", "Live"),
         Binding("M", "mute", "Mute here"),
+        Binding("o", "output", "Output"),
+        Binding("question_mark", "help", "Keys"),
         Binding("plus,equals_sign", "volume(5)", "Vol +5"),
         Binding("minus", "volume(-5)", "Vol -5"),
         Binding("up", "volume(1)", "Vol +1"),
@@ -1560,6 +1649,11 @@ class StreamApp(App):
         elapsed, remaining = format_time(p.elapsed_seconds), format_time(p.cycle_remaining_seconds)
         recording = p.recording
         rec = f" · [b $error]● REC[/] {format_time(recording[1])}" if recording is not None else ""
+        out = p.output
+        if out.get("silent"):
+            rec += " · [b $warning]no sound here[/] (o)"
+        elif out.get("name"):
+            rec += f" · out: {escape(str(out['name']))}"
         if p.muted:
             rec += " · [b $warning]MUTED here[/]"
         streaming = p.streaming
@@ -1633,6 +1727,8 @@ class StreamApp(App):
             ("Voices and samples", ("Add, list or remove voice packs; install the FreePats choir or the FluidR3_GM "
                                     "soundfont (v)"), "voices"),
             ("Render to a file", "Render the style playing now or a journey into a WAV file (w)", "render"),
+            ("Keys", "Every key and action, in a list (?)", "help"),
+            ("Audio output", "Play on another device, live; the choice is remembered (o)", "output"),
             ("Mute here", "Silence the speakers; a broadcast or a recording keeps the sound (M)", "mute"),
             ("Live broadcast", "Broadcast to YouTube Live or any RTMP(S) ingest; set its URL and stream key (L)",
              "broadcast"),
@@ -1683,6 +1779,32 @@ class StreamApp(App):
                 self._status(escape(line))
 
         self.push_screen(RenderModal(self.player.now.style), done)
+
+    def action_help(self) -> None:
+        """Every key and action, in a popup."""
+        visible = [b for b in self.BINDINGS if isinstance(b, Binding) and b.show and b.action != "help"]
+        self.push_screen(HelpModal(visible, self.palette_actions()))
+
+    def action_output(self) -> None:
+        """Pick the audio output, as `ctl output`."""
+        def picked(choice: str | None) -> None:
+            if choice is None:
+                return
+            from .client import PlayerError
+            from .outputs import OutputError
+
+            try:
+                out = self.player.set_output(None if choice == "default" else choice)
+            except (OutputError, PlayerError) as e:
+                self._status(escape(str(e)))
+                return
+            if out["silent"]:
+                self._status(escape(f"No output opened; playing silently here: {out['error']}"))
+            else:
+                note = f" ({out['error']})" if out["error"] else ""
+                self._status(escape(f"Playing on {out['name']}{note}"))
+
+        self.push_screen(OutputModal(self.player), picked)
 
     def action_mute(self) -> None:
         """Silence the speakers or bring them back, as `ctl mute` / `ctl unmute`."""

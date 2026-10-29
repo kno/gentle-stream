@@ -16,6 +16,15 @@ def _private_config(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _one_stereo_output(monkeypatch):
+    """The player never sees this machine's real devices (their channels vary): one stereo output, the default."""
+    from gentle_stream import outputs
+
+    monkeypatch.setattr(outputs, "_query", lambda: (
+        [{"name": "Test speakers", "max_output_channels": 2, "default_samplerate": 44100.0}], 0))
+
+
+@pytest.fixture(autouse=True)
 def _private_runtime(monkeypatch):
     """A `ctl` command in a test must find no player rather than the one the user is listening to."""
     root = tempfile.mkdtemp(prefix="gs-", dir="/tmp")

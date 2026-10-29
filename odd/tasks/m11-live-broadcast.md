@@ -45,6 +45,20 @@ automatic answer is a layout whose text stays in the centre column a 9:16 crop k
 emitiendo". Chosen meaning (stated to the maintainer): muting acts on the speakers only; the broadcast and the session
 recording keep the sound at its volume; pause still stops the music for everyone.
 
+**S8** — Maintainer, verbatim: "gentle-stream no puede elegir otra salida?" then "si" to the proposal: `ctl output`
+lists the outputs and `ctl output NAME` switches to one live (short fade, no restart, the broadcast untouched); a
+TUI key and palette entry with the list, the output in the state line; the choice remembered for the next start; a
+one-channel output (headphones in hands-free mode: "Invalid number of channels [PaErrorCode -9998]") gets the two
+channels mixed instead of failing.
+
+**S9** — Maintainer, verbatim, while T8 started: "y un fallback para que la aplicación siempre arranque, aunque sea sin
+sonido local, para poder hacer streaming". When no output opens (the chosen one, then the system default), the player
+starts on a silent output paced by the clock, so the music, a broadcast and a recording go on; the state says why
+there is no sound here. This replaces "a device error stops the player from starting".
+
+**S10** — Maintainer, verbatim: "no se ven todas las opciones posible en el pie, añade una tecla ? para mostrarlas en
+un popup".
+
 ## Tasks
 
 | Task | Specs | Route | Branch | Commit |
@@ -59,6 +73,8 @@ recording keep the sound at its volume; pause still stops the music for everyone
 | T5c Video paced by the clock (second live test still "Mala") | S1, S6 | inline | `feat/broadcast-tui` (own commit) | done (T5c commit; confirmed live, L19) |
 | T6 TUI action, parity map, README, sentinel-key leak test over every surface | S2, S3, S5 | inline | `feat/broadcast-tui` | done (T6 commit) |
 | T7 Mute here, keep broadcasting (`ctl mute`/`unmute`, `M`, status) | S7 | inline | `feat/local-mute` | done (T7 commit; base `1052db8`) |
+| T8 Choose the audio output (`ctl output`, TUI, remembered, mono outputs) | S8 | inline | `feat/audio-output` | done (T8/T9 commit; base `7c235db`) |
+| T9 `?` popup with every key and action | S10 | inline | `feat/audio-output` | done (T8/T9 commit; base `7c235db`) |
 
 ## Log
 
@@ -175,3 +191,19 @@ recording keep the sound at its volume; pause still stops the music for everyone
   music and go down (the 30 ms fade is longer than a 512-frame block). That stronger test was edited after job-45
   collected the file; it passed 3 times on its own.
 - L23: T7 suite job-45: 1534 passed, 3 deselected, 0 test daemons. T7 verified.
+- L24: T8 (S8, S9). outputs.py: the devices that play (index, name, channels, system default), find by name (exact,
+  then any case), the choice in output.json. Player: start() opens the remembered output, else the system default,
+  else a SilentStream that calls the callback by the clock (S9: the music, a broadcast and a recording go on); a
+  one-channel output gets both channels mixed (the callback builds a stereo block, feeds the recorder and broadcast
+  with it, then writes mono or stereo); set_output() fades the speakers (the monitor gain), swaps the stream live and
+  remembers it; `output` = {name, channels, silent, error}. Daemon `outputs`/`set_output`, state "output" (last);
+  client; `ctl output [NAME|default]`; `ctl status` "output"; TUI `o` (OutputModal), state line "out: NAME" or "no
+  sound here (o)"; parity. Contract change by S9: a device error no longer stops the player; the two tests that
+  pinned it now pin the new behaviour (daemon and TUI start silent, the reason in the status). tests/conftest.py gives
+  every test one fake stereo output (the machine's devices vary: here the default was 1-channel headphones). A first
+  run of the affected files hung 39 min: test_main's old "clean error" test now opened a real TUI; fixed by the new
+  test, which replaces StreamApp.run. Mutations: 5 of 5.
+- L25: T9 (S10). `?` (footer "Keys", palette "Keys") opens HelpModal: every visible binding (key label and
+  description), ctrl+p, and every palette action with its help, from the app's own BINDINGS and palette_actions(), so
+  new actions appear by themselves; it scrolls (tested at 80x24) and `?`/esc close it.
+- L26: T8+T9 suite job-49: 1551 passed, 3 deselected, 0 test daemons. Verified.

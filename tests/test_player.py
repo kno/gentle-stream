@@ -25,7 +25,7 @@ class FakeStream:
         pass
 
     def pull(self, frames=1024):
-        out = np.full((frames, 2), np.nan, dtype=np.float32)
+        out = np.full((frames, self.kw.get("channels", 2)), np.nan, dtype=np.float32)
         self.callback(out, frames, None, None)
         return out
 

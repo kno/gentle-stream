@@ -219,16 +219,19 @@ def test_sigterm_ends_the_player_cleanly(runtime):
     assert not (runtime / "player.sock").exists()
 
 
-def test_an_audio_device_error_is_reported_to_the_client_and_no_player_stays(runtime, monkeypatch):
+def test_without_an_audio_device_the_player_still_starts_silent_and_says_why(runtime, monkeypatch, capsys):
+    """S9 (a device error used to stop the player from starting): it runs silent here, so a broadcast goes on."""
+    import json
+
     from gentle_stream import client
 
     monkeypatch.setenv("GENTLE_STREAM_AUDIO_FACTORY", "tests.test_daemon:no_device")
-    with pytest.raises(client.AudioError) as error:
-        client.ensure()
-    assert str(error.value) == "Error querying device -1"
-    assert not (runtime / "player.sock").exists()
-    with pytest.raises(client.NoPlayer):
-        client.connect()
+    client.ensure().detach()
+    assert (runtime / "player.sock").exists()
+    assert main(["ctl", "status"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["running"] and status["output"] == {"name": None, "channels": 2, "silent": True,
+                                                      "error": "Error querying device -1"}
 
 
 # ------------------------------------------------------------ tempo glide (handle(), unit-level)
@@ -378,9 +381,10 @@ def test_ctl_controls_a_running_player(runtime, capsys):
     assert (code, err) == (0, "") and out.endswith("\n") and out.count("\n") == 1
     assert json.loads(out) == {"running": True, "playing": True, "name": "Café Night", "genre": "jazz",
                                "mood": "late café", "bpm": player.bpm, "target_bpm": player.target_bpm,
-                               "journey": None, "binaural": None, "stream": None, "muted": False}
+                               "journey": None, "binaural": None, "stream": None, "muted": False,
+                               "output": json.loads(out)["output"]}
     assert list(json.loads(out)) == ["running", "playing", "name", "genre", "mood", "bpm", "target_bpm", "journey",
-                                     "binaural", "stream", "muted"]
+                                     "binaural", "stream", "muted", "output"]
     assert run_ctl(capsys, "pause") == (0, "", "")
     assert json.loads(run_ctl(capsys, "status")[1])["playing"] is False
     assert run_ctl(capsys, "toggle") == (0, "", "")
@@ -554,8 +558,8 @@ def test_state_reports_no_journey_as_null_after_the_existing_keys():
 
     state = daemon.state(fake_player())
     assert state["journey"] is None
-    assert list(state)[-7:] == ["bpm", "target_bpm", "journey", "binaural", "recording", "stream",
-                                "muted"]   # new keys come last
+    assert list(state)[-8:] == ["bpm", "target_bpm", "journey", "binaural", "recording", "stream",
+                                "muted", "output"]   # new keys come last
 
 
 def test_state_reports_the_journey_snapshot_of_the_audible_bar():

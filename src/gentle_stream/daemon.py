@@ -27,6 +27,8 @@ key kept in a 0600 file. Messages are JSON (never pickle), one request and one r
                                      it is heading to, or null)
     {"cmd": "binaural_set", "beat": 10, "seconds": 30}
                                      (glide only the given carrier, beat or level; refused while the layer is off)
+    {"cmd": "outputs"}               -> {"ok": true, "outputs": [{"name", "channels", "default"}, ...]}
+    {"cmd": "set_output", "name": "..." | null}   -> {"ok": true, "output": {...}} (null: the system default)
     {"cmd": "mute", "on": true}      (silence the speakers only; a broadcast or a recording keeps the sound)
     {"cmd": "stream_start"}          -> {"ok": true, "stream": {target, seconds, dropped_frames, error, running}}
                                      (broadcast to the configured ingest; the reason when it cannot start)
@@ -148,6 +150,7 @@ def state(player, bands: int = 0) -> dict:
         "recording": _recording(player.recording),
         "stream": player.streaming,   # the broadcast's status (target without the key), or None
         "muted": bool(player.muted),  # the speakers only; a broadcast or a recording keeps the sound
+        "output": player.output,      # {name, channels, silent, error}: where the sound goes here
     }
     if bands > 0:
         out["spectrum"] = [round(float(v), 4) for v in player.spectrum_levels(min(bands, MAX_BANDS))]
@@ -258,6 +261,18 @@ def handle(player, request) -> dict:
             try:
                 player.record_start(path, bool(request.get("force", False)))
             except RecordError as e:
+                return {"ok": False, "error": str(e)}
+        elif cmd == "outputs":
+            return {"ok": True, "outputs": player.outputs()}
+        elif cmd == "set_output":
+            from .outputs import OutputError
+
+            name = request.get("name")
+            if name is not None and not isinstance(name, str):
+                return {"ok": False, "error": "bad request: name must be a string or null"}
+            try:
+                return {"ok": True, "output": player.set_output(name)}
+            except OutputError as e:
                 return {"ok": False, "error": str(e)}
         elif cmd == "mute":
             on = request.get("on")

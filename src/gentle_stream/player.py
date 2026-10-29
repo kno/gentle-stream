@@ -56,6 +56,38 @@ def _default_stream(**kw):
     return sd.OutputStream(**kw)
 
 
+class SilentStream:
+    """No output opened: calls the callback in real time, by the clock, and drops what it gives, so the music, a
+    broadcast and a recording go on without sound here (S9)."""
+
+    def __init__(self, callback, samplerate: int, blocksize: int, channels: int = 2):
+        self.callback, self.sr, self.blocksize, self.channels = callback, samplerate, blocksize, channels
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="gentle-stream-silent-output", daemon=True)
+        self.active = False
+
+    def _run(self) -> None:
+        out = np.zeros((self.blocksize, self.channels), dtype=np.float32)
+        due = time.monotonic()
+        while not self._stop.is_set():
+            self.callback(out, self.blocksize, None, None)
+            due += self.blocksize / self.sr
+            self._stop.wait(max(0.0, due - time.monotonic()))
+
+    def start(self) -> None:
+        self.active = True
+        self._thread.start()
+
+    def stop(self) -> None:
+        self.active = False
+        self._stop.set()
+        if self._thread.is_alive() and self._thread is not threading.current_thread():
+            self._thread.join(2)
+
+    def close(self) -> None:
+        self.stop()
+
+
 class Player:
     def __init__(self, engine: Engine, stream_factory=_default_stream, prebuffer: float = 1.0,
                  blocksize: int = 1024, volume: float = 0.8):
@@ -77,6 +109,8 @@ class Player:
         self._gain = 0.0
         self.muted = False                     # the speakers only: a broadcast and a recording keep the sound
         self._monitor = 1.0                    # the speakers' gain, ramped like the volume
+        self._switching = False                # fading the speakers out to change the output
+        self._output: dict = {"name": None, "channels": 2, "silent": True, "error": None}
         self.position = 0                # samples played since start
         self.underruns = 0
         self.level = 0.0
@@ -93,13 +127,79 @@ class Player:
         """Open the output stream and start rendering; calling it again is a no-op."""
         if self._stream is not None:
             return
-        self._stream = self._factory(samplerate=self.engine.sr, channels=2, dtype="float32",
-                                     blocksize=self._blocksize, latency="high", callback=self._callback)
+        from . import outputs
+
         self._producer.start()
         deadline = time.monotonic() + 5
         while self._buffered == 0 and self._producer.is_alive() and time.monotonic() < deadline:
             time.sleep(0.005)    # the first bar is ready before the device starts pulling
-        self._stream.start()
+        self._stream = self._open(outputs.saved())
+
+    def _open(self, name: str | None):
+        """Open and start the output called `name` (None: the system default); if it fails, the system default; if
+        that fails too, a SilentStream (S9). `self.output` says which, and why it is not the one asked for."""
+        from . import outputs
+
+        chosen = outputs.find(name) if name else None
+        system = outputs.default()
+        failures: list[str] = [] if chosen or not name else [f'no audio output called "{name}"']
+        for target in ([chosen] if chosen else []) + [None]:
+            device = target or system
+            channels = min(2, device.channels) if device else 2
+            kw = {"samplerate": self.engine.sr, "channels": channels, "dtype": "float32",
+                  "blocksize": self._blocksize, "latency": "high", "callback": self._callback}
+            if target is not None:
+                kw["device"] = target.index
+            try:
+                stream = self._factory(**kw)
+                stream.start()
+            except Exception as e:  # noqa: BLE001  (PortAudio missing, no device, a device that refuses...)
+                failures.append(f"{target.name}: {e}" if target is not None else str(e))
+                continue
+            error = None
+            if failures:
+                error = f"{failures[0]}; playing on the system default" if target is None else failures[0]
+            self._output = {"name": device.name if device else None, "channels": channels, "silent": False,
+                            "error": error}
+            return stream
+        stream = SilentStream(self._callback, self.engine.sr, self._blocksize)
+        stream.start()
+        self._output = {"name": None, "channels": 2, "silent": True, "error": "; ".join(failures)}
+        return stream
+
+    @property
+    def output(self) -> dict:
+        """Where the sound goes: {"name", "channels", "silent" (no output opened), "error" (why not the one asked
+        for)}."""
+        return dict(self._output)
+
+    def outputs(self) -> list[dict]:
+        """The outputs to choose from, as `ctl output` lists them."""
+        from . import outputs
+
+        return [{"name": o.name, "channels": o.channels, "default": o.default} for o in outputs.available()]
+
+    def set_output(self, name: str | None) -> dict:
+        """Play on the output called `name` (None: the system default) from now on, with a short fade, and remember
+        it for the next start; OutputError for a name no output has. The broadcast and a recording go on."""
+        from . import outputs
+
+        chosen = None
+        if name is not None:
+            chosen = outputs.find(name)
+            if chosen is None:
+                raise outputs.unknown(name)
+        old = self._stream
+        if old is not None and not isinstance(old, SilentStream):
+            self._switching = True
+            time.sleep(RAMP_SECONDS * 1.5)       # the speakers fade out before the switch
+        if old is not None:
+            old.stop()
+            old.close()
+        self._stream = self._open(chosen.name if chosen else None)
+        self._switching = False
+        outputs.save(chosen.name if chosen else None)
+        return self.output
 
     def close(self) -> None:
         self._stopping.set()
@@ -431,10 +531,11 @@ class Player:
             outdata[:] = 0
             self.level = 0.0
             self._tail[:] = 0
+            silence = np.zeros((frames, 2), dtype=np.float32)
             if recorder is not None:
-                recorder.feed(outdata)
+                recorder.feed(silence)
             if broadcast is not None:
-                broadcast.feed(outdata)
+                broadcast.feed(silence)
             return
         audio = self._pull(frames)
         self._wake.set()
@@ -443,19 +544,23 @@ class Player:
         steps = np.minimum(np.arange(1, frames + 1) * rate, abs(diff))
         gain = (self._gain + np.sign(diff) * steps).astype(np.float32)
         self._gain = float(gain[-1]) if abs(gain[-1] - target) > 1e-6 else target
-        outdata[:] = audio * gain[:, None]
+        block = (audio * gain[:, None]).astype(np.float32)   # stereo, whatever the output has
         if recorder is not None:   # a copy into a queue: never waits for the disk
-            recorder.feed(outdata)
+            recorder.feed(block)
         if broadcast is not None:  # the same for the broadcast: never waits for the encoder or the network
-            broadcast.feed(outdata)
-        mono = outdata.mean(axis=1)
+            broadcast.feed(block)
+        mono = block.mean(axis=1)
         self.level = float(np.sqrt(np.mean(mono ** 2)))
         n = min(frames, SPECTRUM_SIZE)
         self._tail = np.concatenate([self._tail[n:], mono[-n:]])
-        monitor = 0.0 if self.muted else 1.0   # last: what was fed and shown above is the music, unmuted
+        monitor = 0.0 if self.muted or self._switching else 1.0   # last: what was fed and shown is unmuted
         if monitor != 1.0 or self._monitor != 1.0:
             mdiff = monitor - self._monitor
             msteps = np.minimum(np.arange(1, frames + 1) * rate, abs(mdiff))
             mgain = (self._monitor + np.sign(mdiff) * msteps).astype(np.float32)
             self._monitor = float(mgain[-1]) if abs(mgain[-1] - monitor) > 1e-6 else monitor
-            outdata *= mgain[:, None]
+            block *= mgain[:, None]
+        if outdata.shape[1] == 1:   # a one-channel output (headphones in hands-free mode): both channels mixed
+            outdata[:, 0] = block.mean(axis=1)
+        else:
+            outdata[:] = block

@@ -172,6 +172,8 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 | `w` | Render to a file: the style playing now or a built-in journey, a length, a seed (blank: random, then shown) and the procedural instruments if you want them, written in the background by the same function as `gentle-stream render`, so the same options give the same bytes; what plays is not interrupted |
 | `L` | Live broadcast: the ingest URL and the stream key (typed masked, saved in a file only you can read, never shown), and start or stop the broadcast, as `gentle-stream stream` and `ctl stream start/stop`; while it runs the state line shows `● LIVE` and its length, or `LIVE failed` when it stopped on an error (the music plays on) |
 | `M` | Mute here: silence the speakers (with a short fade) while the music keeps playing; a broadcast and a session recording keep the sound, and the state line shows `MUTED here`; `M` again brings it back |
+| `o` | Audio output: pick where the sound plays (the system default, or any device that plays), live, with a short fade; the choice is remembered for the next start; the state line shows `out: NAME`, or `no sound here` when no output opened |
+| `?` | Every key and every action in a popup (the footer has no room for them all); it scrolls in a small terminal, and `?` or `esc` closes it |
 | `ctrl+p` | Command palette: every action of the app, keyed or not, found by typing part of its name |
 | `+` / `-` | Volume up / down by 5% |
 | `↑` / `↓` | Volume up / down by 1% |
@@ -194,6 +196,7 @@ Everything the command line does can be done from the TUI too: by its key, or by
 | `ctl record start/stop` | `r` |
 | `ctl stream start/stop`, `stream url`, `stream key set/clear`, `stream show` | `L` |
 | `ctl mute`, `ctl unmute` | `M` |
+| `ctl output [NAME\|default]` | `o` |
 | `ctl status` | always on screen |
 | `journey play`, `list`, `show`, `delete`, `create` | `J` journeys |
 | `journey validate` | `J` → Open file |
@@ -241,6 +244,7 @@ gentle-stream ctl stop     # ends the background player
 | `ctl record start FILE.wav [--force]` / `ctl record stop` | Record exactly what the background player plays (volume and pauses included) into a 16-bit stereo WAV, until `stop` or until the player stops; an existing file needs `--force` | `0`; `1` when nothing plays, a recording is running, the folder does not exist, the file exists without `--force`, or (stop) nothing records; `2` for a malformed command |
 | `ctl stream start` / `ctl stream stop` | Broadcast what the background player plays, with a picture of it, to the ingest set with `gentle-stream stream url` and `stream key set` (see [Live broadcast](#live-broadcast)); `stop` reports how long it ran and the frames dropped | `0`; `1` when nothing plays, no URL or key is set, a broadcast is running, the journey speaks phrases without `espeak-ng`, the ingest refuses it, or (stop) nothing broadcasts; `2` for a malformed command |
 | `ctl mute` / `ctl unmute` | Silence the background player's speakers, or bring them back; the music keeps playing, and a broadcast or a recording keeps the sound (`ctl status` reports `"muted"`) | `0`; `1` when nothing plays; `2` with an argument |
+| `ctl output` / `ctl output NAME` / `ctl output default` | List the audio outputs (`*` where it plays, the system default marked); with a name, play on that device from now on, live, and remember it for the next start; `default` follows the system's again. A one-channel output (headphones in hands-free mode) gets both channels mixed. If the chosen output does not open, the system default is used; if no output opens at all, the player still runs, silent here, so a broadcast or a recording goes on (`ctl status` reports `"output"`: name, channels, silent, error) | `0`; `1` when nothing plays or no output has that name |
 | `ctl binaural on [--carrier HZ] [--beat HZ] [--level L] [--over SECONDS]`, `ctl binaural set ... [--over SECONDS]`, `ctl binaural off` | Fade the binaural texture in or out, or glide it to new values (see [Binaural](#binaural)); nothing on stdout | `0`; `1` when nothing plays or `set` finds it off; `2` for a value out of range, options with `off`, or `set` without one |
 | `journey play NAME\|FILE` | Run a built-in or saved journey (names ignore case) or a JSON file (see [Journeys](#journeys)); nothing on stdout | `0`; `1` when nothing plays or the name is unknown |
 | `journey restart` | Restart the running journey at its first stage on the next bar | `0`; `1` when nothing plays or no journey is running |

@@ -149,11 +149,15 @@ def test_help_lists_flags_and_controls(capsys):
     assert "daemon" not in out                     # started automatically, never by hand
 
 
-def test_an_unavailable_audio_output_is_a_clean_error(runtime, monkeypatch, capsys):
+def test_without_an_audio_output_the_tui_still_opens_silent(runtime, monkeypatch):
+    """S9 (it used to stop with "cannot open the audio output"): the app starts, silent here, so it can broadcast."""
+    from gentle_stream.app import StreamApp
+
     monkeypatch.setenv("GENTLE_STREAM_AUDIO_FACTORY", "tests.test_daemon:no_device")
-    assert main([]) == 1
-    err = capsys.readouterr().err
-    assert err == "gentle-stream: cannot open the audio output: Error querying device -1\n"
+    seen = []
+    monkeypatch.setattr(StreamApp, "run", lambda self: seen.append(self.player.output))
+    assert main([]) == 0
+    assert seen == [{"name": None, "channels": 2, "silent": True, "error": "Error querying device -1"}]
 
 
 def test_the_tui_attaches_to_the_music_already_playing(runtime, monkeypatch):
@@ -431,7 +435,7 @@ def test_ctl_status_reports_the_running_journey(runtime, capsys):
     wait_for(lambda: status()["journey"] is not None)
     state = status()
     assert list(state) == ["running", "playing", "name", "genre", "mood", "bpm", "target_bpm", "journey",
-                           "binaural", "stream", "muted"]
+                           "binaural", "stream", "muted", "output"]
     journey = state["journey"]
     assert (journey["name"], journey["title"], journey["stage"], journey["stages"], journey["stage_name"]) == (
         "warm-up", "Warm-up", 1, 4, "Settle")
