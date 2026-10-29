@@ -45,15 +45,28 @@ SPACE = 0.7             # room size of the `space` effect (as `Style.space`) and
 SPACE_SEND = 0.6
 IR_SEED = 7
 NO_BACKEND = "no text-to-speech backend found (macOS has say; on Linux install espeak-ng)"
+BROADCAST_NEEDS = ("while broadcasting, phrases are spoken with {name} (macOS voices are licensed for personal use "
+                   "only), and {name} is not installed")
 
 
 class SpeechError(Exception):
     """A phrase that cannot be spoken; the message is meant for the terminal."""
 
 
+_ONLY: str | None = None   # while broadcasting: the one program whose voices may be broadcast
+
+
+def use_only(name: str | None) -> None:
+    """Speak only with `name` (a broadcast: macOS voices are licensed for personal use, espeak-ng's may be
+    broadcast), or with the usual choice again for None; phrases rendered before are forgotten."""
+    global _ONLY
+    _ONLY = name
+    clear_cache()
+
+
 def backend() -> tuple[str, str] | None:
     """(name, path) of the text-to-speech program to use, or None."""
-    for name in ("say", "espeak-ng"):
+    for name in (_ONLY,) if _ONLY else ("say", "espeak-ng"):
         path = shutil.which(name)
         if path:
             return name, path
@@ -166,7 +179,7 @@ def _speak(text: str, sr: int, voice: str | None, rate: int | None) -> np.ndarra
     """The program's output for the phrase, at `sr`, before any effect or normalisation."""
     found = backend()
     if found is None:
-        raise SpeechError(NO_BACKEND)
+        raise SpeechError(BROADCAST_NEEDS.format(name=_ONLY) if _ONLY else NO_BACKEND)
     name, path = found
     with tempfile.TemporaryDirectory(prefix="gentle-stream-say-") as tmp:
         out = Path(tmp) / "phrase.wav"

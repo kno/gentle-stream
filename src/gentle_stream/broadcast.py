@@ -31,6 +31,11 @@ VIDEO_QUEUE = 4         # frames
 HIDDEN = "<stream key>"
 
 
+class BroadcastError(Exception):
+    """A broadcast that cannot start (no URL or key, no Pillow, phrases without espeak-ng, the ingest refused it);
+    the message is meant for the terminal and never holds the key."""
+
+
 class BroadcastStatus(TypedDict):
     target: str
     seconds: float
@@ -256,4 +261,4 @@ def _write_all(fd: int, data: bytes) -> None:
         view = view[os.write(fd, view):]
 
 
-__all__ = ["IO", "Broadcast", "BroadcastStatus", "encoder_command"]
+__all__ = ["IO", "Broadcast", "BroadcastError", "BroadcastStatus", "encoder_command"]

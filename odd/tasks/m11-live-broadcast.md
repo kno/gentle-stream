@@ -43,7 +43,7 @@ therapeutic claims in any overlay; tests with a fake encoder and a local sink, n
 | T2 RTMP(S) publisher (handshake, connect, publish, FLV tags as messages) and a fake local server | S2, S3 | inline | `feat/rtmp-publish` | done (`901bc99`; base `cfcba4f`) |
 | T3 Broadcast view: 1280x720 frames with Pillow from the player snapshot | S5 | inline | `feat/broadcast-view` | done (T3 commit; base `901bc99`) |
 | T4 Encoder pipeline: ffmpeg (raw video + PCM in, FLV out), bounded queues fed from the callback | S1, S3 | inline | `feat/broadcast-encoder` | done (T4 commit; base `9d523aa`) |
-| T5 Player/daemon/ctl: `ctl stream start/stop`, status keys, safe sources while broadcasting | S1-S5 | inline | `feat/broadcast-ctl` | pending |
+| T5 Player/daemon/ctl: `ctl stream start/stop`, status keys, safe sources while broadcasting | S1-S5 | inline | `feat/broadcast-ctl` | done (T5 commit; base `3d4bc5c`) |
 | T6 TUI action, parity map, README, sentinel-key leak test over every surface | S2, S3, S5 | inline | `feat/broadcast-tui` | pending |
 
 ## Log
@@ -97,3 +97,17 @@ therapeutic claims in any overlay; tests with a fake encoder and a local sink, n
   flaky run traced to counting all threads; the test now checks the broadcast's own threads. Mutations: 5 of 6 caught;
   "stderr not masked" is equivalent (stderr reaches the outside only through _fail, which masks again).
 - L11: T4 suite job-39: 1488 passed, 3 deselected, 0 test daemons, 0 encoder processes left. T4 verified.
+- L12: T5 (inline; delegation skipped after two partial worker results). Player.stream_start/stream_stop/streaming
+  own a Broadcast fed from the audio callback next to the recorder (both branches of the callback); close() ends it.
+  Start refuses, with the reason: no URL, no/unsafe key, no Pillow, already broadcasting, the journey's phrases
+  without espeak-ng (checked on the running or queued journey: Engine.journey_phrases). Safe sources while it runs:
+  speech.use_only("espeak-ng") (cache cleared; BROADCAST_NEEDS message when absent), a non-redistributable pack set
+  aside (Engine.set_voices) and restored on stop, the journey's phrases forgotten and rendered again with the program
+  in use. Daemon: stream_start/stream_stop commands, state key "stream" (last; test_daemon pin updated). Client:
+  stream_start/stream_stop/streaming. CLI: `ctl stream start|stop` ("Broadcasting to URL"; "Broadcast to URL ended
+  after m:ss (N frames dropped)"), `ctl status` gains "stream" (additive, last; two pins updated). Parity: `ctl stream`
+  listed as a T6 gap. Tests (18): device audio == broadcast audio through the player, refusals, a failing encoder
+  reported while the device keeps getting audio, double start, close ends it, pack swap both ways, say/espeak-ng
+  order, phrases re-rendered, refusal without espeak-ng, ctl output and usage, and end to end: the background player
+  broadcasting through the real ffmpeg to the local ingest, `ctl status` and `ps` without the key. Mutations: 8 of 8.
+- L13: T5 suite job-40: 1506 passed, 3 deselected, 0 test daemons; the one encoder left belonged to the maintainer's real player (no test runtime dir), a live test broadcast. T5 verified.

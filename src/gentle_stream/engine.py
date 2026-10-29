@@ -413,6 +413,29 @@ class Engine:
         return self._voices if self._voices is not None else self._sampled
 
     @property
+    def voices(self) -> PackVoice | None:
+        """The voice pack the choir sings, or None (the built-in voices)."""
+        return self._voices
+
+    def set_voices(self, voices: PackVoice | None) -> None:
+        """Sing with `voices` (None: the built-in voices) from the next note on; a broadcast swaps a pack that may
+        not be redistributed for the built-in choir, and back."""
+        with self._lock:
+            self._voices = voices
+            self.melodic_vocals = voices is not None and voices.pack.melody
+
+    def journey_phrases(self) -> tuple[str, ...]:
+        """The phrases of the journey running, or queued to run, from the next bar."""
+        with self._lock:
+            journey = self._pending_journey if self._journey_queued else self.journey
+        return journey.phrases if journey is not None else ()
+
+    def forget_phrases(self) -> None:
+        """Drop the journey phrases rendered so far (they are rendered again with another program)."""
+        with self._lock:
+            self._phrase_clips.clear()
+
+    @property
     def vocals_backend(self) -> str:
         """Who sings the choir: "pack: NAME" (a voice pack), "sampled" (FluidR3_GM) when the soundfont is in use,
         else "procedural"."""

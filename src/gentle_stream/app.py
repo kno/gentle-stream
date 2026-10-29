@@ -1287,6 +1287,7 @@ PARITY: dict[str, str] = {
 }
 NOT_IN_TUI: dict[str, str] = {
     "ctl status": "the TUI shows the state all the time (title, mood, tempo, journey, binaural, recording)",
+    "ctl stream": "gap: not yet in the TUI (PM-045 T6)",
     "stream key": "gap: not yet in the TUI (PM-045 T6)",
     "stream url": "gap: not yet in the TUI (PM-045 T6)",
     "stream show": "gap: not yet in the TUI (PM-045 T6)",

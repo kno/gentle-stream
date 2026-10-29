@@ -27,6 +27,9 @@ key kept in a 0600 file. Messages are JSON (never pickle), one request and one r
                                      it is heading to, or null)
     {"cmd": "binaural_set", "beat": 10, "seconds": 30}
                                      (glide only the given carrier, beat or level; refused while the layer is off)
+    {"cmd": "stream_start"}          -> {"ok": true, "stream": {target, seconds, dropped_frames, error, running}}
+                                     (broadcast to the configured ingest; the reason when it cannot start)
+    {"cmd": "stream_stop"}           -> {"ok": true, "stream": {...}}, or {"ok": false, "error": "not broadcasting"}
     {"cmd": "stop"}                  -> {"ok": true}, then the process exits and every connection sees EOF
     anything else                    -> {"ok": false, "error": "..."}
 
@@ -142,6 +145,7 @@ def state(player, bands: int = 0) -> dict:
         "journey": now.journey.to_dict() if now.journey is not None else None,
         "binaural": player.engine.binaural.to_dict() if player.engine.binaural is not None else None,
         "recording": _recording(player.recording),
+        "stream": player.streaming,   # the broadcast's status (target without the key), or None
     }
     if bands > 0:
         out["spectrum"] = [round(float(v), 4) for v in player.spectrum_levels(min(bands, MAX_BANDS))]
@@ -253,6 +257,19 @@ def handle(player, request) -> dict:
                 player.record_start(path, bool(request.get("force", False)))
             except RecordError as e:
                 return {"ok": False, "error": str(e)}
+        elif cmd == "stream_start":
+            from .broadcast import BroadcastError
+
+            try:
+                started = player.stream_start()
+            except BroadcastError as e:
+                return {"ok": False, "error": str(e)}
+            return {"ok": True, "state": state(player), "stream": started}
+        elif cmd == "stream_stop":
+            ended = player.stream_stop()
+            if ended is None:
+                return {"ok": False, "error": "not broadcasting"}
+            return {"ok": True, "state": state(player), "stream": ended}
         elif cmd == "record_stop":
             saved = player.record_stop()
             if saved is None:

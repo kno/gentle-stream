@@ -171,6 +171,8 @@ class PlayerClient:
         self.cycle_remaining_seconds = float(state.get("cycle_remaining_seconds", 0.0))
         recording = state.get("recording")   # an older player does not report it: not recording
         self.recording = (recording["path"], float(recording["seconds"])) if isinstance(recording, dict) else None
+        stream = state.get("stream")   # an older player does not report it: not broadcasting
+        self.streaming = stream if isinstance(stream, dict) else None
         binaural = state.get("binaural")   # an older player does not report it: off
         self.binaural = Binaural.from_dict(binaural) if isinstance(binaural, dict) else None
 
@@ -230,6 +232,19 @@ class PlayerClient:
                 return None
             raise
         return saved["path"], float(saved["seconds"])
+
+    def stream_start(self) -> dict:
+        """Broadcast to the configured ingest: its status; PlayerError with the reason when it cannot start."""
+        return self._round_trip("stream_start")["stream"]
+
+    def stream_stop(self) -> dict | None:
+        """End the broadcast: its final status, or None when nothing was broadcasting."""
+        try:
+            return self._round_trip("stream_stop")["stream"]
+        except PlayerError as e:
+            if str(e) == "not broadcasting":
+                return None
+            raise
 
     def journey_current(self) -> dict | None:
         """The journey the player is running (its last rendered bar's), or None."""

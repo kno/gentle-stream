@@ -136,6 +136,40 @@ def _journey_edit(prompt: str, *, model: str | None, gentle_shell: str, yes: boo
     return 0
 
 
+def stream_ctl(action: str) -> int:
+    """`ctl stream start` / `ctl stream stop`: broadcast what the background player plays, or end it."""
+    from .client import NoPlayer, PlayerError, PlayerGone, connect
+
+    try:
+        player = connect()
+    except NoPlayer:
+        print("gentle-stream: nothing is playing", file=sys.stderr)
+        return 1
+    except PlayerError as e:
+        print(f"gentle-stream: {e}", file=sys.stderr)
+        return 1
+    try:
+        if action == "start":
+            print(f"Broadcasting to {player.stream_start()['target']}")
+        else:
+            ended = player.stream_stop()
+            if ended is None:
+                print("gentle-stream: not broadcasting", file=sys.stderr)
+                return 1
+            seconds = round(float(ended["seconds"]))
+            error = f"; it had failed: {ended['error']}" if ended.get("error") else ""
+            print(f"Broadcast to {ended['target']} ended after {seconds // 60}:{seconds % 60:02d} "
+                  f"({ended['dropped_frames']} frames dropped){error}")
+    except PlayerGone:
+        print("gentle-stream: nothing is playing", file=sys.stderr)
+        return 1
+    except PlayerError as e:
+        print(f"gentle-stream: {OLDER_PLAYER if 'unknown command' in str(e) else e}", file=sys.stderr)
+        return 1
+    player.detach()
+    return 0
+
+
 def record(action: str, file: str | None, force: bool) -> int:
     """`ctl record start FILE [--force]` / `ctl record stop`: record what the background player plays."""
     from .client import NoPlayer, PlayerError, PlayerGone, connect
@@ -239,7 +273,8 @@ def ctl(action: str, bpm: float | None = None, seconds: float = 60.0,
         print(json.dumps({"running": True, "playing": player.playing, "name": style.name, "genre": style.genre,
                           "mood": style.mood, "bpm": player.bpm, "target_bpm": player.target_bpm,
                           "journey": journey.to_dict() if journey is not None else None,
-                          "binaural": player.binaural.to_dict() if player.binaural is not None else None},
+                          "binaural": player.binaural.to_dict() if player.binaural is not None else None,
+                          "stream": player.streaming},
                          ensure_ascii=False))
     elif action in ("tempo", "glide"):
         try:
@@ -647,10 +682,11 @@ def build_parser() -> argparse.ArgumentParser:
                                      help=f"the pack to install: {', '.join(VOICE_CATALOG)}")
     ctl_parser = sub.add_parser("ctl", help="control the music playing in the background")
     ctl_parser.add_argument("action", choices=("play", "pause", "toggle", "next", "stop", "status", "tempo",
-                                               "glide", "binaural", "say", "record"))
+                                               "glide", "binaural", "say", "record", "stream"))
     ctl_parser.add_argument("args", nargs="*", metavar="ARG",
                             help="tempo: BPM; glide: FIELD=VALUE...; binaural: on, off or set; say: TEXT (spoken "
-                                 "over the music from the next phrase boundary); record: start FILE.wav or stop")
+                                 "over the music from the next phrase boundary); record: start FILE.wav or stop; stream: start or "
+                                 "stop (broadcast to the ingest set with `gentle-stream stream`)")
     ctl_parser.add_argument("--force", action="store_true", help="record start: replace an existing file")
     ctl_parser.add_argument("--over", type=float, default=60.0, metavar="SECONDS",
                             help="tempo, glide, binaural on/set while it plays: seconds to reach the target, 0-3600 "
@@ -756,6 +792,10 @@ def main(argv: list[str] | None = None) -> int:
             ctl_parser.error("--voice, --rate and --effect are only for say")
         if args.action != "record" and args.force:
             ctl_parser.error("--force is only for record")
+        if args.action == "stream":
+            if args.args not in (["start"], ["stop"]):
+                ctl_parser.error("stream requires start or stop")
+            return stream_ctl(args.args[0])
         if args.action == "record":
             if not (args.args[:1] == ["stop"] and len(args.args) == 1
                     or args.args[:1] == ["start"] and len(args.args) == 2):

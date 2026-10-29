@@ -235,6 +235,7 @@ gentle-stream ctl stop     # ends the background player
 | `ctl glide FIELD=VALUE... [--over SECONDS]` | Glide `energy`, `brightness`, `space`, `swing`, `vinyl`, `lead_density`, `voice` or `bpm` in place (default 60 seconds) | `0`; `1` when nothing plays or the player refuses; `2` for a malformed or discrete field |
 | `ctl say TEXT [--voice NAME] [--rate WPM] [--effect dry\|radio\|space]` | Speak TEXT (at most 200 characters) over the music from the next phrase boundary, the music ducked 3 dB; `ctl say --list-voices` lists the system voices | `0` (an unknown voice falls back to the default with a warning); `1` when nothing plays, no text-to-speech program is found, or it fails; `2` without TEXT or with a rate outside 80-400 |
 | `ctl record start FILE.wav [--force]` / `ctl record stop` | Record exactly what the background player plays (volume and pauses included) into a 16-bit stereo WAV, until `stop` or until the player stops; an existing file needs `--force` | `0`; `1` when nothing plays, a recording is running, the folder does not exist, the file exists without `--force`, or (stop) nothing records; `2` for a malformed command |
+| `ctl stream start` / `ctl stream stop` | Broadcast what the background player plays, with a picture of it, to the ingest set with `gentle-stream stream url` and `stream key set` (see [Live broadcast](#live-broadcast)); `stop` reports how long it ran and the frames dropped | `0`; `1` when nothing plays, no URL or key is set, a broadcast is running, the journey speaks phrases without `espeak-ng`, the ingest refuses it, or (stop) nothing broadcasts; `2` for a malformed command |
 | `ctl binaural on [--carrier HZ] [--beat HZ] [--level L] [--over SECONDS]`, `ctl binaural set ... [--over SECONDS]`, `ctl binaural off` | Fade the binaural texture in or out, or glide it to new values (see [Binaural](#binaural)); nothing on stdout | `0`; `1` when nothing plays or `set` finds it off; `2` for a value out of range, options with `off`, or `set` without one |
 | `journey play NAME\|FILE` | Run a built-in or saved journey (names ignore case) or a JSON file (see [Journeys](#journeys)); nothing on stdout | `0`; `1` when nothing plays or the name is unknown |
 | `journey restart` | Restart the running journey at its first stage on the next bar | `0`; `1` when nothing plays or no journey is running |
@@ -467,8 +468,10 @@ A file or path that cannot be read or written prints one `gentle-stream: ...` li
 
 ## Live broadcast
 
-Work in progress (PM-045): the player will send what plays, with a picture of it, to YouTube Live or any RTMP(S)
-ingest. First tell it where to send, once:
+The background player can send what plays, with a picture of it (the style, mood, journey, vocals and binaural lines
+and the spectrum, 1280x720 at 10 frames a second), to YouTube Live or any RTMP(S) ingest. It needs `ffmpeg`, which
+only encodes (it never sees the URL or the key), and the optional extra `pip install 'gentle-stream[broadcast]'`
+(Pillow, to draw the picture). First tell it where to send, once:
 
 ```bash
 gentle-stream stream url rtmps://a.rtmps.youtube.com/live2   # the ingest URL from YouTube Studio
@@ -481,6 +484,23 @@ The stream key lets anyone stream to your channel, so it is treated as a secret:
 an argument, where other programs could see it in the process list), kept in
 `$XDG_CONFIG_HOME/gentle-stream/stream.key` with mode 0600 (a key file others can read is refused, as ssh does), or
 taken from the `GENTLE_STREAM_KEY` environment variable, which wins. It is never printed, logged or shown.
+
+Then, with the music playing:
+
+```bash
+gentle-stream ctl stream start    # Broadcasting to rtmps://a.rtmps.youtube.com/live2
+gentle-stream ctl status          # "stream": target, seconds, dropped_frames, error, running
+gentle-stream ctl stream stop     # Broadcast to ... ended after 12:04 (0 frames dropped)
+```
+
+The music keeps playing locally whatever happens to the broadcast: the audio is copied to it without ever waiting,
+so a slow network or encoder only drops broadcast frames (counted in the status), and a failed broadcast is reported
+in the status without stopping the music. Stopping the player ends the broadcast.
+
+While broadcasting, only what may be broadcast is used: phrases are spoken with `espeak-ng` (the macOS `say` voices
+are licensed for personal use only), and a voice pack whose manifest says `"redistributable": false` gives way to the
+built-in choir; both come back when the broadcast stops. A journey with phrases refuses to start a broadcast when
+`espeak-ng` is not installed, and says so. Nothing on the picture makes any claim about the listener.
 
 ## Token usage
 

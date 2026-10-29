@@ -378,9 +378,9 @@ def test_ctl_controls_a_running_player(runtime, capsys):
     assert (code, err) == (0, "") and out.endswith("\n") and out.count("\n") == 1
     assert json.loads(out) == {"running": True, "playing": True, "name": "Café Night", "genre": "jazz",
                                "mood": "late café", "bpm": player.bpm, "target_bpm": player.target_bpm,
-                               "journey": None, "binaural": None}
+                               "journey": None, "binaural": None, "stream": None}
     assert list(json.loads(out)) == ["running", "playing", "name", "genre", "mood", "bpm", "target_bpm", "journey",
-                                     "binaural"]
+                                     "binaural", "stream"]
     assert run_ctl(capsys, "pause") == (0, "", "")
     assert json.loads(run_ctl(capsys, "status")[1])["playing"] is False
     assert run_ctl(capsys, "toggle") == (0, "", "")
@@ -554,7 +554,7 @@ def test_state_reports_no_journey_as_null_after_the_existing_keys():
 
     state = daemon.state(fake_player())
     assert state["journey"] is None
-    assert list(state)[-5:] == ["bpm", "target_bpm", "journey", "binaural", "recording"]   # new keys come last
+    assert list(state)[-6:] == ["bpm", "target_bpm", "journey", "binaural", "recording", "stream"]   # new keys last
 
 
 def test_state_reports_the_journey_snapshot_of_the_audible_bar():

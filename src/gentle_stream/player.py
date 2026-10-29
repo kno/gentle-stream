@@ -83,6 +83,8 @@ class Player:
         self._shown = np.zeros(0)        # last spectrum() result, for the gentle fall
         self.now = NowPlaying(engine.style, engine.piece, 0, 0.0)
         self._recorder: Recorder | None = None   # the session recording, fed by the audio callback
+        self._broadcast = None                   # the live broadcast (broadcast.Broadcast), fed by it too
+        self._pack_aside = None                  # a voice pack set aside while broadcasting (not redistributable)
 
     # ------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -106,6 +108,81 @@ class Player:
         if self._producer.is_alive():
             self._producer.join(timeout=5)
         self.record_stop()   # a recording in progress is saved and closed
+        self.stream_stop()   # and a broadcast ends
+
+    # ------------------------------------------------------------ broadcasting
+    def stream_start(self):
+        """Broadcast what plays to the configured ingest (`gentle-stream stream url/key`): its status, or
+        BroadcastError with the reason. While it runs, phrases are spoken with espeak-ng and a voice pack that may not
+        be redistributed gives way to the built-in choir."""
+        import shutil
+
+        from .broadcast import Broadcast, BroadcastError
+        from .broadcast_view import BroadcastUnavailable, BroadcastView, view_text
+        from .streamconf import StreamConfigError, load_key, load_url
+
+        current = self._broadcast
+        if current is not None and current.status()["running"]:
+            raise BroadcastError(f"already broadcasting to {current.url}")
+        self.stream_stop()                      # a failed broadcast still kept for its status
+        url = load_url()
+        if url is None:
+            raise BroadcastError("no ingest URL: run `gentle-stream stream url URL` "
+                                 "(e.g. rtmps://a.rtmps.youtube.com/live2)")
+        try:
+            key = load_key()
+            view = BroadcastView()
+        except (StreamConfigError, BroadcastUnavailable) as e:
+            raise BroadcastError(str(e)) from None
+        phrases = self.engine.journey_phrases()
+        if phrases and shutil.which("espeak-ng") is None:
+            raise BroadcastError("the journey speaks phrases, and a broadcast speaks them with espeak-ng, which is "
+                                 "not installed (macOS voices are licensed for personal use only); install espeak-ng "
+                                 "or stop the journey")
+        self._safe_sources(True, phrases)
+        broadcast = Broadcast(url, key, self.engine.sr, view, lambda: view_text(self),
+                              lambda: self.spectrum_levels(48))
+        broadcast.start()
+        status = broadcast.status()
+        if not status["running"]:
+            broadcast.stop()
+            self._safe_sources(False, phrases)
+            raise BroadcastError(status["error"] or "the broadcast did not start")
+        self._broadcast = broadcast
+        return status
+
+    def stream_stop(self):
+        """End the broadcast: its final status, or None when there was none."""
+        broadcast, self._broadcast = self._broadcast, None
+        if broadcast is None:
+            return None
+        broadcast.stop()
+        self._safe_sources(False, self.engine.journey_phrases())
+        return broadcast.status()
+
+    @property
+    def streaming(self):
+        """The broadcast's status (also after it failed, until it is stopped), or None."""
+        broadcast = self._broadcast
+        return broadcast.status() if broadcast is not None else None
+
+    def _safe_sources(self, on: bool, phrases: tuple[str, ...]) -> None:
+        """Only what may be broadcast while `on`: espeak-ng for phrases, no pack that may not be redistributed; the
+        usual sources again when off. The journey's phrases are rendered again with the program now in use."""
+        from . import speech
+
+        speech.use_only("espeak-ng" if on else None)
+        if on:
+            pack = self.engine.voices
+            if pack is not None and not pack.pack.redistributable:
+                self._pack_aside = pack
+                self.engine.set_voices(None)
+        elif self._pack_aside is not None:
+            self.engine.set_voices(self._pack_aside)
+            self._pack_aside = None
+        if phrases:
+            self.engine.forget_phrases()
+            speech.prerender(phrases, self.engine.sr, self.engine.provide_phrase)
 
     # ------------------------------------------------------------ recording
     def record_start(self, path, force: bool = False) -> None:
@@ -342,13 +419,15 @@ class Player:
 
     def _callback(self, outdata, frames, time_info, status) -> None:
         target = self.volume if self.playing else 0.0
-        recorder = self._recorder
+        recorder, broadcast = self._recorder, self._broadcast
         if self._gain == 0.0 and target == 0.0 and not self.playing:
             outdata[:] = 0
             self.level = 0.0
             self._tail[:] = 0
             if recorder is not None:
                 recorder.feed(outdata)
+            if broadcast is not None:
+                broadcast.feed(outdata)
             return
         audio = self._pull(frames)
         self._wake.set()
@@ -360,6 +439,8 @@ class Player:
         outdata[:] = audio * gain[:, None]
         if recorder is not None:   # a copy into a queue: never waits for the disk
             recorder.feed(outdata)
+        if broadcast is not None:  # the same for the broadcast: never waits for the encoder or the network
+            broadcast.feed(outdata)
         mono = outdata.mean(axis=1)
         self.level = float(np.sqrt(np.mean(mono ** 2)))
         n = min(frames, SPECTRUM_SIZE)
