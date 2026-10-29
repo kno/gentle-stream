@@ -469,7 +469,10 @@ A file or path that cannot be read or written prints one `gentle-stream: ...` li
 ## Live broadcast
 
 The background player can send what plays, with a picture of it (the style, mood, journey, vocals and binaural lines
-and the spectrum, 1280x720 at 10 frames a second), to YouTube Live or any RTMP(S) ingest. It needs `ffmpeg`, which
+and the spectrum, 1280x720 at 30 frames a second and a constant 2500 kbit/s, as YouTube asks of 720p), to YouTube Live
+or any RTMP(S) ingest. The text is centred in the middle of the picture, the part a phone's vertical crop keeps, so
+the same broadcast reads on both; it uses a system font with accents and symbols (Arial Unicode on macOS, DejaVu or
+Noto Sans on Linux), or replaces the characters Pillow's own font lacks. It needs `ffmpeg`, which
 only encodes (it never sees the URL or the key), and the optional extra `pip install 'gentle-stream[broadcast]'`
 (Pillow, to draw the picture). First tell it where to send, once:
 

@@ -136,3 +136,55 @@ def test_silent_vocals_and_no_binaural_leave_their_lines_empty_as_in_the_tui():
     player.engine.render_bar()
     text = view_text(player)
     assert (text.mood, text.vocals, text.binaural) == ("", "", "")
+
+
+# ------------------------------------------------------------ after the first live test (S6)
+LONG = ViewText(title="♪ Café Noir, a long name for a quiet late evening", details=TEXT.details, mood=TEXT.mood,
+                journey='Journey: Warm-up · stage 2/3 "Rise" · 62% · 84 → 100 bpm · 6:40 left · mood "calm": '
+                        'energy -0.10 until "Rise" ends',
+                vocals="Vocals: choir (pack: FreePats Synth Pad Choir) · 44%", binaural=TEXT.binaural)
+
+
+def text_pixels(frame: bytes, view) -> np.ndarray:
+    """Where anything but the background was drawn, outside the spectrum box."""
+    picture = image(frame)
+    drawn = (picture != np.array(broadcast_view.BACKGROUND)).any(axis=2)
+    left, top, right, bottom = view.spectrum_box
+    drawn[top:bottom, left:right] = False
+    return drawn
+
+
+def test_every_character_drawn_has_a_glyph(view):
+    """No empty boxes: "♪", "→" and accented letters exist in the font used, or are replaced by ones that do."""
+    for line in (LONG.title, LONG.journey, "Mañana · canción · été"):
+        assert view.missing(view.drawable(line)) == []
+
+
+def test_without_a_font_that_has_them_glyphs_are_replaced_not_drawn_as_boxes(monkeypatch):
+    monkeypatch.setattr(broadcast_view, "FONT_FILES", ())
+    plain = BroadcastView()                                  # Pillow's own font: no ♪, no →, no é
+    assert plain.drawable("♪ Café 84 → 100") == "Cafe 84 -> 100"
+    assert plain.missing(plain.drawable(LONG.journey)) == []
+
+
+def test_the_text_stays_in_the_centre_column_a_vertical_crop_keeps(view):
+    """A 9:16 crop of a 720-pixel-high frame keeps the middle 405 pixels: all text is drawn there."""
+    drawn = text_pixels(view.frame(LONG, np.zeros(48)), view)
+    columns = np.flatnonzero(drawn.any(axis=0))
+    keep = 720 * 9 / 16
+    assert columns.min() >= (W - keep) / 2 and columns.max() <= (W + keep) / 2
+
+
+def test_long_lines_wrap_instead_of_running_off(view):
+    one = text_pixels(view.frame(ViewText(title="♪ X", details="", journey="Journey: short"), np.zeros(48)), view)
+    many = text_pixels(view.frame(ViewText(title="♪ X", details="", journey=LONG.journey), np.zeros(48)), view)
+
+    def rows(drawn):
+        return np.flatnonzero(drawn.any(axis=1))
+
+    assert rows(many).max() - rows(many).min() > rows(one).max() - rows(one).min() + 40   # more lines, not cut
+
+
+def test_the_spectrum_spans_the_whole_width(view):
+    left, _, right, _ = view.spectrum_box
+    assert left <= 64 and right >= W - 64

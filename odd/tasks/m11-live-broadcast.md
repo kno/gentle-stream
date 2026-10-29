@@ -34,6 +34,13 @@ key), duration, dropped frames, the encoder's last error; stopping the player en
 `gentle-stream stream key set` from stdin into a 0600 file in the config dir, or an environment variable; no health or
 therapeutic claims in any overlay; tests with a fake encoder and a local sink, never a real service.
 
+**S6** — First live test (2026-10-29), maintainer, verbatim: "no se ven los iconos, y en mobile no se ajusta bien"
+(screenshot: "♪" and "→" drawn as empty boxes; the service's vertical auto-crop keeps only the centre, cutting the
+left-aligned text; the health badge said "Mala"). Asked about the mobile fix: "no se puede hacer algún diseño que se
+ajuste automáticamente?" — one video is sent and the service crops it, so the picture cannot know the screen: the
+automatic answer is a layout whose text stays in the centre column a 9:16 crop keeps, the spectrum full width. Video:
+"Bitrate fijo 2500k y 30 fps (recomendado)".
+
 ## Tasks
 
 | Task | Specs | Route | Branch | Commit |
@@ -44,6 +51,7 @@ therapeutic claims in any overlay; tests with a fake encoder and a local sink, n
 | T3 Broadcast view: 1280x720 frames with Pillow from the player snapshot | S5 | inline | `feat/broadcast-view` | done (T3 commit; base `901bc99`) |
 | T4 Encoder pipeline: ffmpeg (raw video + PCM in, FLV out), bounded queues fed from the callback | S1, S3 | inline | `feat/broadcast-encoder` | done (T4 commit; base `9d523aa`) |
 | T5 Player/daemon/ctl: `ctl stream start/stop`, status keys, safe sources while broadcasting | S1-S5 | inline | `feat/broadcast-ctl` | done (T5 commit; base `3d4bc5c`) |
+| T5b Picture fixes from the first live test: missing glyphs, a layout that survives the mobile crop, constant 2500k at 30 fps | S6 | inline | `feat/broadcast-layout` | done (T5b commit; base `d911a42`) |
 | T6 TUI action, parity map, README, sentinel-key leak test over every surface | S2, S3, S5 | inline | `feat/broadcast-tui` | pending |
 
 ## Log
@@ -111,3 +119,14 @@ therapeutic claims in any overlay; tests with a fake encoder and a local sink, n
   order, phrases re-rendered, refusal without espeak-ng, ctl output and usage, and end to end: the background player
   broadcasting through the real ffmpeg to the local ingest, `ctl status` and `ps` without the key. Mutations: 8 of 8.
 - L13: T5 suite job-40: 1506 passed, 3 deselected, 0 test daemons; the one encoder left belonged to the maintainer's real player (no test runtime dir), a live test broadcast. T5 verified.
+- L14: T5b. The first live test showed "♪" and "→" as boxes; checking the font found "é" missing too (Pillow's
+  default). broadcast_view: a system font with the glyphs (Arial Unicode on macOS, DejaVu/Noto on Linux, Menlo), else
+  Pillow's with `drawable()` replacing what it lacks (stand-ins, the unaccented letter, or nothing; `missing()` detects
+  a glyph by comparing its pixels with a lacking character's). Layout: every line centred and wrapped (between " · "
+  parts, then words; at most N lines, "..." after) inside SAFE_WIDTH 400, the middle a 9:16 crop keeps (405 px of
+  1280); the spectrum full width (y 300-470). Video: FPS 30, -b:v/-maxrate 2500k, -bufsize 5000k, nal-hrd=cbr,
+  keyframes every 60 frames (2 s). Measured: 5.8 ms a frame; synthesis 45.1x real time alone, 43.8x while drawing 30
+  fps (roadmap floor 4x). Sample frame and its mobile crop rendered to listen/broadcast-frame*.png (untracked). Tests:
+  glyphs present (system font and forced Pillow font), text only inside the crop column, long lines wrap, spectrum
+  spans the width, encoder 30 fps/2500k/keyframe 2 s. Mutations: 6 of 6.
+- L15: T5b suite job-41: 1512 passed, 3 deselected, 0 test daemons. T5b verified.

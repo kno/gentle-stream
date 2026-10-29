@@ -1,5 +1,6 @@
 """PM-045 T4: the broadcast pipeline. The audio callback feeds it and never waits; ffmpeg encodes without seeing the
 URL or the key; failures are reported, never raised into the audio path."""
+import itertools
 import shutil
 import subprocess
 import sys
@@ -168,3 +169,11 @@ def test_with_the_real_ffmpeg_the_ingest_receives_audio_and_video(view):
     assert status["error"] is None and status["target"] == ingest.url and KEY not in str(status)
     kinds = {kind for kind, _, _ in ingest.media}
     assert {8, 9} <= kinds, kinds
+
+
+def test_the_video_is_30_fps_at_a_constant_2500k_with_a_keyframe_every_2_s(view):
+    """S6: what YouTube asks of a 720p stream (its health badge said "bad" at 10 fps and a variable rate)."""
+    command = make(FakeIngest(), view, None).encoder_command
+    pairs = dict(itertools.pairwise(command))
+    assert pairs["-r"] == "30" and pairs["-g"] == "60"
+    assert pairs["-b:v"] == pairs["-maxrate"] == "2500k" and pairs["-bufsize"] == "5000k"

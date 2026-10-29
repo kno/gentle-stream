@@ -21,11 +21,11 @@ from typing import IO, Any, TypedDict
 
 import numpy as np
 
-from .broadcast_view import HEIGHT, WIDTH, BroadcastView, ViewText
+from .broadcast_view import FPS, HEIGHT, WIDTH, BroadcastView, ViewText
 from .rtmp import Publisher, PublishError
 from .streamconf import StreamKey
 
-FPS = 10
+VIDEO_RATE = "2500k"   # constant, as YouTube asks of 720p at 30 fps
 AUDIO_QUEUE = 64        # blocks: about 0.75 s at 512 frames
 VIDEO_QUEUE = 4         # frames
 HIDDEN = "<stream key>"
@@ -52,6 +52,7 @@ def encoder_command(sr: int) -> list[str]:
             "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{WIDTH}x{HEIGHT}", "-r", str(FPS), "-i", "pipe:{video_fd}",
             "-map", "1:v", "-map", "0:a",
             "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-pix_fmt", "yuv420p", "-g", str(2 * FPS),
+            "-b:v", VIDEO_RATE, "-maxrate", VIDEO_RATE, "-bufsize", "5000k", "-x264-params", "nal-hrd=cbr",
             "-c:a", "aac", "-b:a", "160k", "-f", "flv", "pipe:1"]
 
 
