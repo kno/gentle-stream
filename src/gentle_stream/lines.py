@@ -11,6 +11,35 @@ def format_time(seconds: float) -> str:
     return f"{total // 60}:{total % 60:02d}"
 
 
+DRUM_LABELS = {"none": "no drums", "soft": "soft drums", "busy": "busy drums"}   # "lofi": the genre's own pattern
+
+
+def details_line(style) -> str:
+    """`synthwave · D minor · 106.3 bpm · 1-6-3-7 · brassy polysynth stabs · bright saw lead · drums`: the style with
+    its chords, lead and drums named as the genre playing them sounds (its `voices`), not by the shared field names
+    (`piano/piano · drums lofi` read as lo-fi words over a synthwave stage)."""
+    from .genres import get
+
+    voices = get(style.genre).voices
+
+    def sounds(name: str, part: int) -> str:
+        meaning = voices.get(name, name)
+        return meaning.split(" / ")[part] if " / " in meaning else meaning
+
+    lead = "no lead" if style.lead == "none" else sounds(style.lead, -1)
+    drums = DRUM_LABELS.get(style.drums) or ("lofi drums" if style.genre == "lofi" else "drums")
+    return (f"{style.genre} · {style.key} {style.mode} · {style.bpm:g} bpm · "
+            f"{'-'.join(str(d) for d in style.progression)} · {sounds(style.chords, 0)} · {lead} · {drums}")
+
+
+def title_line(style, snap: JourneySnapshot | None) -> str:
+    """The title: `♪ Train · Calentamiento lofi` (the journey and its stage) while a journey plays, since the style's
+    own name is only the one the music started from; `♪ Midnight Rain` (the style) otherwise."""
+    if snap is not None:
+        return f"♪ {snap.title} · {snap.stage_name}" if snap.stage_name else f"♪ {snap.title}"
+    return f"♪ {style.name}"
+
+
 def journey_line(snap: JourneySnapshot | None, into_bar: float = 0.0) -> str:
     """`Journey: Warm-up · stage 2/3 "Rise" · 62% · 84 → 100 bpm · 6:40 left`, or "" without a journey. The tempo
     shows one value when the stage ends where it is; `sustaining` replaces the time left once a sustaining journey

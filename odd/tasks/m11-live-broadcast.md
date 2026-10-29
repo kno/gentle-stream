@@ -207,3 +207,19 @@ un popup".
   description), ctrl+p, and every palette action with its help, from the app's own BINDINGS and palette_actions(), so
   new actions appear by themselves; it scrolls (tested at 80x24) and `?`/esc close it.
 - L26: T8+T9 suite job-49: 1551 passed, 3 deselected, 0 test daemons. Verified.
+- L27: Maintainer, verbatim: "he creado un journey, pero el título sigue midnight rain ¿es correcto?" — by design (a
+  journey drives the fields in place and never renamed the style), but misleading, more so on a broadcast; proposed
+  and accepted ("si"): lines.title_line(style, snap) gives "♪ JOURNEY · STAGE" while a journey plays, "♪ STYLE"
+  otherwise, used by the TUI and the broadcast picture. Tests (3): the function, the picture through view_text, and
+  the TUI title following a journey and coming back when it stops. Mutation caught. Branch feat/journey-title.
+- L28: Maintainer, verbatim: "ahora está ejecutando una fase synthwave, pero pone esto, el título está bien, pero los
+  instrumentos no pone los correctos y no estoy seguro de si lo generado está bien" (details line "synthwave · D minor
+  · 106.3 bpm · 1-6-3-7 · piano/piano · drums lofi"). The generated journey (Train: 6 stages, lofi 90 -> synthwave
+  116 -> electrohouse 128, closing) was checked and is coherent. The details line printed the shared field names,
+  inherited from the starting lo-fi style (a journey never changes discrete fields); each genre already declares
+  what they mean (`voices`). lines.details_line names chords, lead and drums as the genre plays them (the "/" in a
+  voice splits chord and lead), used by the TUI and the broadcast picture; Style.summary(), what the model reads, is
+  unchanged. Tests (16): the reported synthwave case, lofi, no lead/no drums/patterns, every genre covers its four
+  choices, the picture. Mutation caught. While checking the suite, a kill aimed at an "orphan test daemon" stopped
+  the suite itself (pgrep -f matched the job's own shell text); the count now comes from /tmp/gs_test_daemons.sh,
+  which selects Python processes only. Suite job-51: 1570 passed, 0 test daemons.

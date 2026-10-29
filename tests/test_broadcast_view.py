@@ -15,7 +15,7 @@ from gentle_stream.broadcast_view import (
     ViewText,
     view_text,
 )
-from gentle_stream.lines import binaural_line, journey_line
+from gentle_stream.lines import binaural_line, details_line, journey_line
 
 W, H = 1280, 720
 TEXT = ViewText(title="♪ Midnight Rain", details="lofi · A minor · 72 bpm", mood="“rain on a window”",
@@ -98,7 +98,7 @@ def test_the_picture_shows_what_the_tui_shows():
     player.engine.render_bar()
     now = player.now
     text = view_text(player)
-    assert text.title == f"♪ {now.style.name}" and text.details == now.style.summary()
+    assert text.title == f"♪ {now.style.name}" and text.details == details_line(now.style)
     assert text.mood == f"“{now.style.mood}”"
     assert text.journey == journey_line(now.journey, max(0.0, player.elapsed_seconds - now.start_seconds))
     assert text.binaural == binaural_line(player.binaural) != ""

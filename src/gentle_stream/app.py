@@ -47,7 +47,7 @@ from .journey import (
     JourneyStoreError,
     edit_preview,
 )
-from .lines import binaural_line, format_time, journey_line
+from .lines import binaural_line, details_line, format_time, journey_line, title_line
 from .player import Player
 from .presets import NAME_MAX, Preset, PresetError, PresetStore, normalize_name
 from .recorder import RecordError
@@ -1634,8 +1634,8 @@ class StreamApp(App):
             self.exit(message="gentle-stream: the music was stopped")
             return
         now, p = self.player.now, self.player
-        w["title"].update(f"♪ {now.style.name}")
-        w["details"].update(now.style.summary())
+        w["title"].update(escape(title_line(now.style, now.journey)))
+        w["details"].update(escape(details_line(now.style)))
         w["mood-line"].update(f"“{now.style.mood}”" if now.style.mood else "")
         journey = journey_line(now.journey, max(0.0, p.elapsed_seconds - now.start_seconds))
         w["journey"].update(journey)

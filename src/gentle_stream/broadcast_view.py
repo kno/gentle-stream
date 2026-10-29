@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .lines import binaural_line, journey_line
+from .lines import binaural_line, details_line, journey_line, title_line
 
 WIDTH, HEIGHT = 1280, 720
 FPS = 30
@@ -58,8 +58,8 @@ def view_text(player) -> ViewText:
     now = player.now
     style = now.style
     return ViewText(
-        title=f"♪ {style.name}",
-        details=style.summary(),
+        title=title_line(style, now.journey),
+        details=details_line(style),
         mood=f"“{style.mood}”" if style.mood else "",
         journey=journey_line(now.journey, max(0.0, player.elapsed_seconds - now.start_seconds)),
         vocals=f"Vocals: choir ({player.vocals_backend}) · {round(style.voice * 100)}%" if style.voice > 0 else "",
