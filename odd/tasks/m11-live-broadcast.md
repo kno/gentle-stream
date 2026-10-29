@@ -157,3 +157,4 @@ automatic answer is a layout whose text stays in the centre column a 9:16 crop k
   closed; it now checks only the threads of the broadcast it starts.
 - L19: Maintainer, verbatim, after restarting the player on the T5c working tree: "si, ya no da error" (YouTube no longer reports bad health; the player showed 0 dropped frames in 190 s). S6 confirmed live.
 - L20: Suite job-43: 1523 passed, 3 deselected, 0 test daemons. T5c and T6 verified; M11 implementation complete.
+- L21: Slow tests job-44: 3 passed, 0 test daemons. M11 closed. PR order (stacked, each against the previous): docs/m11-decisions, feat/stream-key, feat/rtmp-publish, feat/broadcast-view, feat/broadcast-encoder, feat/broadcast-ctl, feat/broadcast-layout, feat/broadcast-tui.
