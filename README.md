@@ -213,6 +213,7 @@ Everything the command line does can be done from the TUI too: by its key, or by
 | `--model provider/id` | Model Gentle Shell uses to interpret moods (default: Gentle Shell's default) |
 | `--mood TEXT` | Mood to interpret as soon as the app starts |
 | `--gentle-shell PATH` | `gentle-shell` executable to run (default: `gentle-shell`) |
+| `--fresh` | Start from scratch: forget where the music was when the player last stopped (see [Background playback](#background-playback)) |
 | `setup-samples` | Subcommand: download the FluidR3_GM soundfont once (see below) |
 | `ctl ACTION` | Subcommand: control the music playing in the background (see below) |
 | `render OUT.wav` | Subcommand: render music into a WAV file, without a player or an audio device (see below) |
@@ -257,6 +258,12 @@ gentle-stream ctl stop     # ends the background player
 | `journey delete NAME` | Remove a saved journey: `Deleted journey "NAME"` | `0`; `1` when there is no saved journey with that name or it is a built-in |
 
 A glide changes the piece that is playing instead of starting a new one: the song form keeps going, and each bar takes the values at its start. Each field glides on its own (a second `glide` adds to or replaces per field), values are clamped like a mood's, and a new mood or `next` cancels every glide. Discrete fields (genre, key, mode, instruments, drums) only change with a new piece. Genres that pick something once per piece from the tempo (chiptune's arpeggio speed) keep the value the piece started with. If the background player is older than the command, `ctl` says so: run `gentle-stream ctl stop` and start again.
+
+When the player stops (`q`, `ctl stop`, or even a crash) and starts again, it comes back where it was: the style
+that played, a running journey at the same moment (stage and progress), the volume, the binaural layer, mute here,
+and a live broadcast, which starts again (if it cannot, the player log says why and the music plays on). The piece
+itself is new, in the same style: the music is generated as it plays, so its exact bar cannot come back. This is saved
+in `$XDG_CONFIG_HOME/gentle-stream/session.json` every 10 seconds and on stop; `gentle-stream --fresh` forgets it.
 
 The player listens on a Unix socket in a private directory (`$XDG_RUNTIME_DIR/gentle-stream`, default `~/.cache/gentle-stream/run`, mode `0700`), authenticated with a random key in a `0600` file. A player that crashed is detected and replaced on the next start. If no audio output opens (the chosen one, then the system default), the player still starts, silent here, so the music, a broadcast and a recording go on; `ctl status` (`"output"`) and the TUI's state line (`no sound here`) say why. Pick another output with `ctl output` or `o`.
 

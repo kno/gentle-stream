@@ -46,6 +46,7 @@ import argparse
 import fcntl
 import importlib
 import json
+import logging
 import math
 import os
 import secrets
@@ -55,6 +56,8 @@ import sys
 import threading
 from dataclasses import dataclass
 from multiprocessing.connection import Listener
+
+log = logging.getLogger("gentle_stream.daemon")
 from pathlib import Path
 
 AUDIO_FACTORY_ENV = "GENTLE_STREAM_AUDIO_FACTORY"   # testing seam: "module:attr" replaces sounddevice.OutputStream
@@ -434,14 +437,21 @@ def main(argv: list[str] | None = None) -> int:
     lock.write(str(os.getpid()))
     lock.flush()
 
+    from . import session
     from .engine import Engine
     from .player import Player
+    from .style import Style
 
+    saved = session.load()   # where a stopped player left the music (S11)
     try:
         factory = _stream_factory()
         from .voicepacks import active_voice
 
-        player = Player(Engine(voices=active_voice()), **({"stream_factory": factory} if factory else {}))
+        style = Style.from_dict(saved["style"]) if saved else None
+        engine = Engine(style, voices=active_voice()) if style is not None else Engine(voices=active_voice())
+        player = Player(engine, **({"stream_factory": factory} if factory else {}))
+        for warning in player.resume(saved) if saved else []:
+            log.warning("%s", warning)
     except Exception as e:
         report({"error": f"cannot start the player: {e}", "audio": False})
         return 1
@@ -461,6 +471,11 @@ def main(argv: list[str] | None = None) -> int:
         report({"error": f"cannot listen on {paths.sock}: {e}", "audio": False})
         return 1
 
+    if saved:
+        error = player.resume_live(saved)
+        if error:
+            log.warning("the broadcast did not start again: %s", error)
+    saver = session.autosave(player)
     server = Server(player, listener)
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: server.stopping.set())
@@ -469,6 +484,7 @@ def main(argv: list[str] | None = None) -> int:
     report({"ready": True})
     while not server.stopping.wait(0.5):
         pass
+    saver.stop()   # the last save, while the broadcast and the journey are still there
     player.close()
     listener.close()   # also removes the socket file
     return 0

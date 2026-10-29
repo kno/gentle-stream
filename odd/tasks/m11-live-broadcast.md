@@ -59,6 +59,12 @@ there is no sound here. This replaces "a device error stops the player from star
 **S10** — Maintainer, verbatim: "no se ven todas las opciones posible en el pie, añade una tecla ? para mostrarlas en
 un popup".
 
+**S11** — Maintainer, verbatim: "añade la funcionalidad de que al parar y arrancar, vuelva al mismo punto donde
+estaba de reproducción, si estaba muted que esté muted, y si estaba live que arranque el live". Meaning stated to the
+maintainer: the style that played, the journey at the same moment (stage and progress), volume, binaural layer, mute
+and live come back (the output was already remembered); the piece's exact bar cannot (the music is generated live);
+saved on stop and every few seconds (so a crash resumes too); `gentle-stream --fresh` starts from scratch.
+
 ## Tasks
 
 | Task | Specs | Route | Branch | Commit |
@@ -75,6 +81,7 @@ un popup".
 | T7 Mute here, keep broadcasting (`ctl mute`/`unmute`, `M`, status) | S7 | inline | `feat/local-mute` | done (T7 commit; base `1052db8`) |
 | T8 Choose the audio output (`ctl output`, TUI, remembered, mono outputs) | S8 | inline | `feat/audio-output` | done (T8/T9 commit; base `7c235db`) |
 | T9 `?` popup with every key and action | S10 | inline | `feat/audio-output` | done (T8/T9 commit; base `7c235db`) |
+| T10 Resume the session after a stop (style, journey position, volume, binaural, mute, live) | S11 | inline | `feat/session-resume` | done (T10 commit; base `244efea`) |
 
 ## Log
 
@@ -223,3 +230,15 @@ un popup".
   choices, the picture. Mutation caught. While checking the suite, a kill aimed at an "orphan test daemon" stopped
   the suite itself (pgrep -f matched the job's own shell text); the count now comes from /tmp/gs_test_daemons.sh,
   which selects Python processes only. Suite job-51: 1570 passed, 0 test daemons.
+- L29: T10 (S11). session.py: snapshot saved atomically in session.json, load() ignores bad or other-version files,
+  Autosave thread every 10 s and once more on stop. Engine.queue_journey(at, start, binaural_start) starts a journey
+  part-way (start_sample moved back, as journey edits do); journey_resume_state(). Player.session() (audible style,
+  volume, mute, live, binaural, journey with its audible seconds = rendered minus buffered), resume() before start
+  (volume, mute, journey part-way with phrases rendered again, binaural unless the journey owns it), resume_live()
+  after start (errors logged, never raised). Daemon: loads the session, builds the engine on its style, resumes,
+  restarts live, autosaves, saves last before closing. `--fresh` clears it before a player starts. Tests (11): a
+  journey part-way, the snapshot, atomic save and bad files, autosave, resume of style/volume/mute/binaural, of the
+  journey at the same stage, of live and its failure, end to end (stop and start comes back muted on the same
+  journey and stage), --fresh, help. A test helper first pulled faster than the producer renders (reading silence);
+  it now plays only rendered audio. Mutations: 5 of 5 after asserting the audible (not rendered) journey time.
+- L30: T10 suite job-52: 1581 passed, 3 deselected, 0 test daemons. T10 verified. One warning surfaced (jazz swirl: float32 sin(pi) < 0, ** 1.5 -> NaN in the brush swirl's last sample; it did not reach the output in 240 rendered jazz bars); fixed separately.

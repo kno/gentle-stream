@@ -155,6 +155,7 @@ class Engine:
         self._pending_next = False
         self._glides: dict[str, _Glide] = {}   # live glides by field; replaced, never mutated, under _lock
         self._journey_queued = False            # a journey command waits for the next bar (under _lock)
+        self._pending_resume: tuple[float, dict | None, dict | None] | None = None   # where a queued one resumes
         self._pending_journey: Journey | None = None   # what it starts, or None to stop
         self._journey_control: str | None = None  # restart or skip, applied at the next rendered bar
         self._pending_edit: Journey | None = None   # replaces the running journey at the next bar, keeping its place
@@ -295,11 +296,25 @@ class Engine:
         self._speech = (clip, duck, pos + m) if pos + m < len(duck) else None
         return out.astype(np.float32)
 
-    def queue_journey(self, journey: Journey) -> None:
+    def queue_journey(self, journey: Journey, at: float = 0.0, start: dict[str, float] | None = None,
+                      binaural_start: dict[str, float] | None = None) -> None:
         """Run `journey` from the next bar on, starting from the values playing then; it replaces a running one
-        and, when it starts, cancels the glides of the fields it owns."""
+        and, when it starts, cancels the glides of the fields it owns. `at` seconds into it, from the values it
+        first started from (`start`, `binaural_start`), resumes a journey where a stopped player left it."""
         with self._lock:
             self._journey_queued, self._pending_journey = True, journey
+            self._pending_resume = (at, start, binaural_start) if at > 0 or start is not None else None
+
+    def journey_resume_state(self) -> dict | None:
+        """What resuming the running journey needs: it, its rendered seconds and the values it started from."""
+        with self._lock:
+            running = self._running
+            if running is None or self._driving is None:
+                return None
+            return {"journey": running.journey.to_dict(),
+                    "seconds": (self.samples_out - running.start_sample) / self.sr,
+                    "start": dict(running.start),
+                    "binaural_start": dict(running.binaural_start) if running.binaural_start else None}
 
     def stop_journey(self) -> None:
         """Drop the running journey (or a queued one) at the next bar, leaving the music as it is."""
@@ -454,6 +469,8 @@ class Engine:
         with self._lock:
             style, nxt = self._pending_style, self._pending_next
             queued, journey, control = self._journey_queued, self._pending_journey, self._journey_control
+            resume, self._pending_resume = (self._pending_resume if queued else None), (
+                None if queued else self._pending_resume)
             self._pending_style, self._pending_next = None, False
             self._journey_queued, self._pending_journey, self._journey_control = False, None, None
             edit, self._pending_edit = self._pending_edit, None
@@ -527,12 +544,14 @@ class Engine:
                                              motif=self.composer.head)
                 self._fade = (0, bars * int(round(self.bar_seconds * self.sr)))
         self._apply_glides()
-        if journey is not None:   # starts here, at t = 0, from the values this bar already has
+        if journey is not None:   # starts here, at t = 0, from the values this bar already has (or resumes)
             playing = self._binaural.setting.to_dict() if self._binaural.active and self._binaural.setting else None
             binaural_start = journey.binaural_start(playing) if journey.owns_binaural else None
-            running = _Running(journey, self.samples_out, {f: getattr(self.style, f) for f in journey.fields},
-                               binaural_start)
-            t = 0.0
+            at, start, resumed_binaural = resume if resume is not None else (0.0, None, None)
+            running = _Running(journey, self.samples_out - round(at * self.sr),
+                               start or {f: getattr(self.style, f) for f in journey.fields},
+                               resumed_binaural if resumed_binaural is not None else binaural_start)
+            t = at
             self._running = running
         elif values:
             self._evolve(values)

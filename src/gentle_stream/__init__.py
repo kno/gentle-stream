@@ -724,6 +724,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--mood", help="mood to interpret as soon as the app starts")
     ap.add_argument("--gentle-shell", default="gentle-shell", metavar="PATH",
                     help="gentle-shell executable (default: %(default)s)")
+    ap.add_argument("--fresh", action="store_true",
+                    help="start from scratch: forget where the music was (style, journey, mute, live) when the "
+                         "player last stopped")
     sub = ap.add_subparsers(dest="command", metavar="command")
     sub.add_parser("setup-samples", help="download the FluidR3_GM soundfont (MIT) for sampled instruments, once")
     from .voicesetup import CATALOG as VOICE_CATALOG
@@ -921,6 +924,10 @@ def main(argv: list[str] | None = None) -> int:
     from .client import AudioError, PlayerError, ensure
 
     try:
+        if args.fresh:     # forget the session a stopped player saved, before one starts from it
+            from . import session
+
+            session.clear()
         player = ensure()   # attach to the music already playing, or start the background player
     except AudioError as e:  # PortAudio missing, no output device, device busy...
         print(f"gentle-stream: cannot open the audio output: {e}", file=sys.stderr)

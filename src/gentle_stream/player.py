@@ -318,6 +318,57 @@ class Player:
     def toggle(self) -> None:
         self.playing = not self.playing
 
+    # ------------------------------------------------------------ resuming after a stop (S11)
+    def session(self) -> dict:
+        """Where the music is, for `session.save`: the audible style, volume, mute, live, the binaural layer, and the
+        running journey with its audible seconds and the values it started from."""
+        journey = self.engine.journey_resume_state()
+        if journey is not None:   # rendered ahead of what is heard: back to the audible moment
+            journey["seconds"] = max(0.0, journey["seconds"] - self._buffered / self.engine.sr)
+        binaural = self.engine.binaural
+        return {"version": 1, "style": self.now.style.to_dict(), "volume": float(self.volume), "muted": self.muted,
+                "live": bool((self.streaming or {}).get("running")),
+                "binaural": binaural.to_dict() if binaural is not None else None, "journey": journey}
+
+    def resume(self, saved: dict) -> list[str]:
+        """Bring back what `session()` saved, except the style (the engine starts from it) and live (`resume_live`,
+        once the output is open); the warnings, for the log."""
+        warnings: list[str] = []
+        self.set_volume(float(saved.get("volume", self.volume)))
+        self.set_muted(bool(saved.get("muted", False)))
+        journey = saved.get("journey")
+        owns_binaural = False
+        if isinstance(journey, dict):
+            try:
+                normalized = Journey.from_dict(journey["journey"])
+                owns_binaural = normalized.owns_binaural
+                self.engine.queue_journey(normalized, at=float(journey.get("seconds", 0.0)),
+                                          start=journey.get("start"), binaural_start=journey.get("binaural_start"))
+                if normalized.phrases:
+                    from .speech import prerender
+                    prerender(normalized.phrases, self.engine.sr, self.engine.provide_phrase)
+            except (KeyError, TypeError, ValueError) as e:
+                warnings.append(f"the saved journey could not be resumed: {e}")
+        binaural = saved.get("binaural")
+        if isinstance(binaural, dict) and not owns_binaural:
+            try:
+                self.engine.queue_binaural(Binaural.from_dict(binaural))
+            except (TypeError, ValueError) as e:
+                warnings.append(f"the saved binaural layer could not be resumed: {e}")
+        return warnings
+
+    def resume_live(self, saved: dict) -> str | None:
+        """Start the broadcast again if it was live; why it could not, or None."""
+        if not saved.get("live"):
+            return None
+        from .broadcast import BroadcastError
+
+        try:
+            self.stream_start()
+        except BroadcastError as e:
+            return str(e)
+        return None
+
     def set_muted(self, muted: bool) -> None:
         """Silence the speakers (or bring them back) from the next block, with a short ramp; the broadcast and the
         session recording keep the sound, and the music keeps playing."""
