@@ -258,7 +258,7 @@ gentle-stream ctl stop     # ends the background player
 
 A glide changes the piece that is playing instead of starting a new one: the song form keeps going, and each bar takes the values at its start. Each field glides on its own (a second `glide` adds to or replaces per field), values are clamped like a mood's, and a new mood or `next` cancels every glide. Discrete fields (genre, key, mode, instruments, drums) only change with a new piece. Genres that pick something once per piece from the tempo (chiptune's arpeggio speed) keep the value the piece started with. If the background player is older than the command, `ctl` says so: run `gentle-stream ctl stop` and start again.
 
-The player listens on a Unix socket in a private directory (`$XDG_RUNTIME_DIR/gentle-stream`, default `~/.cache/gentle-stream/run`, mode `0700`), authenticated with a random key in a `0600` file. A player that crashed is detected and replaced on the next start. If the audio output cannot be opened, `gentle-stream` prints the error and exits with `1`.
+The player listens on a Unix socket in a private directory (`$XDG_RUNTIME_DIR/gentle-stream`, default `~/.cache/gentle-stream/run`, mode `0700`), authenticated with a random key in a `0600` file. A player that crashed is detected and replaced on the next start. If no audio output opens (the chosen one, then the system default), the player still starts, silent here, so the music, a broadcast and a recording go on; `ctl status` (`"output"`) and the TUI's state line (`no sound here`) say why. Pick another output with `ctl output` or `o`.
 
 <div align="right"><a href="#top">Back to top</a></div>
 
