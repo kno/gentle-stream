@@ -785,7 +785,7 @@ def build_parser() -> argparse.ArgumentParser:
                                                "output"))
     ctl_parser.add_argument("args", nargs="*", metavar="ARG",
                             help="tempo: BPM; glide: FIELD=VALUE...; binaural: on, off or set; say: TEXT (spoken "
-                                 "over the music from the next phrase boundary); record: start FILE.wav or stop; stream: start or "
+                                 "over the music from the next bar); record: start FILE.wav or stop; stream: start or "
                                  "stop (broadcast to the ingest set with `gentle-stream stream`); mute/unmute: "
                                  "the speakers only (a broadcast or a recording keeps the sound); output: list the "
                                  "audio outputs, or NAME (or default) to play on one")

@@ -851,7 +851,7 @@ class SayModal(ModalScreen[tuple[str, list[str]] | None]):
             with Horizontal(classes="row"):
                 yield Static("effect")
                 yield Select([(name, name) for name in EFFECTS], value="dry", allow_blank=False, id="say-effect")
-            yield Static("It starts on the next phrase boundary, the music dipping under it.", id="say-status",
+            yield Static("It starts on the next bar, the music dipping under it.", id="say-status",
                          markup=False)
             with Horizontal(id="buttons"):
                 yield Button("Say", id="say", variant="primary")
@@ -1771,7 +1771,7 @@ class StreamApp(App):
             if result is not None:
                 phrase, warnings = result
                 extra = "".join(f" · warning: {escape(w)}" for w in warnings)
-                self._status(f"Saying “{escape(phrase)}” at the next phrase boundary{extra}")
+                self._status(f"Saying “{escape(phrase)}” at the next bar{extra}")
 
         self.push_screen(SayModal(self.player), said)
 

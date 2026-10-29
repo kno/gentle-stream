@@ -33,11 +33,26 @@ def run(j, seconds=134, provide=True, monkeypatch=None):
             e.provide_phrase(text, clip)
     started = []
     real = e.queue_speech
-    e.queue_speech = lambda clip: started.append((e.samples_out / e.sr, texts.get(id(clip)))) or real(clip)
+    e.queue_speech = lambda clip, every=1: started.append((e.samples_out / e.sr, texts.get(id(clip)))) or \
+        real(clip, every)
     e.queue_journey(j)
     while e.samples_out < seconds * e.sr:
         e.render_bar()
     return started, e
+
+
+def test_a_journeys_phrases_ask_for_a_phrase_boundary_not_the_next_bar():
+    j = journey()
+    e = Engine(Style(bpm=BPM), seed=5, samples=False)
+    for text in j.phrases:
+        e.provide_phrase(text, np.full(SR // 2, 0.01))
+    asked = []
+    real = e.queue_speech
+    e.queue_speech = lambda clip, every=1: asked.append(every) or real(clip, every)
+    e.queue_journey(j)
+    while e.samples_out < 134 * e.sr:
+        e.render_bar()
+    assert asked and set(asked) == {4}
 
 
 # ------------------------------------------------------------ the journey format

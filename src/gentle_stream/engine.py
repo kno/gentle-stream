@@ -141,7 +141,7 @@ class Engine:
         (`voicepacks.active_voice`) the choir sings; the engine never reads the registry itself."""
         self.sr = sr
         self._voices = voices
-        self._speech_queue: list[np.ndarray] = []                 # finished clips waiting for a boundary (_lock)
+        self._speech_queue: list[tuple[np.ndarray, int]] = []     # finished clips and their bar step (_lock)
         self._speech: tuple[np.ndarray, np.ndarray, int] | None = None   # (clip, duck, position) playing
         self._phrase_clips: dict[str, np.ndarray] = {}            # journey phrases rendered so far (_lock)
         self._phrase_rng = np.random.default_rng(None if seed is None else [seed, 32])   # never the music's
@@ -242,11 +242,12 @@ class Engine:
                 return self._pending_binaural[0]
             return self._binaural.setting
 
-    def queue_speech(self, clip: np.ndarray) -> None:
-        """Play the finished mono `clip` from the next phrase boundary (every four bars) after the ones queued
-        before it, the music ducked under it. Rendering the clip is the caller's job (`speech.render`)."""
+    def queue_speech(self, clip: np.ndarray, every: int = 1) -> None:
+        """Play the finished mono `clip` from the next bar whose number is a multiple of `every` (1: the next bar,
+        what a phrase asked for now gets; 4: the next phrase boundary, what a journey's phrase waits for), after the
+        ones queued before it, the music ducked under it. Rendering the clip is the caller's job (`speech.render`)."""
         with self._lock:
-            self._speech_queue.append(np.asarray(clip, dtype=float))
+            self._speech_queue.append((np.asarray(clip, dtype=float), every))
 
     def provide_phrase(self, text: str, clip: np.ndarray) -> None:
         """A journey phrase rendered ahead (`speech.prerender`): from now on its stage can speak it."""
@@ -276,14 +277,15 @@ class Engine:
         if not choices:
             return
         text = choices[int(self._phrase_rng.integers(len(choices)))]
-        self.queue_speech(clips[text])
+        self.queue_speech(clips[text], every=4)
         self._phrase_state = (key, t, text)
 
     def _mix_speech(self, out: np.ndarray, n: int) -> np.ndarray:
-        """Start the next queued clip on a phrase boundary, then duck the music and add the playing clip."""
-        if self._speech is None and self.bar % 4 == 0:
+        """Start the next queued clip on its bar, then duck the music and add the playing clip."""
+        if self._speech is None:
             with self._lock:
-                clip = self._speech_queue.pop(0) if self._speech_queue else None
+                ready = self._speech_queue and self.bar % self._speech_queue[0][1] == 0
+                clip = self._speech_queue.pop(0)[0] if ready else None
             if clip is not None:
                 duck = _speech.duck_envelope(len(clip), self.sr)
                 self._speech = (np.r_[clip, np.zeros(len(duck) - len(clip))], duck, 0)

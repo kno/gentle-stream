@@ -129,21 +129,39 @@ def render(clip, queue_after, bars=10):
     return np.concatenate(out_a).astype(float), np.concatenate(out_b).astype(float), bar_samples(a)
 
 
-@pytest.mark.parametrize("queue_after, boundary_bar", [(1, 4), (4, 4), (5, 8)])
-def test_the_clip_starts_exactly_on_a_phrase_boundary_sample(queue_after, boundary_bar):
+@pytest.mark.parametrize("queue_after, boundary_bar", [(1, 1), (4, 4), (5, 5)])
+def test_a_requested_clip_starts_exactly_on_the_next_bar_sample(queue_after, boundary_bar):
     clip = np.zeros(SR)
     clip[0] = 0.3
     with_clip, without, n = render(clip, queue_after)
     diff = with_clip - without
     start = boundary_bar * n
-    assert np.all(diff[:start] == 0)                          # nothing changes before the boundary
+    assert np.all(diff[:start] == 0)                          # nothing changes before the bar
     assert diff[start, 0] == pytest.approx(0.3, abs=1e-6) and diff[start, 1] == pytest.approx(0.3, abs=1e-6)
+
+
+@pytest.mark.parametrize("queue_after, boundary_bar", [(1, 4), (4, 4), (5, 8)])
+def test_a_clip_queued_for_phrase_boundaries_waits_for_one(queue_after, boundary_bar):
+    """What a journey's phrase asks for: the next 4-bar boundary."""
+    clip = np.zeros(SR)
+    clip[0] = 0.3
+    a, b = Engine(Style(), seed=4, samples=False), Engine(Style(), seed=4, samples=False)
+    out_a, out_b = [], []
+    for i in range(10):
+        if i == queue_after:
+            a.queue_speech(clip, every=4)
+        out_a.append(a.render_bar())
+        out_b.append(b.render_bar())
+    diff = np.concatenate(out_a).astype(float) - np.concatenate(out_b).astype(float)
+    start = boundary_bar * bar_samples(a)
+    assert np.all(diff[:start] == 0)
+    assert diff[start, 0] == pytest.approx(0.3, abs=1e-6)
 
 
 def test_the_music_is_ducked_3_db_under_the_clip_with_click_free_ramps():
     silent = np.zeros(int(2.0 * SR))                          # silence: the difference is the duck alone
     with_clip, without, n = render(silent, 1)
-    start, ramp = 4 * n, int(RAMP * SR)
+    start, ramp = 1 * n, int(RAMP * SR)
     gain = np.ones(len(without))
     nz = np.abs(without[:, 0]) > 1e-4
     gain[nz] = with_clip[nz, 0] / without[nz, 0]
@@ -156,7 +174,7 @@ def test_the_music_is_ducked_3_db_under_the_clip_with_click_free_ramps():
     assert np.allclose(with_clip[after:after + n], without[after:after + n], atol=1e-6)   # back to full level
 
 
-def test_two_phrases_play_one_after_the_other_on_boundaries():
+def test_two_phrases_play_one_after_the_other_each_on_a_bar():
     a = Engine(Style(), seed=4, samples=False)
     n = bar_samples(a)
     first, second = np.zeros(n), np.zeros(n)
@@ -166,8 +184,9 @@ def test_two_phrases_play_one_after_the_other_on_boundaries():
     b = Engine(Style(), seed=4, samples=False)
     diff = np.concatenate([a.render_bar() for _ in range(9)]).astype(float) - \
         np.concatenate([b.render_bar() for _ in range(9)]).astype(float)
-    assert diff[0, 0] == pytest.approx(0.3, abs=1e-6)        # bar 0 is a boundary
-    assert diff[4 * n, 0] == pytest.approx(0.2, abs=1e-6)    # the second waits for the next one
+    assert diff[0, 0] == pytest.approx(0.3, abs=1e-6)        # bar 0
+    assert diff[n, 0] != pytest.approx(0.2, abs=1e-6)        # bar 1: the first's duck still ramps back up
+    assert diff[2 * n, 0] == pytest.approx(0.2, abs=1e-6)    # the second: the first bar after the first ends
 
 
 def test_render_bar_never_runs_text_to_speech(monkeypatch):

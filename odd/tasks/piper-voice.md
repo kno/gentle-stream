@@ -26,7 +26,8 @@ downloaded with a pinned revision and SHA-256, its licence kept beside it.
 | T1 `setup-speech`: download carlfm (pinned revision, SHA-256, LICENSES.txt) into the cache | S2 | inline | done (tests/test_piper_voice.py) |
 | T2 speech.py: Piper backend first (local and broadcast), rate and voices, fallbacks | S1, S3 | inline | done |
 | T3 TUI: the install in the voices dialog, the voice in the say dialog; parity; README | S3 | inline | done (tests/test_tui_voices.py) |
-| T4 Piper kept open: a phrase well under a second, warm at player start (L5) | S1 | inline | done (tests/test_piper_voice.py) |
+| T4 Piper kept open: a phrase well under a second, warm at player start (L5) | S1 | inline | done (82c8a40) |
+| T5 A phrase asked for now (`t`, `ctl say`) starts on the next bar; a journey's still every 4 bars (L6) | S1 | inline | done |
 
 ## Log
 
@@ -51,3 +52,6 @@ downloaded with a pinned revision and SHA-256, its licence kept beside it.
   onnxruntime and the model every time; load 35). Fix (T4): one Piper per model and rate kept open with `-d`, a line
   per phrase, done on its "Wrote PATH" log line; started when the player starts (`speech.warm_up`), closed when it
   stops. Measured after: `ctl say` 0.8-1.2 s with the real Piper. conftest hides the user's Piper voice from tests.
+- L6: Maintainer, verbatim: "sigue tardando, pero menos y se oye". The wait left was the phrase boundary (every four
+  bars: up to 8 s at 121 BPM, 16 s at 60). Offered: `t` and `ctl say` from the next bar, a journey's phrases still on
+  4-bar boundaries. Answer, verbatim: "si". `Engine.queue_speech(clip, every=1)`; journeys pass `every=4`.

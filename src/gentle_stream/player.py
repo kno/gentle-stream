@@ -385,7 +385,7 @@ class Player:
         self.engine.queue_tempo(bpm, seconds)
 
     def say(self, text: str, voice: str | None = None, rate: int | None = None, effect: str = "dry") -> list[str]:
-        """Speak `text` from the next phrase boundary, as the background player's `say` (`ctl say`): the warnings
+        """Speak `text` from the next bar, as the background player's `say` (`ctl say`): the warnings
         (an unknown voice); SpeechError when it cannot be spoken. Renders here: call it off the UI thread."""
         from .speech import render, resolve_voice
 

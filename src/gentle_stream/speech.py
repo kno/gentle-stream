@@ -7,9 +7,10 @@ argument, so no phrase can look like an option. Piper loads its model in seconds
 fraction of one, so one Piper process per model and rate stays open (`_Piper`): a line of text on its standard input,
 one WAV in its private folder, announced on its standard error once written.
 `render` runs in the caller's thread (the background player's connection thread), never in the render thread: the
-engine only receives finished clips (`Engine.queue_speech`) and plays each one from the next phrase boundary (every
-four bars), mixed after the master chain like the binaural layer, with the music ducked `DUCK_DB` under it. Clips are
-cached by text and level-normalised; a failing program raises `SpeechError` and leaves the music as it was.
+engine only receives finished clips (`Engine.queue_speech`) and plays each one from the next bar (a journey's phrases
+from the next phrase boundary, every four bars), mixed after the master chain like the binaural layer, with the
+music ducked `DUCK_DB` under it. Clips are cached by text and level-normalised; a failing program raises
+`SpeechError` and leaves the music as it was.
 
 A phrase can ask for a system voice (`voices` lists them; an unknown one falls back to the default voice with a
 warning, `resolve_voice`), a rate in words per minute, and an effect: `dry`, `radio` (the telephone band, slightly
