@@ -3,7 +3,9 @@
 A text-to-speech program renders the phrase to a temporary WAV: Piper with a voice `setup-speech` installed
 (`speechsetup`), else `say` on macOS, else `espeak-ng` (Linux); while broadcasting only Piper or espeak-ng, whose
 voices may be broadcast (`use_only`). The text is written to the program's standard input, never passed as an
-argument, so no phrase can look like an option.
+argument, so no phrase can look like an option. Piper loads its model in seconds and then speaks a phrase in a
+fraction of one, so one Piper process per model and rate stays open (`_Piper`): a line of text on its standard input,
+one WAV in its private folder, announced on its standard error once written.
 `render` runs in the caller's thread (the background player's connection thread), never in the render thread: the
 engine only receives finished clips (`Engine.queue_speech`) and plays each one from the next phrase boundary (every
 four bars), mixed after the master chain like the binaural layer, with the music ducked `DUCK_DB` under it. Clips are
@@ -15,12 +17,16 @@ saturated) or `space` (the procedural room impulse the master chain's reverb use
 """
 from __future__ import annotations
 
+import atexit
+import contextlib
 import logging
+import queue
 import re
 import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import warnings
 from collections.abc import Callable, Iterable
 from functools import lru_cache
@@ -51,6 +57,9 @@ BROADCAST_SAFE = ("piper", "espeak-ng")    # the programs whose voices may be br
 BROADCAST_NEEDS = ("while broadcasting, phrases are spoken with Piper (gentle-stream setup-speech) or espeak-ng "
                    "(macOS voices are licensed for personal use only), and neither is installed")
 PIPER_WPM = 175         # the rate Piper's length scale 1.0 stands for (say's and espeak-ng's default too)
+PIPER_WROTE = re.compile(r"Wrote (.+\.wav)\s*$")   # Piper 1.8's log line once a phrase's WAV is complete
+MAX_PIPERS = 3          # open Piper processes (one per model and rate); the least recently used one is closed
+PIPER_STOP = 5.0        # seconds a closing Piper may take to exit before it is killed
 
 
 class SpeechError(Exception):
@@ -100,11 +109,134 @@ def _piper_model(voice: str | None) -> Path:
     return models.get(voice or "", next(iter(models.values())))
 
 
+def _piper_command(path: str, voice: str | None, rate: int | None) -> tuple[str, ...]:
+    """Piper's command line for a model and a rate, without its output folder: also the key of its open process."""
+    cmd = [path, "-m", str(_piper_model(voice))]
+    cmd += ["--length-scale", str(round(PIPER_WPM / rate, 3))] if rate is not None else []
+    return tuple(cmd)
+
+
+class _Piper:
+    """One Piper process kept open with its model loaded. `speak` writes a line of text to its stdin and waits for
+    the log line naming the finished WAV; callers hold `lock`, so phrases never interleave."""
+
+    def __init__(self, cmd: tuple[str, ...]):
+        self.folder = Path(tempfile.mkdtemp(prefix="gentle-stream-piper-"))
+        self.lock = threading.Lock()
+        self.lines: queue.Queue[str | None] = queue.Queue()
+        try:
+            self.proc = subprocess.Popen([*cmd, "-d", str(self.folder)], stdin=subprocess.PIPE,
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, bufsize=1)
+        except OSError as e:
+            shutil.rmtree(self.folder, ignore_errors=True)
+            raise SpeechError(f"text-to-speech failed: {e}") from e
+        threading.Thread(target=self._read, daemon=True, name="gentle-stream-piper-log").start()
+
+    def _read(self) -> None:
+        assert self.proc.stderr is not None
+        for line in self.proc.stderr:
+            self.lines.put(line)
+        self.lines.put(None)                      # Piper exited
+
+    def alive(self) -> bool:
+        return self.proc.poll() is None
+
+    def speak(self, text: str) -> Path:
+        """The WAV of `text` (one line); raises SpeechError when Piper exits or takes more than TIMEOUT."""
+        assert self.proc.stdin is not None
+        try:
+            self.proc.stdin.write(text + "\n")
+            self.proc.stdin.flush()
+        except (BrokenPipeError, OSError):
+            pass                                  # it exited: its exit code is in the log's end, below
+        deadline, last = time.monotonic() + TIMEOUT, ""
+        while True:
+            try:
+                line = self.lines.get(timeout=max(0.0, deadline - time.monotonic()))
+            except queue.Empty:
+                raise SpeechError(f"text-to-speech failed: piper took more than {TIMEOUT:g} s") from None
+            if line is None:
+                reason = f"piper exited {self.proc.wait()}" + (f": {last}" if last else "")
+                raise SpeechError(f"text-to-speech failed: {reason}")
+            if found := PIPER_WROTE.search(line):
+                return Path(found.group(1))
+            last = line.strip() or last
+
+    def close(self) -> None:
+        if self.proc.stdin is not None:
+            with contextlib.suppress(OSError):
+                self.proc.stdin.close()               # Piper ends at the end of its input
+        try:
+            self.proc.wait(PIPER_STOP)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait()
+        shutil.rmtree(self.folder, ignore_errors=True)
+
+
+_PIPERS: dict[tuple[str, ...], _Piper] = {}
+_PIPERS_LOCK = threading.Lock()
+
+
+def _open_piper(cmd: tuple[str, ...]) -> _Piper:
+    """The open Piper for `cmd`, started when there is none (or it exited)."""
+    with _PIPERS_LOCK:
+        piper = _PIPERS.pop(cmd, None)
+        if piper is None or not piper.alive():
+            if piper is not None:
+                piper.close()
+            piper = _Piper(cmd)
+        _PIPERS[cmd] = piper                      # the most recently used last
+        while len(_PIPERS) > MAX_PIPERS:
+            _PIPERS.pop(next(iter(_PIPERS))).close()
+        return piper
+
+
+def _piper_speak(path: str, text: str, voice: str | None, rate: int | None) -> tuple[np.ndarray, int]:
+    cmd = _piper_command(path, voice, rate)
+    piper = _open_piper(cmd)
+    with piper.lock:
+        try:
+            wav = piper.speak(text)
+        except SpeechError:
+            with _PIPERS_LOCK:
+                if _PIPERS.get(cmd) is piper:
+                    del _PIPERS[cmd]
+            piper.close()                         # a Piper that failed is never used again
+            raise
+    try:
+        return read_clip(wav)
+    except PackError as e:
+        raise SpeechError(f"text-to-speech failed: {e}") from e
+    finally:
+        wav.unlink(missing_ok=True)
+
+
+def warm_up() -> None:
+    """Start Piper with its default voice before the first phrase, when Piper is the program in use (the player
+    does this as it starts: loading the model is what takes time)."""
+    found = backend()
+    if found is not None and found[0] == "piper":
+        try:
+            _open_piper(_piper_command(found[1], None, None))
+        except SpeechError as e:
+            log.warning("cannot start Piper: %s", e)
+
+
+def close_piper() -> None:
+    """End every open Piper (at exit, and in tests)."""
+    with _PIPERS_LOCK:
+        pipers = list(_PIPERS.values())
+        _PIPERS.clear()
+    for piper in pipers:
+        piper.close()
+
+
+atexit.register(close_piper)
+
+
 def _command(name: str, path: str, out: Path, voice: str | None = None, rate: int | None = None) -> list[str]:
     """The program's command line: each option its own argument, the text never on it (it goes to stdin)."""
-    if name == "piper":
-        cmd = [path, "-m", str(_piper_model(voice)), "-f", str(out)]
-        return cmd + ["--length-scale", str(round(PIPER_WPM / rate, 3))] if rate is not None else cmd
     if name == "say":
         cmd = [path, "-o", str(out), "--data-format=LEI16@22050"]
         cmd += ["-v", voice] if voice else []
@@ -215,6 +347,9 @@ def _speak(text: str, sr: int, voice: str | None, rate: int | None) -> np.ndarra
     if found is None:
         raise SpeechError(BROADCAST_NEEDS if _ONLY else NO_BACKEND)
     name, path = found
+    if name == "piper":
+        x, file_sr = _piper_speak(path, text, voice, rate)
+        return _at_rate(x, file_sr, sr)
     with tempfile.TemporaryDirectory(prefix="gentle-stream-say-") as tmp:
         out = Path(tmp) / "phrase.wav"
         try:
@@ -229,6 +364,10 @@ def _speak(text: str, sr: int, voice: str | None, rate: int | None) -> np.ndarra
             x, file_sr = read_clip(out)
         except PackError as e:
             raise SpeechError(f"text-to-speech failed: {e}") from e
+    return _at_rate(x, file_sr, sr)
+
+
+def _at_rate(x: np.ndarray, file_sr: int, sr: int) -> np.ndarray:
     if file_sr != sr and len(x):
         x = np.interp(np.arange(int(len(x) * sr / file_sr)) * file_sr / sr, np.arange(len(x)), x)
     x.flags.writeable = False

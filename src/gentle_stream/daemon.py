@@ -482,9 +482,14 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     threading.Thread(target=server.accept_forever, daemon=True, name="gentle-stream-accept").start()
     report({"ready": True})
+    from . import speech
+
+    # Piper loads its model in seconds: before the first phrase, never in the way of the start
+    threading.Thread(target=speech.warm_up, daemon=True, name="gentle-stream-piper-warm").start()
     while not server.stopping.wait(0.5):
         pass
     saver.stop()   # the last save, while the broadcast and the journey are still there
     player.close()
+    speech.close_piper()
     listener.close()   # also removes the socket file
     return 0

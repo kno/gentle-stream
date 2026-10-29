@@ -26,6 +26,7 @@ downloaded with a pinned revision and SHA-256, its licence kept beside it.
 | T1 `setup-speech`: download carlfm (pinned revision, SHA-256, LICENSES.txt) into the cache | S2 | inline | done (tests/test_piper_voice.py) |
 | T2 speech.py: Piper backend first (local and broadcast), rate and voices, fallbacks | S1, S3 | inline | done |
 | T3 TUI: the install in the voices dialog, the voice in the say dialog; parity; README | S3 | inline | done (tests/test_tui_voices.py) |
+| T4 Piper kept open: a phrase well under a second, warm at player start (L5) | S1 | inline | done (tests/test_piper_voice.py) |
 
 ## Log
 
@@ -45,3 +46,8 @@ downloaded with a pinned revision and SHA-256, its licence kept beside it.
   nor espeak-ng is there; the message changed, and its pins in tests/test_broadcast_ctl.py were updated. `--rate` maps
   to Piper's length scale as 175 / rate. The say dialog's voice list comes from `speech.voices()`, so it lists
   carlfm with no change of its own. A phrase rendered before the install keeps its voice until the player restarts.
+- L5: Maintainer, verbatim: "las frases con la nueva voz no se oyen", then "en la tui con t". Reproduced with a private
+  player (FakeAudio): `ctl say` took 33 s against speech.TIMEOUT 30 s; Piper alone 9.5-11.4 s a phrase (a new Python,
+  onnxruntime and the model every time; load 35). Fix (T4): one Piper per model and rate kept open with `-d`, a line
+  per phrase, done on its "Wrote PATH" log line; started when the player starts (`speech.warm_up`), closed when it
+  stops. Measured after: `ctl say` 0.8-1.2 s with the real Piper. conftest hides the user's Piper voice from tests.

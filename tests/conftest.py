@@ -2,8 +2,10 @@
 the stream key), and no test reaches the user's real background player.
 
 Every test gets a private, empty XDG_CONFIG_HOME and XDG_RUNTIME_DIR (short, under /tmp, so a socket path fits); a test
-that needs another one sets it itself (tests/test_daemon.py's `runtime` fixture does).
+that needs another one sets it itself (tests/test_daemon.py's `runtime` fixture does). The user's Piper voice is out of
+sight too, so no test speaks with the real Piper; the cache stays shared (some tests use the real soundfont).
 """
+import os
 import shutil
 import tempfile
 
@@ -22,6 +24,18 @@ def _one_stereo_output(monkeypatch):
 
     monkeypatch.setattr(outputs, "_query", lambda: (
         [{"name": "Test speakers", "max_output_channels": 2, "default_samplerate": 44100.0}], 0))
+
+
+@pytest.fixture(autouse=True)
+def _no_real_piper_voice(monkeypatch, tmp_path_factory):
+    """An empty folder of Piper voices, unless the test sets its own XDG_CACHE_HOME; every Piper started is closed."""
+    from gentle_stream import speech, speechsetup
+
+    real, empty, original = os.environ.get("XDG_CACHE_HOME"), tmp_path_factory.mktemp("speech"), speechsetup.speech_dir
+    monkeypatch.setattr(speechsetup, "speech_dir",
+                        lambda: empty if os.environ.get("XDG_CACHE_HOME") == real else original())
+    yield
+    speech.close_piper()
 
 
 @pytest.fixture(autouse=True)

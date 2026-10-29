@@ -1,9 +1,13 @@
 """Piper with the carlfm voice for every phrase (local and broadcast): `setup-speech` installs the voice (pinned
 revision, SHA-256, LICENSES.txt); the speech backend prefers Piper, then say, then espeak-ng (broadcasting: Piper or
-espeak-ng); the text goes to stdin, never to the command line. A fake `piper` program; nothing is downloaded."""
+espeak-ng); the text goes to stdin, never to the command line. One Piper process stays open and speaks every phrase
+(loading the model takes seconds, a phrase then well under one). A fake `piper` program behaves as Piper 1.8's CLI
+with `-d`: one line of stdin, one WAV in the folder, announced on stderr once written; nothing is downloaded."""
 import hashlib
 import json
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -13,16 +17,35 @@ from gentle_stream import main, speech, speechsetup
 KEY_FILES = ("es_ES-carlfm-x_low.onnx", "es_ES-carlfm-x_low.onnx.json", "MODEL_CARD")
 
 FAKE_PIPER = """#!{python} -I
-import json, sys, wave
+import json, math, os, sys, time, wave
 args = sys.argv[1:]
-text = sys.stdin.read()
-with open({log!r}, "a") as f:
-    f.write(json.dumps({{"argv": args, "stdin": text}}) + "\\n")
-out = args[args.index("-f") + 1]
-with wave.open(out, "wb") as w:
-    w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
-    import math
-    w.writeframes(b"".join(int(8000 * math.sin(i / 8)).to_bytes(2, "little", signed=True) for i in range(8000)))
+mode = os.environ.get("FAKE_PIPER_MODE", "")
+
+
+def log(entry):
+    with open({log!r}, "a") as f:
+        f.write(json.dumps(entry) + "\\n")
+
+
+log({{"start": args, "pid": os.getpid()}})
+folder = args[args.index("-d") + 1]
+for line in sys.stdin:
+    text = line.rstrip("\\n")
+    log({{"argv": args, "stdin": text}})
+    if mode == "hang":
+        time.sleep(60)
+    if mode == "die":
+        sys.exit(3)
+    if mode == "slow":
+        time.sleep(0.1)
+    path = os.path.join(folder, f"{{time.time_ns()}}.wav")
+    with wave.open(path, "wb") as w:   # as long as the text: 1000 samples a character, at 16 kHz
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
+        w.writeframes(b"".join(int(8000 * math.sin(i / 8)).to_bytes(2, "little", signed=True)
+                               for i in range(1000 * len(text))))
+    log({{"wrote": path}})
+    print(f"INFO:__main__:Wrote {{path}}", file=sys.stderr, flush=True)
+log({{"exit": True}})
 """
 
 
@@ -78,8 +101,28 @@ def program() -> str | None:
     return found[0] if found else None
 
 
-def calls(log: Path) -> list[dict]:
+def entries(log: Path) -> list[dict]:
     return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+
+
+def calls(log: Path) -> list[dict]:
+    """Each phrase a program was given."""
+    return [e for e in entries(log) if "stdin" in e]
+
+
+def starts(log: Path) -> int:
+    """How many times Piper was started."""
+    return sum("start" in e for e in entries(log))
+
+
+@pytest.fixture
+def piper(source, programs):
+    """Piper and carlfm installed; returns the log."""
+    install, log = programs
+    install("piper")
+    speechsetup.setup_speech("carlfm")
+    speech.clear_cache()
+    return log
 
 
 # ------------------------------------------------------------ the pinned voice
@@ -208,6 +251,111 @@ def test_while_broadcasting_with_neither_the_reason_names_both(programs):
         speech.render("Hola.", 22050)
     assert str(e.value) == ("while broadcasting, phrases are spoken with Piper (gentle-stream setup-speech) or "
                             "espeak-ng (macOS voices are licensed for personal use only), and neither is installed")
+
+
+# ------------------------------------------------------------ one Piper, kept open
+def test_one_piper_process_speaks_every_phrase(piper):
+    texts = ("Respira hondo.", "Ya casi estamos.", "Sigue así, vas muy bien.")
+    clips = [speech.render(text, 16000) for text in texts]
+    assert starts(piper) == 1
+    assert [len(c) for c in clips] == [1000 * len(t) for t in texts]       # each phrase its own WAV
+    assert [c["stdin"] for c in calls(piper)] == list(texts)
+
+
+@pytest.mark.parametrize("mode", ["", "slow"])
+def test_phrases_asked_for_at_once_each_get_their_own_clip(piper, monkeypatch, mode):
+    monkeypatch.setenv("FAKE_PIPER_MODE", mode)
+    texts = [f"Frase número {n}" + "." * n for n in range(6)]
+    got = {}
+
+    def speak(text):
+        got[text] = len(speech.render(text, 16000))
+
+    threads = [threading.Thread(target=speak, args=(t,)) for t in texts]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(30)
+    assert got == {t: 1000 * len(t) for t in texts}
+    assert starts(piper) == 1
+
+
+def test_another_rate_starts_its_own_piper_and_the_first_stays(piper):
+    speech.render("Uno.", 16000)
+    speech.render("Dos.", 16000, rate=140)
+    speech.render("Tres.", 16000)
+    assert starts(piper) == 2
+    assert [c["stdin"] for c in calls(piper)] == ["Uno.", "Dos.", "Tres."]
+
+
+def test_warm_up_loads_piper_before_the_first_phrase(piper):
+    speech.warm_up()
+    deadline = time.monotonic() + 10
+    while starts(piper) == 0 and time.monotonic() < deadline:   # the fake logs its start once it runs
+        time.sleep(0.02)
+    assert starts(piper) == 1 and calls(piper) == []
+    speech.render("Respira hondo.", 16000)
+    assert starts(piper) == 1
+
+
+def test_warm_up_does_nothing_without_piper(programs):
+    install, log = programs
+    install("say")
+    speech.warm_up()
+    assert entries(log) == []
+
+
+def test_a_piper_that_dies_is_reported_and_started_again(piper, monkeypatch):
+    monkeypatch.setenv("FAKE_PIPER_MODE", "die")
+    with pytest.raises(speech.SpeechError, match="^text-to-speech failed: piper exited 3"):
+        speech.render("Uno.", 16000)
+    monkeypatch.delenv("FAKE_PIPER_MODE")
+    assert len(speech.render("Dos.", 16000)) == 4000
+    assert starts(piper) == 2
+
+
+def test_a_piper_that_hangs_times_out_and_is_stopped(piper, monkeypatch):
+    import os
+
+    monkeypatch.setattr(speech, "TIMEOUT", 1.0)
+    monkeypatch.setattr(speech, "PIPER_STOP", 0.5)
+    monkeypatch.setenv("FAKE_PIPER_MODE", "hang")
+    with pytest.raises(speech.SpeechError, match="^text-to-speech failed: piper took more than 1 s"):
+        speech.render("Uno.", 16000)
+    hung = next(e["pid"] for e in entries(piper) if "start" in e)
+    with pytest.raises(ProcessLookupError):                               # killed, not left behind
+        os.kill(hung, 0)
+    monkeypatch.delenv("FAKE_PIPER_MODE")
+    assert len(speech.render("Dos.", 16000)) == 4000
+    assert starts(piper) == 2
+
+
+def test_a_phrase_leaves_no_file_behind(piper):
+    speech.render("Uno.", 16000)
+    wrote = [Path(e["wrote"]) for e in entries(piper) if "wrote" in e]
+    assert len(wrote) == 1 and not wrote[0].exists()
+
+
+def test_at_most_three_pipers_stay_open_the_least_recently_used_one_ends(piper):
+    for rate in (100, 140, 200):
+        speech.render("Uno.", 16000, rate=rate)
+    speech.render("Dos.", 16000, rate=100)                                # 100 is now the most recently used
+    assert sum("exit" in e for e in entries(piper)) == 0
+    speech.render("Tres.", 16000, rate=300)                               # a fourth: 140 ends
+    deadline = time.monotonic() + 10
+    while not any("exit" in e for e in entries(piper)) and time.monotonic() < deadline:
+        time.sleep(0.02)
+    ended = [e for e in entries(piper) if "exit" in e]
+    assert len(ended) == 1 and starts(piper) == 4
+    speech.render("Cuatro.", 16000, rate=100)                             # still open
+    assert starts(piper) == 4
+
+
+def test_close_ends_every_piper(piper):
+    speech.render("Uno.", 16000)
+    speech.render("Dos.", 16000, rate=140)
+    speech.close_piper()
+    assert sum("exit" in e for e in entries(piper)) == 2
 
 
 def test_help_lists_setup_speech(capsys):
