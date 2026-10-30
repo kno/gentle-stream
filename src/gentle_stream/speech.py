@@ -323,12 +323,8 @@ def _effect(x: np.ndarray, effect: str, sr: int) -> np.ndarray:
     return x
 
 
-@lru_cache(maxsize=64)
-def render(text: str, sr: int = SR, voice: str | None = None, rate: int | None = None,
-           effect: str = "dry") -> np.ndarray:
-    """The phrase `text` spoken as a mono clip at `sr` in `voice` at `rate` words per minute (the program's defaults
-    when None) through `effect`, normalised; raises SpeechError (nothing is cached then). Pass a voice through
-    `resolve_voice` first: an unknown one makes the program fail."""
+def checked(text: str, rate: int | None, effect: str) -> str:
+    """`text` with its whitespace collapsed; SpeechError for a phrase, rate or effect out of bounds."""
     text = " ".join(text.split())
     if not 1 <= len(text) <= MAX_TEXT:
         raise SpeechError(f"a phrase must have between 1 and {MAX_TEXT} characters")
@@ -336,6 +332,16 @@ def render(text: str, sr: int = SR, voice: str | None = None, rate: int | None =
         raise SpeechError(f"effect must be one of {', '.join(EFFECTS)}")
     if rate is not None and not RATES[0] <= rate <= RATES[1]:
         raise SpeechError(f"rate must be {RATES[0]} to {RATES[1]} words per minute")
+    return text
+
+
+@lru_cache(maxsize=64)
+def render(text: str, sr: int = SR, voice: str | None = None, rate: int | None = None,
+           effect: str = "dry") -> np.ndarray:
+    """The phrase `text` spoken as a mono clip at `sr` in `voice` at `rate` words per minute (the program's defaults
+    when None) through `effect`, normalised; raises SpeechError (nothing is cached then). Pass a voice through
+    `resolve_voice` first: an unknown one makes the program fail."""
+    text = checked(text, rate, effect)
     clip = normalise(_effect(_speak(text, sr, voice, rate), effect, sr))
     clip.flags.writeable = False
     return clip
@@ -376,9 +382,13 @@ def _at_rate(x: np.ndarray, file_sr: int, sr: int) -> np.ndarray:
 
 
 def clear_cache() -> None:
-    """Forget every rendered phrase (tests, or after installing another voice)."""
+    """Forget every rendered phrase, spoken or analysed for singing (tests, after installing another voice, and when a
+    broadcast starts or stops: what was rendered with one program is never reused with another)."""
+    from . import sing
+
     render.cache_clear()
     _speak.cache_clear()
+    sing.voice_for.cache_clear()
 
 
 def prerender(texts: Iterable[str], sr: int, deliver: Callable[[str, np.ndarray], None]) -> threading.Thread:
@@ -401,11 +411,11 @@ def prerender(texts: Iterable[str], sr: int, deliver: Callable[[str, np.ndarray]
     return thread
 
 
-def duck_envelope(length: int, sr: int = SR) -> np.ndarray:
-    """The music's gain under a clip of `length` samples: down DUCK_DB over RAMP from the clip's first sample, held,
+def duck_envelope(length: int, sr: int = SR, db: float = DUCK_DB) -> np.ndarray:
+    """The music's gain under a clip of `length` samples: down `db` over RAMP from the clip's first sample, held,
     then back to 1 over RAMP after its last one (`length` + RAMP samples in all)."""
     ramp = max(1, int(RAMP * sr))
     total = length + ramp
     t = np.arange(total)
-    depth = 1 - 10 ** (-DUCK_DB / 20)
+    depth = 1 - 10 ** (-db / 20)
     return 1 - depth * np.minimum(np.clip(t / ramp, 0, 1), np.clip((total - 1 - t) / ramp, 0, 1))

@@ -12,6 +12,7 @@ through `chord_hook` (see `genres.base.Genre.chord`); everything else is shared 
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import Callable
 
@@ -155,9 +156,14 @@ class Composer:
         self.prog_b: tuple[int, ...] | None = None
         self.cycle = 0
         self._bars: list[_Bar] = []
+        self._lock = threading.RLock()   # a sung phrase asks for coming bars from another thread than the render's
 
     # ------------------------------------------------------------ public
     def plan(self, bar: int) -> BarPlan:
+        with self._lock:
+            return self._plan(bar)
+
+    def _plan(self, bar: int) -> BarPlan:
         while len(self._bars) < bar + 2:
             self._plan_cycle()
         b, nxt = self._bars[bar], self._bars[bar + 1]
@@ -177,7 +183,11 @@ class Composer:
     def pivot(self, bar: int, semitones: int) -> None:
         """Prepare a key change after `bar`: its passing chord becomes the dominant seventh of the key `semitones`
         above this piece's tonic, whatever lift the bar carries."""
-        self.plan(bar)
+        with self._lock:
+            self._pivot(bar, semitones)
+
+    def _pivot(self, bar: int, semitones: int) -> None:
+        self._plan(bar)
         b = self._bars[bar]
         b.passing = self._dominant7(7 + semitones - b.key_offset)
 

@@ -28,6 +28,7 @@ player to pass along.
 """
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import dataclass, fields, replace
 from functools import lru_cache
@@ -44,9 +45,12 @@ from .composer import Composer, harmonic_handoff
 from .genres.base import Genre, Master, Piece
 from .genres.lofi import Instruments  # noqa: F401  (re-exported: the procedural lo-fi voices)
 from .mastering import Compressor, ConvolutionReverb, procedural_ir, soft_clip
+from .sing import Note
 from .style import DEFAULT, DRUMS, KEYS, Style
 from .synth import SR, StatefulFilter, _sos, bp, hp, lp, mtof  # noqa: F401  (re-exported)
 from .voicepacks import PackVoice
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .journey import Journey, JourneySnapshot
@@ -82,6 +86,15 @@ class _Running:
     start_sample: int
     start: dict[str, float]
     binaural_start: dict[str, float] | None = None   # where its binaural values start, when it owns the layer
+
+
+@dataclass(frozen=True)
+class _Clip:
+    """A phrase waiting to be spoken or sung (`Engine.queue_speech`)."""
+    clip: np.ndarray
+    every: int                 # it starts on a bar whose number is a multiple of this
+    at_bar: int | None         # or on this bar exactly (a sung phrase)
+    duck_db: float
 
 
 @dataclass
@@ -141,7 +154,7 @@ class Engine:
         (`voicepacks.active_voice`) the choir sings; the engine never reads the registry itself."""
         self.sr = sr
         self._voices = voices
-        self._speech_queue: list[tuple[np.ndarray, int]] = []     # finished clips and their bar step (_lock)
+        self._speech_queue: list[_Clip] = []                      # finished clips waiting for their bar (_lock)
         self._speech: tuple[np.ndarray, np.ndarray, int] | None = None   # (clip, duck, position) playing
         self._phrase_clips: dict[str, np.ndarray] = {}            # journey phrases rendered so far (_lock)
         self._phrase_rng = np.random.default_rng(None if seed is None else [seed, 32])   # never the music's
@@ -242,12 +255,32 @@ class Engine:
                 return self._pending_binaural[0]
             return self._binaural.setting
 
-    def queue_speech(self, clip: np.ndarray, every: int = 1) -> None:
+    def queue_speech(self, clip: np.ndarray, every: int = 1, at_bar: int | None = None,
+                     duck_db: float = _speech.DUCK_DB) -> None:
         """Play the finished mono `clip` from the next bar whose number is a multiple of `every` (1: the next bar,
-        what a phrase asked for now gets; 4: the next phrase boundary, what a journey's phrase waits for), after the
-        ones queued before it, the music ducked under it. Rendering the clip is the caller's job (`speech.render`)."""
+        what a phrase asked for now gets; 4: the next phrase boundary, what a journey's phrase waits for), or from
+        bar `at_bar` exactly (a sung phrase, placed on that bar's notes: skipped, and logged, when that bar has gone
+        by first), after the ones queued before it, the music ducked `duck_db` under it. Rendering the clip is the
+        caller's job (`speech.render`, `sing.sing`)."""
         with self._lock:
-            self._speech_queue.append((np.asarray(clip, dtype=float), every))
+            self._speech_queue.append(_Clip(np.asarray(clip, dtype=float), every, at_bar, duck_db))
+
+    def melody_ahead(self, bar: int, bars: int) -> tuple[Note, ...]:
+        """The notes planned for `bars` bars from `bar`, in seconds from that bar's start at the current tempo: the
+        composer's melody whether or not the lead plays it, and where none is planned (an intro, an outro) the bar's
+        chord tones, one a beat, an octave above the tonic (S4)."""
+        beat = self.bar_seconds / 4
+        notes: list[Note] = []
+        for k in range(bars):
+            plan = self.composer.plan(bar + k)
+            start = k * self.bar_seconds
+            if plan.melody:
+                notes += [Note(start + n.beat * beat, n.length * beat, n.midi) for n in plan.melody]
+            else:
+                tones = plan.chord.tones
+                notes += [Note(start + i * beat, beat, self.ton + plan.key_offset + tones[i % len(tones)] + 12)
+                          for i in range(4)]
+        return tuple(notes)
 
     def provide_phrase(self, text: str, clip: np.ndarray) -> None:
         """A journey phrase rendered ahead (`speech.prerender`): from now on its stage can speak it."""
@@ -284,11 +317,18 @@ class Engine:
         """Start the next queued clip on its bar, then duck the music and add the playing clip."""
         if self._speech is None:
             with self._lock:
-                ready = self._speech_queue and self.bar % self._speech_queue[0][1] == 0
-                clip = self._speech_queue.pop(0)[0] if ready else None
+                while self._speech_queue and (late := self._speech_queue[0]).at_bar is not None \
+                        and late.at_bar < self.bar:
+                    self._speech_queue.pop(0)
+                    log.warning("a sung phrase arrived after its bar (%d, now %d) and is skipped", late.at_bar,
+                                self.bar)
+                head = self._speech_queue[0] if self._speech_queue else None
+                ready = head is not None and (self.bar == head.at_bar if head.at_bar is not None
+                                              else self.bar % head.every == 0)
+                clip = self._speech_queue.pop(0) if ready else None
             if clip is not None:
-                duck = _speech.duck_envelope(len(clip), self.sr)
-                self._speech = (np.r_[clip, np.zeros(len(duck) - len(clip))], duck, 0)
+                duck = _speech.duck_envelope(len(clip.clip), self.sr, clip.duck_db)
+                self._speech = (np.r_[clip.clip, np.zeros(len(duck) - len(clip.clip))], duck, 0)
         if self._speech is None:
             return out
         clip, duck, pos = self._speech

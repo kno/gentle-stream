@@ -43,6 +43,9 @@ samples = [
 broadcast = [
     "pillow>=11",
 ]
+sing = [
+    "pyworld-prebuilt>=0.3.6",
+]
 
 [build-system]
 requires = ["uv_build>=0.11.14,<0.12.0"]
@@ -54,6 +57,7 @@ dev = [
     "pyfluidsynth>=1.4.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "pyworld-prebuilt>=0.3.6",
 ]
 
 [tool.pytest.ini_options]
