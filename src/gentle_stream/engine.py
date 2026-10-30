@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, fields, replace
 from functools import lru_cache
 from pathlib import Path
@@ -159,6 +160,10 @@ class Engine:
         self._phrase_clips: dict[str, np.ndarray] = {}            # journey phrases rendered so far (_lock)
         self._phrase_rng = np.random.default_rng(None if seed is None else [seed, 32])   # never the music's
         self._phrase_state: tuple[tuple[int, int], float | None, str | None] | None = None   # (stage, last t, text)
+        self._sung_state: tuple[tuple[int, int], float | None, str | None] | None = None     # the same, sung stages
+        # where a singing stage's phrases go, (text, bar): set by the player when it can sing (it renders them off the
+        # render thread); None, and a singing stage speaks
+        self.sing_requests: Callable[[str, int], None] | None = None
         self.melodic_vocals = voices is not None and voices.pack.melody
         sf2 = _samples.soundfont_path() if samples is True else (Path(samples) if samples else None)
         renderer = _samples.load_renderer(sf2, sr) if sf2 is not None else None
@@ -291,8 +296,12 @@ class Engine:
         """On a phrase boundary, speak one of the playing stage's phrases when its interval has passed since the last
         one, nothing else is speaking, and a clip is ready: a random one, never the one just spoken (unless the stage
         has only one)."""
+        if self.sing_requests is not None:
+            self._sung_phrase(running, t + 4 * self.bar_seconds, self.bar + 4)
         index = running.journey.stage_index(t)
         stage = running.journey.stages[index]
+        if stage.sing and self.sing_requests is not None:
+            return                                     # decided one phrase boundary ahead (_sung_phrase)
         key = (id(running), index)
         state = self._phrase_state if self._phrase_state is not None and self._phrase_state[0] == key else None
         self._phrase_state = state or (key, None, None)
@@ -312,6 +321,27 @@ class Engine:
         text = choices[int(self._phrase_rng.integers(len(choices)))]
         self.queue_speech(clips[text], every=4)
         self._phrase_state = (key, t, text)
+
+    def _sung_phrase(self, running: _Running, t: float, bar: int) -> None:
+        """A singing stage's phrase is decided one phrase boundary ahead, for `bar` (at `t`), and handed to
+        `sing_requests`: singing it on that bar's notes takes longer than a bar's render. The interval and the order
+        are a spoken stage's."""
+        index = running.journey.stage_index(t)
+        stage = running.journey.stages[index]
+        key = (id(running), index)
+        state = self._sung_state if self._sung_state is not None and self._sung_state[0] == key else None
+        self._sung_state = state or (key, None, None)
+        if not (stage.sing and stage.phrases):
+            return
+        _, last_t, last_text = self._sung_state
+        if last_t is not None and t - last_t < stage.phrase_every - 1e-9:
+            return
+        choices = list(stage.phrases) if len(set(stage.phrases)) == 1 else [p for p in stage.phrases if p != last_text]
+        text = choices[int(self._phrase_rng.integers(len(choices)))]
+        self._sung_state = (key, t, text)
+        requests = self.sing_requests
+        if requests is not None:
+            requests(text, bar)
 
     def _mix_speech(self, out: np.ndarray, n: int) -> np.ndarray:
         """Start the next queued clip on its bar, then duck the music and add the playing clip."""

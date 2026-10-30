@@ -6,6 +6,8 @@ actually audible, not the one being rendered: its style and its journey progress
 """
 from __future__ import annotations
 
+import logging
+import queue
 import threading
 import time
 from collections import deque
@@ -19,6 +21,8 @@ from .engine import Engine
 from .journey import Journey, JourneySnapshot
 from .recorder import Recorder, RecordError
 from .style import Style
+
+log = logging.getLogger(__name__)
 
 RAMP_SECONDS = 0.03
 CROSSFADE_SECONDS = 0.08
@@ -121,6 +125,12 @@ class Player:
         self._recorder: Recorder | None = None   # the session recording, fed by the audio callback
         self._broadcast = None                   # the live broadcast (broadcast.Broadcast), fed by it too
         self._pack_aside = None                  # a voice pack set aside while broadcasting (not redistributable)
+        self._sing_queue: queue.Queue[tuple[str, int]] = queue.Queue()   # journey phrases to sing, (text, bar)
+        self._singer: threading.Thread | None = None
+        from . import sing
+
+        if sing.available():
+            engine.sing_requests = self._request_sing
 
     # ------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -343,9 +353,7 @@ class Player:
                 owns_binaural = normalized.owns_binaural
                 self.engine.queue_journey(normalized, at=float(journey.get("seconds", 0.0)),
                                           start=journey.get("start"), binaural_start=journey.get("binaural_start"))
-                if normalized.phrases:
-                    from .speech import prerender
-                    prerender(normalized.phrases, self.engine.sr, self.engine.provide_phrase)
+                self._prepare_phrases(normalized)
             except (KeyError, TypeError, ValueError) as e:
                 warnings.append(f"the saved journey could not be resumed: {e}")
         binaural = saved.get("binaural")
@@ -426,9 +434,7 @@ class Player:
         its phrases ahead in the background."""
         normalized = Journey.from_dict(journey)
         self.engine.queue_journey(normalized)
-        if normalized.phrases:
-            from .speech import prerender
-            prerender(normalized.phrases, self.engine.sr, self.engine.provide_phrase)
+        self._prepare_phrases(normalized)
 
     def journey_current(self) -> dict | None:
         """The journey the engine is running, like the background player's `journey_current`."""
@@ -439,9 +445,50 @@ class Player:
         """Replace the running journey from the next bar, keeping its place, like the background player."""
         edited = Journey.from_dict(journey)
         self.engine.queue_journey_edit(edited)
-        if edited.phrases:
-            from .speech import prerender
-            prerender(edited.phrases, self.engine.sr, self.engine.provide_phrase)
+        self._prepare_phrases(edited)
+
+    def _prepare_phrases(self, journey: Journey) -> None:
+        """Render a journey's phrases ahead in the background; when a stage sings and the player cannot (no pyworld),
+        say so once: those phrases are spoken."""
+        if not journey.phrases:
+            return
+        from . import sing
+        from .speech import prerender
+
+        prerender(journey.phrases, self.engine.sr, self.engine.provide_phrase)
+        if self.engine.sing_requests is None and any(stage.sing for stage in journey.stages):
+            log.warning("the journey's phrases are spoken, not sung: %s", sing.INSTALL_HINT)
+
+    # ------------------------------------------------------------ sung journey phrases
+    def _request_sing(self, text: str, bar: int) -> None:
+        """Called by the render thread: queue the phrase for the singer thread, never wait."""
+        self._sing_queue.put((text, bar))
+        if self._singer is None:
+            self._singer = threading.Thread(target=self._sing_loop, name="gentle-stream-singer", daemon=True)
+            self._singer.start()
+
+    def _sing_loop(self) -> None:
+        from . import sing
+        from .speech import SpeechError, checked
+
+        while True:
+            text, bar = self._sing_queue.get()
+            try:
+                analysed = sing.voice_for(checked(text, None, "dry"), None, None)
+                notes = sing.transpose(self.engine.melody_ahead(bar, sing.BARS_AHEAD))
+                self.engine.queue_speech(sing.sung_clip(analysed, notes, self.engine.sr), at_bar=bar,
+                                         duck_db=sing.SING_DUCK_DB)
+            except SpeechError as e:
+                log.warning("a journey phrase will not be sung: %s", e)
+            finally:
+                self._sing_queue.task_done()
+
+    def singer_idle(self, timeout: float) -> bool:
+        """Whether every journey phrase asked for has been sung (or given up) within `timeout` seconds (tests)."""
+        deadline = time.monotonic() + timeout
+        while self._sing_queue.unfinished_tasks and time.monotonic() < deadline:
+            time.sleep(0.01)
+        return not self._sing_queue.unfinished_tasks
 
     def journey_restart(self) -> None:
         """Restart the running journey at the next rendered bar."""

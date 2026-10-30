@@ -133,6 +133,7 @@ class Stage:
     phrases: tuple[str, ...] = ()                         # spoken during the stage, one per `phrase_every` seconds
     phrase_every: float = DEFAULT_PHRASE_EVERY
     ramp: float | None = None                             # an open stage (seconds infinite): its ramp's length
+    sing: bool = False                                    # its phrases sung on the melody instead of spoken
 
     @property
     def open(self) -> bool:
@@ -276,6 +277,19 @@ def _parse_phrases(raw, every, number: int) -> tuple[tuple[str, ...], float]:
     return phrases, float(every)
 
 
+def _parse_sing(raw: Mapping, phrases: tuple[str, ...], number: int) -> bool:
+    """Whether a stage sings its phrases (absent: no); anything but a boolean, or singing without phrases, rejects
+    the journey."""
+    if "sing" not in raw:
+        return False
+    sing = raw["sing"]
+    if type(sing) is not bool:
+        raise ValueError(f'stage {number}: "sing" must be true or false')
+    if sing and not phrases:
+        raise ValueError(f'stage {number}: "sing" needs "phrases"')
+    return sing
+
+
 def _parse_drums(raw, number: int) -> str | None:
     """A stage's drum level, or None when it names none."""
     if raw is not None and raw not in DRUMS:
@@ -401,11 +415,12 @@ class Journey:
                     curve = "linear"
                 else:
                     raise ValueError(f'stage {number}: "curve" must be a string')
+            phrases, every = _parse_phrases(raw.get("phrases"), raw.get("phrase_every"), number)
             stages.append(Stage(stage_name, float(seconds), normalized, genre, curve,
                                 _parse_binaural(raw.get("binaural", {}), number, warnings),
                                 _parse_layers(raw.get("layers", {}), number), _parse_drums(raw.get("drums"), number),
-                                _parse_transition(raw.get("transition"), number),
-                                *_parse_phrases(raw.get("phrases"), raw.get("phrase_every"), number), ramp))
+                                _parse_transition(raw.get("transition"), number), phrases, every, ramp,
+                                _parse_sing(raw, phrases, number)))
         if total > 12 * 60 * 60:
             raise ValueError('combined stage duration must be at most 43200 seconds')
         journey_name = data.get("name", name)
@@ -446,6 +461,8 @@ class Journey:
             if s.phrases:
                 stage_dict["phrases"] = list(s.phrases)
                 stage_dict["phrase_every"] = s.phrase_every
+            if s.sing:
+                stage_dict["sing"] = True
             stages_list.append(stage_dict)
         data = {"version": 1, "name": self.name, "title": self.title, "description": self.description,
                 "end": self.end, "stages": stages_list}
@@ -642,7 +659,7 @@ def stage_diff(old: Journey, new: Journey) -> list[str]:
             changes.append(f"curve {_curve_name(before.curve)} -> {_curve_name(stage.curve)}")
         other = [name for name in ("binaural", "layers", "drums", "transition")
                  if getattr(before, name) != getattr(stage, name)]
-        if (before.phrases, before.phrase_every) != (stage.phrases, stage.phrase_every):
+        if (before.phrases, before.phrase_every, before.sing) != (stage.phrases, stage.phrase_every, stage.sing):
             other.append("phrases")
         if other:
             changes.append(f"{', '.join(other)} changed")

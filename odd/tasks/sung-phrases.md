@@ -30,10 +30,10 @@ in words can ask for singing (bridge schema).
 
 | Task | Specs | Route | Commit |
 | :--- | :--- | :--- | :--- |
-| T1 `sing.py`: syllables on notes, vibrato, lead level; the `sing` extra | S1, S3, S5, S6 | inline | done |
-| T2 Engine: the planned melody of coming bars (chord tones where none); a clip queued for an exact bar, its duck | S4, S5 | inline | done |
-| T3 `ctl say --sing`, the say dialog's Sing switch, daemon, client, parity, README | S2, S6 | inline | done |
-| T4 Journeys: `"sing": true` per stage, sung on its phrase boundaries; bridge schema; README | S2, S6 | inline | pending |
+| T1 `sing.py`: syllables on notes, vibrato, lead level; the `sing` extra | S1, S3, S5, S6 | inline | done (aff09d9) |
+| T2 Engine: the planned melody of coming bars (chord tones where none); a clip queued for an exact bar, its duck | S4, S5 | inline | done (aff09d9) |
+| T3 `ctl say --sing`, the say dialog's Sing switch, daemon, client, parity, README | S2, S6 | inline | done (1db5bd0) |
+| T4 Journeys: `"sing": true` per stage, sung on its phrase boundaries; bridge schema; README | S2, S6 | inline | done |
 
 ## Log
 
@@ -49,3 +49,9 @@ in words can ask for singing (bridge schema).
   voices. T2: Composer.plan/pivot now hold an RLock (a sung phrase asks for coming bars from a connection thread).
   T3: the daemon's say goes through Player.say for both paths. Ear check (listen/canto/6-integrado-player-say-sing.wav,
   real Piper): first phrase ready in 2.2 s (pyworld import, Piper start), the next in 0.26 s.
+- L4: Fix found before committing T3: sing.voice_for's cache survived use_only, so a phrase analysed with macOS
+  `say` could be reused on air; speech.clear_cache now clears it too (test first). T4: the engine decides a sung
+  phrase one phrase boundary ahead (_sung_phrase, its own state) and hands (text, bar) to Engine.sing_requests,
+  set by the Player only when pyworld is there; the Player's singer thread sings it on that bar's notes and queues
+  it for that exact bar. Without pyworld the stage speaks and the log says why. Ear file:
+  listen/canto/7-journey-etapa-cantada.wav.
