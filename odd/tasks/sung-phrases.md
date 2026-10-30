@@ -33,7 +33,7 @@ in words can ask for singing (bridge schema).
 | T1 `sing.py`: syllables on notes, vibrato, lead level; the `sing` extra | S1, S3, S5, S6 | inline | done (aff09d9) |
 | T2 Engine: the planned melody of coming bars (chord tones where none); a clip queued for an exact bar, its duck | S4, S5 | inline | done (aff09d9) |
 | T3 `ctl say --sing`, the say dialog's Sing switch, daemon, client, parity, README | S2, S6 | inline | done (1db5bd0) |
-| T4 Journeys: `"sing": true` per stage, sung on its phrase boundaries; bridge schema; README | S2, S6 | inline | done |
+| T4 Journeys: `"sing": true` per stage, sung on its phrase boundaries; bridge schema; README | S2, S6 | inline | done (3289a2e) |
 
 ## Log
 
@@ -55,3 +55,8 @@ in words can ask for singing (bridge schema).
   set by the Player only when pyworld is there; the Player's singer thread sings it on that bar's notes and queues
   it for that exact bar. Without pyworld the stage speaks and the log says why. Ear file:
   listen/canto/7-journey-etapa-cantada.wav.
+- L5: Mutation checks: 19 mutants, 7 survived at first; tests strengthened (glide measured inside it, a long
+  consonant that must shorten the vowel before it, exact silence between syllables, a key-lifted chord bar, a clip
+  one bar late, a sung phrase asked for 4 bars ahead); the pyworld check in Player.say was redundant with
+  voice_for and was removed. All 19 killed. Full suite: 1663 passed; 2 broadcast timing tests failed at load 13-16
+  and passed alone (10/10 at load 64).

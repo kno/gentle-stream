@@ -398,14 +398,12 @@ class Player:
         as the background player's `say` (`ctl say`): the warnings (an unknown voice); SpeechError when it cannot be
         spoken or sung. Renders here: call it off the UI thread."""
         from . import sing as _sing
-        from .speech import SpeechError, checked, render, resolve_voice
+        from .speech import checked, render, resolve_voice
 
         voice, warning = resolve_voice(voice)
         if not sing:
             self.engine.queue_speech(render(text, self.engine.sr, voice, rate, effect))
             return [warning] if warning else []
-        if not _sing.available():
-            raise SpeechError(_sing.INSTALL_HINT)
         analysed = _sing.voice_for(checked(text, rate, effect), voice, rate)   # the slow part, before the bar is chosen
         at = self.engine.bar + 1
         notes = _sing.transpose(self.engine.melody_ahead(at, _sing.BARS_AHEAD))

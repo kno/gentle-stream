@@ -64,7 +64,7 @@ def run(j, seconds=134, sing_requests=True, provide=True):
     e = Engine(Style(bpm=BPM), seed=5, samples=False)
     requests, spoken = [], []
     if sing_requests:
-        e.sing_requests = lambda text, bar: requests.append((bar, text))
+        e.sing_requests = lambda text, bar: requests.append((bar, text, e.bar))
     if provide:
         for text in j.phrases:
             e.provide_phrase(text, np.full(1000, 0.01))
@@ -78,13 +78,14 @@ def run(j, seconds=134, sing_requests=True, provide=True):
 
 def test_a_singing_stage_asks_for_each_phrase_one_boundary_ahead():
     requests, spoken, _ = run(journey(every=20))
-    bars = [bar for bar, _ in requests]
+    bars = [bar for bar, _, _ in requests]
+    assert all(bar - now == 4 for bar, _, now in requests)               # asked for a phrase boundary ahead
     assert spoken == []                                                   # nothing spoken in a sung stage
     assert bars and all(bar % 4 == 0 for bar in bars)
     times = [bar * 2.0 for bar in bars]
     assert times[0] == 32 and all(30 <= t < 94 for t in times)           # inside the stage, its first boundary
     assert all(b - a >= 20 for a, b in itertools.pairwise(times))         # once per interval
-    assert {text for _, text in requests} <= {"Keep going", "Almost there"}
+    assert {text for _, text, _ in requests} <= {"Keep going", "Almost there"}
 
 
 def test_a_spoken_stage_is_unchanged():

@@ -16,13 +16,13 @@ SR = 16000
 CONSONANT, VOWEL, GAP = 0.05, 0.15, 0.1
 
 
-def syllables(n=3, sr=SR):
+def syllables(n=3, sr=SR, consonant=CONSONANT):
     rng = np.random.default_rng(1)
     t = np.arange(int(VOWEL * sr)) / sr
     vowel = sum(0.3 / k * np.sin(2 * np.pi * 120 * k * t) for k in range(1, 12)) * np.hanning(len(t)) ** 0.3
     parts = [np.zeros(int(GAP * sr))]
     for _ in range(n):
-        parts += [0.05 * rng.standard_normal(int(CONSONANT * sr)), vowel, np.zeros(int(GAP * sr))]
+        parts += [0.05 * rng.standard_normal(int(consonant * sr)), vowel, np.zeros(int(GAP * sr))]
     return np.concatenate(parts)
 
 
@@ -54,8 +54,8 @@ def pitch_track(y, sr=SR, hop=0.005, window=0.04):
     return np.array(times), np.array(f0)
 
 
-def f0_at(y, t, sr=SR):
-    times, f0 = pitch_track(y, sr)
+def f0_at(y, t, sr=SR, window=0.04):
+    times, f0 = pitch_track(y, sr, window=window)
     return float(f0[int(np.argmin(np.abs(times - t)))])
 
 
@@ -107,6 +107,7 @@ def test_the_consonant_ends_on_the_notes_start_and_silence_fills_the_rest():
         consonant = rms(nxt.start - CONSONANT + 0.01, nxt.start - 0.005)
         between = rms(note.start + note.length, nxt.start - CONSONANT - 0.02)
         assert consonant > 10 * between
+        assert np.all(y[int((note.start + note.length) * SR):int((nxt.start - CONSONANT - 0.02) * SR)] == 0)
 
 
 def test_sample_zero_is_the_origin_of_the_notes_times():
@@ -122,18 +123,21 @@ def test_a_note_too_early_for_its_consonant_is_skipped():
 
 
 def test_a_consonant_that_does_not_fit_shortens_the_vowel_before_it():
-    y = sung((Note(0.3, 0.5, 48), Note(0.8, 0.5, 55)), n=2)          # legato: no room for the consonant
+    voice = sing.analyse(syllables(2, consonant=0.1), SR)                 # a long consonant, short notes
+    y = sing.sing(voice, (Note(0.3, 0.25, 48), Note(0.55, 0.25, 55)), vibrato=False)
     spans = voiced_spans(y)
-    assert spans[1][0] == pytest.approx(0.8, abs=0.04)                  # the second syllable is still on its beat
-    assert spans[0][1] < 0.8 - CONSONANT + 0.02                         # the first one gave up its tail
-    assert f0_at(y, 0.8 + 0.2) == pytest.approx(hz(55), rel=0.03)
+    assert spans[1][0] == pytest.approx(0.55, abs=0.03)                 # the second syllable is still on its beat
+    assert spans[0][1] < 0.55 - 0.1 + 0.03                              # the first one gave up its tail
+    assert f0_at(y, 0.55 + 0.15) == pytest.approx(hz(55), rel=0.03)
 
 
 def test_the_voice_glides_into_a_note_from_the_one_before():
     y = sung((Note(0.3, 0.5, 48), Note(0.9, 0.5, 55)), n=2)
-    f0 = [f0_at(y, 0.9 + d) for d in (0.035, 0.045, 0.06, 0.2)]          # harvest's first frames lag ~30 ms
+    f0 = [f0_at(y, 0.9 + d) for d in (0.035, 0.045, 0.06, 0.2)]
     assert f0[0] < f0[1] < f0[2] <= f0[3] * 1.01
     assert f0[3] == pytest.approx(hz(55), rel=0.03)
+    early = f0_at(y, 0.9 + 0.025, window=0.02)                          # inside the 40 ms glide: still below
+    assert hz(48) < early < hz(55) * 2 ** (-1 / 12)
 
 
 def test_more_syllables_than_notes_sing_the_rest_on_the_last_note():

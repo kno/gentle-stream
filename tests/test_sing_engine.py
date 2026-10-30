@@ -39,6 +39,17 @@ def test_the_melody_is_sung_where_the_lead_does_not_play_it():
                                            for n in planned(e, bar).melody)
 
 
+def test_the_chord_tones_carry_the_bars_key_lift(monkeypatch):
+    from dataclasses import replace
+
+    e = engine()
+    bar = first_bar(e, lambda p: not p.melody)
+    lifted = replace(planned(e, bar), key_offset=2)
+    monkeypatch.setattr(e.composer, "plan", lambda b: lifted)
+    tones = lifted.chord.tones
+    assert [n.midi for n in e.melody_ahead(bar, 1)] == [e.ton + 2 + tones[i % len(tones)] + 12 for i in range(4)]
+
+
 def test_a_bar_with_no_melody_planned_offers_its_chords_tones_one_a_beat():
     e = engine()
     bar = first_bar(e, lambda p: not p.melody)
@@ -76,10 +87,12 @@ def test_a_clip_whose_bar_has_passed_is_dropped_and_logged(caplog):
         bars(e, 4)
     clip = np.full(a.sr, 0.2)
     with caplog.at_level(logging.WARNING, logger="gentle_stream.engine"):
-        a.queue_speech(clip, at_bar=2, duck_db=6.0)
+        a.queue_speech(clip, at_bar=3, duck_db=6.0)                 # the bar just gone
+        a.queue_speech(np.zeros(10), duck_db=0.0)                   # a spoken one behind it still plays
         diff = bars(a, 4) - bars(b, 4)
     assert np.all(diff == 0)
-    assert "a sung phrase arrived after its bar (2, now 4) and is skipped" in caplog.text
+    assert a._speech_queue == []
+    assert "a sung phrase arrived after its bar (3, now 4) and is skipped" in caplog.text
 
 
 def test_a_clip_for_an_exact_bar_waits_while_another_plays_and_is_dropped_if_that_makes_it_late(caplog):
