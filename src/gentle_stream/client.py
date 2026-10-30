@@ -283,10 +283,13 @@ class PlayerClient:
         """Glide only the given carrier, beat or level over `seconds`; the player refuses while the layer is off."""
         self._control("binaural_set", seconds=float(seconds), **values)
 
-    def say(self, text: str, voice: str | None = None, rate: int | None = None, effect: str = "dry") -> list[str]:
-        """Speak `text` over the music from the next bar in `voice` at `rate` through `effect`; the
-        player's warnings (an unknown voice); PlayerError when it cannot be spoken."""
+    def say(self, text: str, voice: str | None = None, rate: int | None = None, effect: str = "dry",
+            sing: bool = False) -> list[str]:
+        """Speak `text` over the music from the next bar in `voice` at `rate` through `effect`, or with `sing`
+        sing it on the melody; the player's warnings (an unknown voice); PlayerError when it cannot be spoken."""
         options = {k: v for k, v in (("voice", voice), ("rate", rate)) if v is not None}
+        if sing:
+            options["sing"] = True
         answer = self._round_trip("say", text=text, effect=effect, **options)
         return list(answer.get("warnings", []))
 

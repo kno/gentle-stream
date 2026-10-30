@@ -166,7 +166,7 @@ Model extensions stay enabled on purpose: some providers (such as `claude-bridge
 | `J` | Journey picker: create one from a description (Gentle Shell), play a built-in or saved journey, `v` shows one as JSON, `d` deletes a saved one, or open a JSON file (validated, with its warnings) to play or save; `Enter` picks, `Esc` closes |
 | `c` | Live controls: tempo, energy, brightness, space, swing, vinyl, melody density and voice with their values; change any of them and Apply glides the changed ones over the given seconds (0 to 3600, default 60), as `ctl tempo` and `ctl glide` do; fields the running journey drives are marked (journey) and locked |
 | `B` | Binaural layer: carrier, beat, level and a glide time; when the layer is off the dialog turns it on (`ctl binaural on`), when it plays Apply glides the values you changed (`ctl binaural set`) and Off fades it out (`ctl binaural off`); ranges are checked before anything is sent; refused, with the CLI's message, while a journey owns the layer |
-| `t` | Say a phrase over the music, as `ctl say`: the text, a voice from the list the system's text-to-speech program offers (or its default), a rate in words per minute and an effect (`dry`, `space`, `radio`); the phrase is rendered in the background and starts at the next bar; a missing program, an empty phrase or a rate out of range are shown in the dialog |
+| `t` | Say a phrase over the music, as `ctl say`: the text, a voice from the list the system's text-to-speech program offers (or its default), a rate in words per minute, an effect (`dry`, `space`, `radio`) and **Sing** (sing it on the melody, as `--sing`); the phrase is rendered in the background and starts at the next bar; a missing program, an empty phrase or a rate out of range are shown in the dialog |
 | `v` | Voices and samples: the voice packs as `voices list` shows them (`*` is the one the choir sings); add a pack by its folder or remove the highlighted one, as `voices add` / `voices remove`; install the FreePats choir, the FluidR3_GM soundfont or the Piper voice, as `setup-voices` / `setup-samples` / `setup-speech`, with a progress bar while the interface keeps working; a failed install leaves nothing behind and says why |
 | `r` | Record the session: asks for a WAV file (a dated one in your home folder is proposed), then saves everything you hear until you press `r` again; the state line shows `● REC` and the length |
 | `w` | Render to a file: the style playing now or a built-in journey, a length, a seed (blank: random, then shown) and the procedural instruments if you want them, written in the background by the same function as `gentle-stream render`, so the same options give the same bytes; what plays is not interrupted |
@@ -192,7 +192,7 @@ Everything the command line does can be done from the TUI too: by its key, or by
 | `ctl stop` | `q` (leaves the app and stops the music) |
 | `ctl tempo`, `ctl glide` | `c` live controls |
 | `ctl binaural on/set/off` | `B` |
-| `ctl say` (with `--voice`, `--rate`, `--effect`, `--list-voices`) | `t` |
+| `ctl say` (with `--voice`, `--rate`, `--effect`, `--sing`, `--list-voices`) | `t` |
 | `ctl record start/stop` | `r` |
 | `ctl stream start/stop`, `stream url`, `stream key set/clear`, `stream show` | `L` |
 | `ctl mute`, `ctl unmute` | `M` |
@@ -241,7 +241,7 @@ gentle-stream ctl stop     # ends the background player
 | `ctl play`, `pause`, `toggle`, `next`, `stop` | Nothing, or `gentle-stream: nothing is playing` on stderr | `0`, or `1` when nothing plays |
 | `ctl tempo BPM [--over SECONDS]` | Glide tempo in place (default 60 seconds) | `0`, or `1` when nothing plays |
 | `ctl glide FIELD=VALUE... [--over SECONDS]` | Glide `energy`, `brightness`, `space`, `swing`, `vinyl`, `lead_density`, `voice` or `bpm` in place (default 60 seconds) | `0`; `1` when nothing plays or the player refuses; `2` for a malformed or discrete field |
-| `ctl say TEXT [--voice NAME] [--rate WPM] [--effect dry\|radio\|space]` | Speak TEXT (at most 200 characters) over the music from the next bar, the music ducked 3 dB; `ctl say --list-voices` lists the system voices | `0` (an unknown voice falls back to the default with a warning); `1` when nothing plays, no text-to-speech program is found, or it fails; `2` without TEXT or with a rate outside 80-400 |
+| `ctl say TEXT [--voice NAME] [--rate WPM] [--effect dry\|radio\|space] [--sing]` | Speak TEXT (at most 200 characters) over the music from the next bar, the music ducked 3 dB; with `--sing`, sing it on the next bar's melody as a lead vocal, the music ducked 6 dB (see [Sung phrases](#sung-phrases)); `ctl say --list-voices` lists the system voices | `0` (an unknown voice falls back to the default with a warning); `1` when nothing plays, no text-to-speech program is found, it fails, or (`--sing`) pyworld is missing or nothing in the phrase is voiced; `2` without TEXT or with a rate outside 80-400 |
 | `ctl record start FILE.wav [--force]` / `ctl record stop` | Record exactly what the background player plays (volume and pauses included) into a 16-bit stereo WAV, until `stop` or until the player stops; an existing file needs `--force` | `0`; `1` when nothing plays, a recording is running, the folder does not exist, the file exists without `--force`, or (stop) nothing records; `2` for a malformed command |
 | `ctl stream start` / `ctl stream stop` | Broadcast what the background player plays, with a picture of it, to the ingest set with `gentle-stream stream url` and `stream key set` (see [Live broadcast](#live-broadcast)); `stop` reports how long it ran and the frames dropped | `0`; `1` when nothing plays, no URL or key is set, a broadcast is running, the journey speaks phrases with neither Piper nor `espeak-ng`, the ingest refuses it, or (stop) nothing broadcasts; `2` for a malformed command |
 | `ctl mute` / `ctl unmute` | Silence the background player's speakers, or bring them back; the music keeps playing, and a broadcast or a recording keeps the sound (`ctl status` reports `"muted"`) | `0`; `1` when nothing plays; `2` with an argument |
@@ -350,6 +350,17 @@ gentle-stream ctl say "Almost there" --voice Samantha --rate 180 --effect space
 ```
 
 `--voice` names a system voice, matched without case (`say -v` on macOS; on Linux an `espeak-ng` language code such as `es` or `en-us`); an unknown voice is spoken in the default voice and the command prints a warning. `--rate` is words per minute, 80 to 400 (the voice's own rate by default). `--effect` is `dry` (default), `radio` (the telephone band, 300 to 3400 Hz, lightly saturated) or `space` (the procedural room impulse the master chain's reverb uses, as a send on the voice, so the phrase rings on after it ends). The options reach the program as separate arguments; the text still goes on its standard input.
+
+### Sung phrases
+
+A phrase can be sung on the melody instead of spoken:
+
+```bash
+uv sync --extra sing                  # once, in a checkout (or: pip install 'gentle-stream[sing]')
+gentle-stream ctl say "Respira hondo, ya casi estamos" --sing
+```
+
+The voice that would speak the phrase (Piper's carlfm when installed, else the system's) is analysed with the [WORLD](https://github.com/mmorise/World) vocoder (`pyworld-prebuilt`, MIT; WORLD itself is modified BSD), which separates its pitch from its timbre. Each syllable (each voiced stretch) is then moved onto its own note of the next bar's melody, stretched to most of the note, and given the note's pitch, with a 40 ms glide from the note before and, on long notes, vibrato (from a quarter second in, 5.5 Hz, up to ±0.3 semitone); the consonant before a syllable keeps its length and ends on the note's start. Only pitch and timing change, so the voice is still the speaker's. The melody is moved by whole octaves into a speaking voice's register. The voice sings the composer's planned melody whether or not the lead instrument plays it, and the chord's tones, one a beat, where no melody is planned (an intro). A sung phrase is a lead vocal: louder than a spoken one, with the music 6 dB under it. Syllables beyond the melody of the next four bars follow the last note on its pitch; notes left over stay unsung. The effect applies to the sung voice too. If the next bar has already begun by the time the phrase is ready, it is skipped and the player log says so.
 
 ## Binaural
 

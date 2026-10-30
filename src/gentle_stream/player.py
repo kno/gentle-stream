@@ -384,13 +384,25 @@ class Player:
         """Glide the tempo in place, as the background player's `tempo` (`ctl tempo`)."""
         self.engine.queue_tempo(bpm, seconds)
 
-    def say(self, text: str, voice: str | None = None, rate: int | None = None, effect: str = "dry") -> list[str]:
-        """Speak `text` from the next bar, as the background player's `say` (`ctl say`): the warnings
-        (an unknown voice); SpeechError when it cannot be spoken. Renders here: call it off the UI thread."""
-        from .speech import render, resolve_voice
+    def say(self, text: str, voice: str | None = None, rate: int | None = None, effect: str = "dry",
+            sing: bool = False) -> list[str]:
+        """Speak `text` from the next bar, or with `sing` sing it on the next bar's planned notes as a lead vocal,
+        as the background player's `say` (`ctl say`): the warnings (an unknown voice); SpeechError when it cannot be
+        spoken or sung. Renders here: call it off the UI thread."""
+        from . import sing as _sing
+        from .speech import SpeechError, checked, render, resolve_voice
 
         voice, warning = resolve_voice(voice)
-        self.engine.queue_speech(render(text, self.engine.sr, voice, rate, effect))
+        if not sing:
+            self.engine.queue_speech(render(text, self.engine.sr, voice, rate, effect))
+            return [warning] if warning else []
+        if not _sing.available():
+            raise SpeechError(_sing.INSTALL_HINT)
+        analysed = _sing.voice_for(checked(text, rate, effect), voice, rate)   # the slow part, before the bar is chosen
+        at = self.engine.bar + 1
+        notes = _sing.transpose(self.engine.melody_ahead(at, _sing.BARS_AHEAD))
+        clip = _sing.sung_clip(analysed, notes, self.engine.sr, effect)
+        self.engine.queue_speech(clip, at_bar=at, duck_db=_sing.SING_DUCK_DB)
         return [warning] if warning else []
 
     def set_binaural(self, setting: Binaural | None, seconds: float = 0.0) -> None:

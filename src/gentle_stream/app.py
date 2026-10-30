@@ -816,7 +816,8 @@ class BinauralModal(ModalScreen[str | None]):
 
 class SayModal(ModalScreen[tuple[str, list[str]] | None]):
     """Say a phrase over the music (PM-042), as `ctl say` does: text, a system voice (the list comes from the
-    text-to-speech program), rate and effect. The phrase is rendered in a worker; errors stay in the dialog."""
+    text-to-speech program), rate, effect and whether to sing it on the melody (`--sing`). The phrase is rendered in
+    a worker; errors stay in the dialog."""
 
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
     DEFAULT_CSS = """
@@ -826,6 +827,7 @@ class SayModal(ModalScreen[tuple[str, list[str]] | None]):
     SayModal .row { height: auto; }
     SayModal .row Static { width: 12; padding: 1 0; }
     SayModal .row > Input, SayModal .row > Select { width: 1fr; }
+    SayModal #say-sing { width: auto; }
     SayModal #say-status { color: $text-muted; }
     SayModal #buttons { height: auto; }
     SayModal Button { margin-right: 1; }
@@ -851,6 +853,7 @@ class SayModal(ModalScreen[tuple[str, list[str]] | None]):
             with Horizontal(classes="row"):
                 yield Static("effect")
                 yield Select([(name, name) for name in EFFECTS], value="dry", allow_blank=False, id="say-effect")
+                yield Checkbox("Sing", id="say-sing", tooltip="Sing it on the melody, as a lead vocal")
             yield Static("It starts on the next bar, the music dipping under it.", id="say-status",
                          markup=False)
             with Horizontal(id="buttons"):
@@ -903,17 +906,20 @@ class SayModal(ModalScreen[tuple[str, list[str]] | None]):
                 return
         voice = self.query_one("#say-voice", Select).value
         effect = self.query_one("#say-effect", Select).value
+        sing = self.query_one("#say-sing", Checkbox).value
         status.update("Rendering the phrase…")
-        self._speak(phrase, str(voice) if voice else None, rate, str(effect))
+        self._speak(phrase, str(voice) if voice else None, rate, str(effect), sing)
 
     @work(thread=True, exclusive=True, group="say")
-    def _speak(self, phrase: str, voice: str | None, rate: int | None, effect: str) -> tuple[str, list[str]] | str:
+    def _speak(self, phrase: str, voice: str | None, rate: int | None, effect: str,
+               sing: bool = False) -> tuple[str, list[str]] | str:
         """The phrase and its warnings, or the error to show; the dialog closes when this worker has finished."""
         from .client import PlayerError
         from .speech import SpeechError
 
         try:
-            return phrase, list(self.player.say(phrase, voice=voice, rate=rate, effect=effect))
+            options = {"sing": True} if sing else {}
+            return phrase, list(self.player.say(phrase, voice=voice, rate=rate, effect=effect, **options))
         except (SpeechError, PlayerError) as e:
             return str(e)
 

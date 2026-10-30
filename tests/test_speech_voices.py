@@ -222,7 +222,7 @@ def test_ctl_say_passes_voice_rate_and_effect_and_prints_warnings(monkeypatch, c
     (["ctl", "say", "Hi", "--effect", "echo"], "invalid choice: 'echo'"),
     (["ctl", "say", "Hi", "--rate", "fast"], "invalid int value: 'fast'"),
     (["ctl", "say", "Hi", "--rate", "500"], f"--rate must be {RATES[0]} to {RATES[1]} words per minute"),
-    (["ctl", "glide", "energy=0.5", "--voice", "Samantha"], "--voice, --rate and --effect are only for say"),
+    (["ctl", "glide", "energy=0.5", "--voice", "Samantha"], "--voice, --rate, --effect and --sing are only for say"),
 ])
 def test_ctl_option_errors_are_usage_errors(capsys, args, message):
     with pytest.raises(SystemExit) as e:

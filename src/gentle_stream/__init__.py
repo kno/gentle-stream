@@ -808,6 +808,9 @@ def build_parser() -> argparse.ArgumentParser:
     ctl_parser.add_argument("--effect", choices=EFFECTS, default=None,
                             help="say: dry (default), radio (telephone band) or space (reverb)")
     ctl_parser.add_argument("--list-voices", action="store_true", help="say: list the system voices and exit")
+    ctl_parser.add_argument("--sing", action="store_true",
+                            help="say: sing the phrase on the next bar's melody, as a lead vocal (needs the sing "
+                                 "extra: pip install 'gentle-stream[sing]')")
     render_parser = sub.add_parser("render", help="render music into a 16-bit stereo WAV file (no audio device)",
                                    description="Render music offline with the engine alone into a WAV file.")
     render_parser.add_argument("out", metavar="OUT.wav", help="the WAV file to write")
@@ -890,8 +893,8 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if args.command == "ctl":
         say_flags = (args.voice, args.rate, args.effect)
-        if args.action != "say" and (any(v is not None for v in say_flags) or args.list_voices):
-            ctl_parser.error("--voice, --rate and --effect are only for say")
+        if args.action != "say" and (any(v is not None for v in say_flags) or args.list_voices or args.sing):
+            ctl_parser.error("--voice, --rate, --effect and --sing are only for say")
         if args.action != "record" and args.force:
             ctl_parser.error("--force is only for record")
         if args.action == "output":
@@ -922,6 +925,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.rate is not None and not RATES[0] <= args.rate <= RATES[1]:
                 ctl_parser.error(f"--rate must be {RATES[0]} to {RATES[1]} words per minute")
             options = {"voice": args.voice, "rate": args.rate, "effect": args.effect or "dry"}
+            if args.sing:
+                options["sing"] = True
             return ctl("say", text=" ".join(args.args), say_options=options)
         return ctl(args.action, *_ctl_args(ctl_parser, args))
     if args.command == "journey":
