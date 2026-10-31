@@ -8,12 +8,15 @@ a note of the melody, with vibrato, as a lead vocal. Branch `feat/sung-phrases`,
 **S1** — Maintainer, verbatim: "la voz puede "cantar" con los tonos de la melodía?", then "prueba las 2", then after
 the listening test (listen/canto): "2 y 3 son las mejores". Chosen technique: WORLD (pyworld), each voiced stretch
 (syllable) on its own note and stretched to the note's length, the consonant before it ending on the note's start,
-a 40 ms glide between notes, the melody moved by octaves into the voice's register.
+an eased 90 ms portamento between notes (L6), the melody moved by octaves into the voice's register; the pitch
+is never held perfectly still (L6): the spoken voice's own micro-intonation (detrended, at 60 %) and a slow drift
+of up to ±8 cents ride on every note.
 
 **S2** — Answers, verbatim: "Say y journeys (recomendado)": `ctl say --sing` and a "Sing" switch in the TUI's say
 dialog (t); in a journey, `"sing": true` per stage sings that stage's phrases.
 
-**S3** — "Con vibrato (3)": vibrato from 0.25 s into a note (5.5 Hz, up to ±0.3 semitone, growing over 0.3 s).
+**S3** — "Con vibrato (3)": vibrato from 0.25 s into a note (5.5 Hz, up to ±0.3 semitone, growing over 0.3 s),
+irregular (L6): each note's rate within ±8 % and depth within ±25 %, both wobbling slowly by up to 15 %.
 
 **S4** — "Canta la melodía planeada (recomendado)": the voice sings the composer's planned melody even when the lead
 layer does not play it; where no melody is planned (an intro), the chord's tones stand in.
@@ -34,6 +37,7 @@ in words can ask for singing (bridge schema).
 | T2 Engine: the planned melody of coming bars (chord tones where none); a clip queued for an exact bar, its duck | S4, S5 | inline | done (aff09d9) |
 | T3 `ctl say --sing`, the say dialog's Sing switch, daemon, client, parity, README | S2, S6 | inline | done (1db5bd0) |
 | T4 Journeys: `"sing": true` per stage, sung on its phrase boundaries; bridge schema; README | S2, S6 | inline | done (3289a2e) |
+| T5 Less robotic: human pitch (own intonation, drift, irregular vibrato), eased 90 ms portamento | S1, S3 | inline | done |
 
 ## Log
 
@@ -60,3 +64,11 @@ in words can ask for singing (bridge schema).
   one bar late, a sung phrase asked for 4 bars ahead); the pyworld check in Player.say was redundant with
   voice_for and was removed. All 19 killed. Full suite: 1663 passed; 2 broadcast timing tests failed at load 13-16
   and passed alone (10/10 at load 64).
+- L6: Maintainer, verbatim: "la 7 es la mejor, pero se oye muy robótica". Listening test listen/canto/humanizar (the
+  scene of 7, one spoken take for all; script /tmp/gs-tts/scripts/humanize.py): A current, B human pitch, C B plus an
+  eased 90 ms portamento, D C plus breath, E D plus a double. Verdict, verbatim: "la c".
+- L7: T5 integrated: own intonation read from the middle 70% of a syllable, median-smoothed (nearest edges: zero
+  padding bent the ends), detrended, at 60%, within ±20 cents (harvest is unsteady where a vowel starts and ends);
+  drift ±8 cents; per-note vibrato rate ±8%, depth ±25%, wobble 15%; eased 90 ms portamento; seeded by the phrase
+  and its notes. Mutations: all killed but one equivalent (a mask the growth ramp already covers; removed). Full
+  suite 1674 passed. Ear file listen/canto/8-journey-cantada-humana.wav.

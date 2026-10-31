@@ -16,10 +16,12 @@ SR = 16000
 CONSONANT, VOWEL, GAP = 0.05, 0.15, 0.1
 
 
-def syllables(n=3, sr=SR, consonant=CONSONANT):
+def syllables(n=3, sr=SR, consonant=CONSONANT, wobble=0.0):
+    """`wobble`: the vowel's own pitch moving ±that many cents, 8 times a second (a speaking voice's intonation)."""
     rng = np.random.default_rng(1)
     t = np.arange(int(VOWEL * sr)) / sr
-    vowel = sum(0.3 / k * np.sin(2 * np.pi * 120 * k * t) for k in range(1, 12)) * np.hanning(len(t)) ** 0.3
+    phase = np.cumsum(120 * 2 ** (wobble * np.sin(2 * np.pi * 8 * t) / 1200)) / sr
+    vowel = sum(0.3 / k * np.sin(2 * np.pi * k * phase) for k in range(1, 12)) * np.hanning(len(t)) ** 0.3
     parts = [np.zeros(int(GAP * sr))]
     for _ in range(n):
         parts += [0.05 * rng.standard_normal(int(consonant * sr)), vowel, np.zeros(int(GAP * sr))]
@@ -131,13 +133,18 @@ def test_a_consonant_that_does_not_fit_shortens_the_vowel_before_it():
     assert f0_at(y, 0.55 + 0.15) == pytest.approx(hz(55), rel=0.03)
 
 
-def test_the_voice_glides_into_a_note_from_the_one_before():
+def test_the_voice_slides_into_a_note_along_an_eased_90_ms_curve():
     y = sung((Note(0.3, 0.5, 48), Note(0.9, 0.5, 55)), n=2)
-    f0 = [f0_at(y, 0.9 + d) for d in (0.035, 0.045, 0.06, 0.2)]
-    assert f0[0] < f0[1] < f0[2] <= f0[3] * 1.01
-    assert f0[3] == pytest.approx(hz(55), rel=0.03)
-    early = f0_at(y, 0.9 + 0.025, window=0.02)                          # inside the 40 ms glide: still below
-    assert hz(48) < early < hz(55) * 2 ** (-1 / 12)
+    assert sing.PORTAMENTO == 0.09
+    early = f0_at(y, 0.9 + 0.025, window=0.02)                          # an eased start: still near the note before
+    middle = f0_at(y, 0.9 + 0.045, window=0.02)                         # half way, half way up
+    assert hz(48) < early < hz(49.6)                                    # a straight line would be at 49.9 by now
+    assert hz(50) < middle < hz(53)
+    assert f0_at(y, 0.9 + 0.2) == pytest.approx(hz(55), rel=0.03)
+
+
+def test_the_same_phrase_on_the_same_notes_is_sung_the_same_way():
+    assert np.array_equal(sung(), sung())
 
 
 def test_more_syllables_than_notes_sing_the_rest_on_the_last_note():
@@ -161,20 +168,84 @@ def semitones(y, t0, t1, ref):
     return 12 * np.log2(seg[seg > 0] / ref)
 
 
-def test_vibrato_grows_after_a_quarter_second_of_a_long_note():
+def test_vibrato_grows_after_a_quarter_second_of_a_long_note_and_is_never_regular():
     long = (Note(0.3, 1.4, 50),)
     y = sing.sing(sing.analyse(syllables(1), SR), long, vibrato=True)
     before = semitones(y, 0.35, 0.3 + sing.VIBRATO_START, hz(50))
     after = semitones(y, 0.3 + 0.75, 0.3 + 1.2, hz(50))
-    assert np.std(before) < 0.06                                          # measurement noise only
-    assert np.std(after) == pytest.approx(sing.VIBRATO_DEPTH / np.sqrt(2), abs=0.05)   # a sine of that depth
+    nominal = sing.VIBRATO_DEPTH / np.sqrt(2)                           # the std of a sine of that depth
+    assert np.std(before) < 0.1
+    assert 0.6 * nominal < np.std(after) < 1.5 * nominal
     crossings = np.count_nonzero(np.diff(np.sign(after - after.mean())) != 0) / 2
     assert crossings / 0.45 == pytest.approx(sing.VIBRATO_HZ, abs=1.0)
 
 
-def test_without_vibrato_a_long_note_stays_flat():
+def test_a_held_note_is_never_perfectly_still_but_stays_on_its_pitch():
     y = sing.sing(sing.analyse(syllables(1), SR), (Note(0.3, 1.4, 50),), vibrato=False)
-    assert np.std(semitones(y, 0.4, 1.2, hz(50))) < 0.06
+    cents = 100 * semitones(y, 0.4, 1.3, hz(50))                         # (the fading end measures poorly)
+    windows = [np.median(cents[i:i + 20]) for i in range(0, len(cents) - 20, 20)]    # 100 ms each
+    assert np.ptp(windows) >= 3                                          # it drifts (held still: under 1 cent)
+    assert np.abs(cents).max() <= sing.DRIFT_CENTS + sing.OWN_INTONATION_MAX + 5   # never off the note (5: measuring)
+
+
+def test_the_voices_own_intonation_rides_on_the_note():
+    flat = sing.sing(sing.analyse(syllables(1), SR), (Note(0.3, 1.4, 50),), vibrato=False)
+    lively = sing.sing(sing.analyse(syllables(1, wobble=50), SR), (Note(0.3, 1.4, 50),), vibrato=False)
+    assert np.std(semitones(lively, 0.4, 1.55, hz(50))) > 2 * np.std(semitones(flat, 0.4, 1.55, hz(50)))
+
+
+def test_without_vibrato_a_long_note_has_no_vibrato():
+    y = sing.sing(sing.analyse(syllables(1), SR), (Note(0.3, 1.4, 50),), vibrato=False)
+    assert np.std(semitones(y, 0.4, 1.2, hz(50))) < 0.1
+
+
+def crossings_per_second(curve):
+    rises = np.flatnonzero((curve[:-1] <= 0) & (curve[1:] > 0))
+    return len(rises) / (len(curve) * sing.FRAME), np.diff(rises)
+
+
+def test_each_note_has_its_own_vibrato_rate_and_depth():
+    rng = np.random.default_rng(3)
+    n = round(3.0 / sing.FRAME)
+    notes = [sing._vibrato(rng, n) for _ in range(6)]
+    rates = [crossings_per_second(v[round(sing.VIBRATO_START / sing.FRAME):])[0] for v in notes]
+    depths = [np.abs(v).max() for v in notes]
+    assert all(abs(r - sing.VIBRATO_HZ) <= sing.VIBRATO_HZ * (sing.VIBRATO_RATE_SPREAD + 0.5 * sing.VIBRATO_WOBBLE) + 0.3
+               for r in rates)
+    assert np.ptp(rates) > 0.5 and np.ptp(depths) > 0.03                  # never the same twice (wobble alone: < 0.5)
+    assert all(np.all(v[:round(sing.VIBRATO_START / sing.FRAME)] == 0) for v in notes)
+
+
+def test_a_notes_vibrato_wobbles_within_it():
+    v = sing._vibrato(np.random.default_rng(3), round(3.0 / sing.FRAME))
+    _, periods = crossings_per_second(v[round((sing.VIBRATO_START + sing.VIBRATO_RAMP) / sing.FRAME):])
+    peaks = [np.abs(v[i:i + 36]).max() for i in range(120, len(v) - 36, 36)]
+    assert np.ptp(periods) >= 2                                          # frames: its rate moves
+    assert np.ptp(peaks) > 0.02                                          # and its depth
+
+
+def own(f0, n=200):
+    voice = sing.Voice(SR, np.asarray(f0, dtype=float), np.zeros((len(f0), 3)), np.zeros((len(f0), 3)), (), np.ones(len(f0), bool))
+    return sing._own_intonation(voice, 0, len(f0), n)
+
+
+def test_a_syllables_overall_slope_is_not_its_intonation():
+    assert np.abs(own(np.geomspace(120, 130, 40))).max() < 1
+
+
+def test_a_syllables_wobble_is_kept_at_60_percent_within_20_cents():
+    t = np.arange(40) / 40
+    gentle = own(120 * 2 ** (10 * np.sin(2 * np.pi * 2 * t) / 1200))
+    wild = own(120 * 2 ** (200 * np.sin(2 * np.pi * 2 * t) / 1200))
+    assert 4 < np.abs(gentle).max() <= 0.6 * 10 + 1
+    assert np.abs(wild).max() == pytest.approx(sing.OWN_INTONATION_MAX)
+
+
+def test_a_one_frame_glitch_and_the_syllables_edges_are_ignored():
+    f0 = np.full(40, 120.0)
+    f0[20] = 200                                                          # harvest's one-frame mistake
+    f0[:4] = f0[-4:] = 90                                                 # where the vowel starts and ends
+    assert np.abs(own(f0)).max() < 1
 
 
 # ------------------------------------------------------------ register and level
