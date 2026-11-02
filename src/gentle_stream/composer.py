@@ -26,8 +26,6 @@ RHYTHMS = (((0, 1.5), (1.5, .5), (2, 2)), ((0.5, 1), (1.5, 1), (2.5, 1.5)), ((0,
 # (section, bars); the intro opens a piece, then the form loops for as long as the piece plays
 FIRST_FORM = (("intro", 4), ("A", 8), ("B", 8), ("A'", 8), ("breakdown", 4), ("B'", 8), ("release", 4))
 FORM = FIRST_FORM[1:]
-FIRST_FORM_LEN = sum(n for _, n in FIRST_FORM)
-FORM_LEN = sum(n for _, n in FORM)
 ENERGY = {"intro": .3, "A": .55, "B": .8, "A'": .62, "breakdown": .25, "B'": .95, "release": .4}
 MAIN = ("A", "B", "A'", "B'", "release")   # sections that carry the melody and close on the tonic
 COUNTER_ENERGY = 0.7
@@ -58,7 +56,7 @@ def _plays(lead_density: float) -> tuple[int, ...]:
     return (0, 1, 6, 7) if lead_density < 0.34 else (0, 1, 3, 4, 5, 7) if lead_density < 0.67 else tuple(range(8))
 
 
-SECTION_BARS = (4, 8)   # the melody is written in 4-bar phrases: a section holds one or two of them
+SECTION_BARS = (4, 8, 16)   # the melody is written in 4-bar phrases: a section holds one, two or four of them
 
 
 @dataclass(frozen=True)
@@ -76,6 +74,8 @@ class Profile:
     leap_chance: float = 0.18
     leap: int = 3
     span: int = 5
+    chords_per_bar: int = 1    # 2: the progression moves on beat 3 too, twice as fast
+    progressions: dict[str, tuple[tuple[int, ...], ...]] | None = None   # section B's choices per mode (None: shared)
 
     def __post_init__(self):
         for label, form in (("first_form", self.first_form), ("form", self.form)):
@@ -85,11 +85,16 @@ class Profile:
                 if name not in ENERGY:
                     raise ValueError(f"unknown section {name!r}: only {', '.join(ENERGY)}")
                 if bars not in SECTION_BARS:
-                    raise ValueError(f"section {name!r} must last 4 or 8 bars, not {bars}")
+                    raise ValueError(f"section {name!r} must last 4, 8 or 16 bars, not {bars}")
                 if name not in self.energy:
                     raise ValueError(f"energy has no value for {name!r}")
         if len(self.rhythms) < 2:
             raise ValueError("rhythms must offer at least two bars")
+        if self.chords_per_bar not in (1, 2):
+            raise ValueError("chords_per_bar must be 1 or 2")
+        for mode, progs in (self.progressions or {}).items():
+            if not progs or any(len(pr) < 2 or not all(1 <= d <= 7 for d in pr) for pr in progs):
+                raise ValueError(f"progressions for {mode!r} must be degrees 1 to 7, at least two per progression")
 
     @property
     def first_len(self) -> int:
@@ -278,7 +283,8 @@ class Composer:
     def _pick_b(self) -> tuple[int, ...]:
         """A contrasting progression of the same mode for section B; a fresh one every cycle."""
         a = self._degrees(self.style.progression, 6)
-        options = [p for p in PROGRESSIONS[self.style.mode] if self._degrees(p, 6) != a]
+        shared = PROGRESSIONS[self.style.mode]
+        options = [p for p in (self.profile.progressions or {}).get(self.style.mode, shared) if self._degrees(p, 6) != a]
         if len(options) > 1 and self.prog_b in options:
             options.remove(self.prog_b)
         if not options:
@@ -290,18 +296,23 @@ class Composer:
         prog = self.prog_b if name in ("B", "B'") else self.style.progression
         pre, dom = CADENCES[self.style.mode]
         raised = self.style.mode in RAISED
-        chords = [self._chord(d) for d in self._degrees(prog, n)]
         passing: list[Chord | None] = [None] * n
+        if self.profile.chords_per_bar == 2:   # two degrees a bar: the second one from beat 3
+            degrees = self._degrees(prog, 2 * n)
+            chords = [self._chord(d) for d in degrees[::2]]
+            passing = [self._chord(d) for d in degrees[1::2]]
+        else:
+            chords = [self._chord(d) for d in self._degrees(prog, n)]
         if name in MAIN:   # authentic cadence: (IV-)V-I, sometimes prepared by a secondary dominant
             if self.rng.random() < 0.5:
                 chords[-2], passing[-2] = self._chord(pre), self._chord(dom, raised)
             else:
-                chords[-2] = self._chord(dom, raised)
+                chords[-2], passing[-2] = self._chord(dom, raised), None
                 if self.rng.random() < 0.5:
                     passing[-3] = self._dominant7(self.scale_iv[dom - 1] + 7)
-            chords[-1] = self._chord(1)
+            chords[-1], passing[-1] = self._chord(1), None
         else:              # intro and breakdown end open, on the dominant
-            chords[-1] = self._chord(dom, raised)
+            chords[-1], passing[-1] = self._chord(dom, raised), None
         return chords, passing
 
     # ------------------------------------------------------------ form
@@ -392,15 +403,17 @@ class Composer:
         q, a, lift = DEVELOPMENT[name]
         if a is None:
             raise RuntimeError(f"missing answer transform for {name}")
-        phrases = ((0, q), (4, a)) if n == 8 else ((4, a),)
+        # (first phrase position, transform, index of the 8-bar group's first bar): a 4-bar section is a lone answer
+        phrases = (((4, a, start - 4),) if n == 4 else
+                   tuple((first, t, start + g) for g in range(0, n, 8) for first, t in ((0, q), (4, a))))
         tonic = (self.ton + key) % 12
         last = scale[self.anchor]
-        for first, transform in phrases:
+        for first, transform, base in phrases:
             line = transform(self.motif)
             body = (line, tuple((b, st - 1, ln) for b, st, ln in line if b < 4))   # bars 0-1, then a sequence
             for k in range(3):
                 pos = first + k
-                bar = self._bars[start + pos - (8 - n)]
+                bar = self._bars[base + pos]
                 src = body[0] if k < 2 else body[1]
                 notes = []
                 for beat, st, ln in src:
@@ -415,7 +428,7 @@ class Composer:
                 bar.melody, bar.phrase = tuple(notes), pos
             # phrase end: the question holds a non-tonic chord tone, the answer lands on the tonic
             pos = first + 3
-            bar = self._bars[start + pos - (8 - n)]
+            bar = self._bars[base + pos]
             pcs = self._tones(bar, 0)
             m = self._nearest(last, {tonic}) if first else self._nearest(last, pcs, avoid={tonic})
             bar.melody, bar.phrase = (Note(0, m, 4),), pos
@@ -436,7 +449,7 @@ class Composer:
             prev = (last.midi, self._sounding(start - 1, last.beat))
         for i in range(start, start + n):
             b = self._bars[i]
-            beats = ((0, 4),) if b.section_bar == n - 1 or b.section_bar == 3 else ((0, 2), (2, 2))
+            beats = ((0, 4),) if b.section_bar % 4 == 3 else ((0, 2), (2, 2))   # each 4-bar phrase ends held
             notes = []
             for beat, ln in beats:
                 cands = [m for m in range(lo, hi + 1) if m % 12 in self._tones(b, beat)]

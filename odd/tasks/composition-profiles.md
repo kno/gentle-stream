@@ -34,8 +34,8 @@ Each is registered, offered to the model, works on both backends and passes the 
 
 | Task | Specs | Route | Commit |
 | :--- | :--- | :--- | :--- |
-| T1 `Profile` with today's values; `BarPlan.section_len`/`next_section`; genres off `FIRST_FORM`; per-profile cycle clock; byte-identical | S2, S3 | inline | done (ba1b6a9) |
-| T2 Profile knobs that change writing: 16-bar sections, step/leap/range, rhythms, two chords per bar; tests | S2 | inline | pending |
+| T1 `Profile` with today's values; `BarPlan.section_len`/`next_section`; genres off `FIRST_FORM`; per-profile cycle clock; byte-identical | S2, S3 | inline | done (04f2f90) |
+| T2 Profile knobs that change writing: 16-bar sections, step/leap/range, rhythms, two chords per bar; tests | S2 | inline (worker unavailable: MODULE_NOT_FOUND) | done (T2 commit) |
 | T3 Profiles for the nine non-default genres; genre tests updated; README | S4 | inline | pending |
 | T4 `pop` genre, tests, README | S5 | inline | pending |
 | T5 `ballad` genre, tests, README | S5 | inline | pending |
