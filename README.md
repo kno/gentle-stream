@@ -9,7 +9,7 @@
 
 <p>
 <img src="https://img.shields.io/badge/Python-3.13-F095C8?style=for-the-badge&labelColor=1A1218" alt="Python 3.13">
-<img src="https://img.shields.io/badge/genres-10-F095C8?style=for-the-badge&labelColor=1A1218" alt="10 genres">
+<img src="https://img.shields.io/badge/genres-11-F095C8?style=for-the-badge&labelColor=1A1218" alt="11 genres">
 <img src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux-D7A0B8?style=for-the-badge&labelColor=1A1218" alt="Platform: macOS · Linux">
 <a href="LICENSE"><img src="https://img.shields.io/badge/MIT-D7A0B8?style=for-the-badge&labelColor=1A1218" alt="License: MIT"></a>
 </p>
@@ -51,9 +51,9 @@ A composer plans every piece with its genre's **song form** (lo-fi's is intro �
 
 ---
 
-### Six genres — Lo-fi by default
+### Eleven genres — Lo-fi by default
 
-Lo-fi, ambient, chiptune, synthwave, jazz, rock/metal, electro, electro house, cumbia and dubstep. The model picks the genre from your mood, or you name it (*"jazz for a rainy night"*). Each genre has its own voices, rhythmic treatment, drum patterns and master chain, and they all share the same composer. See [Genres](#genres).
+Lo-fi, ambient, chiptune, synthwave, jazz, rock/metal, electro, electro house, cumbia, dubstep and pop. The model picks the genre from your mood, or you name it (*"jazz for a rainy night"*). Each genre has its own voices, rhythmic treatment, drum patterns and master chain, and composes its own way: its own song form and melodic character. See [Genres](#genres).
 
 ---
 
@@ -604,6 +604,7 @@ The genre is part of the style: it shows on the details line, survives `n` and i
 | `electro` | Classic electro-funk: syncopated 808 breakbeats (never four-on-the-floor), funky 16th synth bass, robotic square riffs and arpeggios, cowbell; tight and dry | 100–130 bpm | The real TR-808 kit, Saw/Square Lead, Synth Bass, Synth Strings |
 | `electrohouse` | Four-on-the-floor kick, clap on 2 and 4, off-beat open hats, dirty distorted bass riffs, sidechain-pumped supersaws, risers and snare rolls into drops | 124–132 bpm | Electronic kit, Saw Lead, Polysynth; the dirty bass stays synthesized |
 | `cumbia` | Guacharaca "ch-chik", tambora and congas, root-fifth bass with pickups, off-beat keyboards, accordion lead (digital-cumbia synth when bright) | 85–110 bpm | Guiro, congas, maracas, cabasa, timbales, Finger Bass, Accordion, Tango Accordion, Drawbar Organ |
+| `pop` | Bright piano or keys, block chords on every beat in the chorus, backbeat (kick 1 and 3, snare and clap 2 and 4), eighth hats, driving eighth-note bass in the chorus, a snare fill into each chorus, clean bright master | 90–128 bpm | FluidR3_GM keys, Finger Bass and the Standard kit |
 | `dubstep` | 140 bpm half-time drums, deep sine sub, LFO wobble bass synced to 1/4–1/16 and triplets, growls, risers and drops | 136–140 bpm | Power and Standard kit drums; sub, wobble, growl and risers stay synthesized |
 
 `rock` covers metal too: with busy drums at energy 0.7 or more it switches to 16th-note chugs and gallops, double kick and china accents.
@@ -622,6 +623,7 @@ Each genre also composes its own way, through a composition profile (`composer.P
 | `electrohouse` | intro 16, A 8, drop B 16, breakdown 8, A' 8, drop B' 16, release 8 | short stabs |
 | `cumbia` | intro 4, verse and chorus twice each, breakdown 4, B' 8, release 4 | anticipated, step-wise |
 | `dubstep` | intro 8, build A 8, drop B 16, breakdown 8, drop B' 16, release 8 | sparse long notes |
+| `pop` | intro 4, verse, chorus, verse, chorus, an 8-bar instrumental bridge, the chorus twice, release 4 | a catchy hook: the chorus repeats note for note, doubled an octave up |
 
 Later cycles repeat the form without the intro. Fills, builds and drops land on the last bars of their sections whatever their length, and the TUI's cycle time follows the playing genre's form.
 

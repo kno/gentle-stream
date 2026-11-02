@@ -37,7 +37,7 @@ Each is registered, offered to the model, works on both backends and passes the 
 | T1 `Profile` with today's values; `BarPlan.section_len`/`next_section`; genres off `FIRST_FORM`; per-profile cycle clock; byte-identical | S2, S3 | inline | done (04f2f90) |
 | T2 Profile knobs that change writing: 16-bar sections, step/leap/range, rhythms, two chords per bar; tests | S2 | inline (worker unavailable: MODULE_NOT_FOUND) | done (T2 commit) |
 | T3 Profiles for the nine non-default genres; genre tests updated; README | S4 | inline | done (T3 commit) |
-| T4 `pop` genre, tests, README | S5 | inline | pending |
+| T4 `pop` genre, tests, README | S5 | inline | done (T4 commit) |
 | T5 `ballad` genre, tests, README | S5 | inline | pending |
 | T6 `heavy` genre, tests, README | S5 | inline | pending |
 
@@ -53,3 +53,8 @@ genres changed audio. Found and fixed: a release longer than 4 bars had no quest
 answers in every phrase; ambient's one-note bar rhythms made `next` reuse a motif head, replaced by two-note bars.
 The live-glide golden hashes of the nine changed genres were recaptured; `test_next_still_starts_a_fresh_motif`
 now checks five seeds (a carried head never changes; a fresh one may match by chance).
+
+**L4** — Full suite after T4: 1752 passed, 1 failed: `test_vocals.py::test_the_sampled_choir_matches_the_procedural_level_within_3_db[ambient-melody]`
+(3.07 dB > 3). Cause found: the sampled "ooh" choir in ambient's intro is ~5 dB under the procedural one in every mode,
+already at the base commit (-5.18 dB); the 8-bar intro of ambient's T3 profile weighs it more in the test's 12-bar
+window. A per-vowel reference does not explain it (procedural "o" is only 0.9 dB under "a"). Pending decision.
