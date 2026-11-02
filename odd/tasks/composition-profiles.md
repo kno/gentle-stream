@@ -39,7 +39,7 @@ Each is registered, offered to the model, works on both backends and passes the 
 | T3 Profiles for the nine non-default genres; genre tests updated; README | S4 | inline | done (T3 commit) |
 | T4 `pop` genre, tests, README | S5 | inline | done (T4 commit) |
 | T5 `ballad` genre (and the profile's `lift_chance`/`lift_at`), tests, README | S5 | inline | done (T5 commit) |
-| T6 `heavy` genre, tests, README | S5 | inline | pending |
+| T6 `heavy` genre, tests, README | S5 | inline | done (T6 commit) |
 
 ## Log
 

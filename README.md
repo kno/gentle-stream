@@ -9,7 +9,7 @@
 
 <p>
 <img src="https://img.shields.io/badge/Python-3.13-F095C8?style=for-the-badge&labelColor=1A1218" alt="Python 3.13">
-<img src="https://img.shields.io/badge/genres-12-F095C8?style=for-the-badge&labelColor=1A1218" alt="12 genres">
+<img src="https://img.shields.io/badge/genres-13-F095C8?style=for-the-badge&labelColor=1A1218" alt="13 genres">
 <img src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux-D7A0B8?style=for-the-badge&labelColor=1A1218" alt="Platform: macOS · Linux">
 <a href="LICENSE"><img src="https://img.shields.io/badge/MIT-D7A0B8?style=for-the-badge&labelColor=1A1218" alt="License: MIT"></a>
 </p>
@@ -51,9 +51,9 @@ A composer plans every piece with its genre's **song form** (lo-fi's is intro �
 
 ---
 
-### Twelve genres — Lo-fi by default
+### Thirteen genres — Lo-fi by default
 
-Lo-fi, ambient, chiptune, synthwave, jazz, rock/metal, electro, electro house, cumbia, dubstep, pop and ballad. The model picks the genre from your mood, or you name it (*"jazz for a rainy night"*). Each genre has its own voices, rhythmic treatment, drum patterns and master chain, and composes its own way: its own song form and melodic character. See [Genres](#genres).
+Lo-fi, ambient, chiptune, synthwave, jazz, rock/metal, electro, electro house, cumbia, dubstep, pop, ballad and heavy. The model picks the genre from your mood, or you name it (*"jazz for a rainy night"*). Each genre has its own voices, rhythmic treatment, drum patterns and master chain, and composes its own way: its own song form and melodic character. See [Genres](#genres).
 
 ---
 
@@ -606,9 +606,10 @@ The genre is part of the style: it shows on the details line, survives `n` and i
 | `cumbia` | Guacharaca "ch-chik", tambora and congas, root-fifth bass with pickups, off-beat keyboards, accordion lead (digital-cumbia synth when bright) | 85–110 bpm | Guiro, congas, maracas, cabasa, timbales, Finger Bass, Accordion, Tango Accordion, Drawbar Organ |
 | `pop` | Bright piano or keys, block chords on every beat in the chorus, backbeat (kick 1 and 3, snare and clap 2 and 4), eighth hats, driving eighth-note bass in the chorus, a snare fill into each chorus, clean bright master | 90–128 bpm | FluidR3_GM keys, Finger Bass and the Standard kit |
 | `ballad` | Broken-chord piano verses with no drums; choruses with block chords, a string section and soft drums (kick on 1, side-stick on 3, quarter hats); held bass; a crash opens the last chorus; spacious, clean master | 56–84 bpm | FluidR3_GM keys, String Ensemble, Acoustic Bass and the Standard kit; the warm pad stands in for the strings without samples |
+| `heavy` | rock's guitars, bass and kit always in their metal flavor: sixteenth-note chugs and gallops, double kick, china accents, the harder master, at any energy | 100–140 bpm | As `rock` |
 | `dubstep` | 140 bpm half-time drums, deep sine sub, LFO wobble bass synced to 1/4–1/16 and triplets, growls, risers and drops | 136–140 bpm | Power and Standard kit drums; sub, wobble, growl and risers stay synthesized |
 
-`rock` covers metal too: with busy drums at energy 0.7 or more it switches to 16th-note chugs and gallops, double kick and china accents.
+`rock` covers metal too: with busy drums at energy 0.7 or more it switches to 16th-note chugs and gallops, double kick and china accents. `heavy` is metal at any energy and drum level, and composes from riffs.
 
 Each genre also composes its own way, through a composition profile (`composer.Profile`): the form, each section's energy, the bar rhythms its motifs are built from and the melody's character (how it steps, how often and how far it leaps, how far it wanders). The harmony rules, the motif development, the counter-melody and the bass are shared.
 
@@ -626,6 +627,7 @@ Each genre also composes its own way, through a composition profile (`composer.P
 | `dubstep` | intro 8, build A 8, drop B 16, breakdown 8, drop B' 16, release 8 | sparse long notes |
 | `pop` | intro 4, verse, chorus, verse, chorus, an 8-bar instrumental bridge, the chorus twice, release 4 | a catchy hook: the chorus repeats note for note, doubled an octave up |
 | `ballad` | intro 4, two verses, chorus, a 4-bar break, a last chorus a step or two higher (always), release 8 | long notes and expressive leaps; two chords a bar |
+| `heavy` | a riff intro 8, verse and chorus twice, an 8-bar breakdown, a 16-bar last chorus, release 4 | riffs: a few notes hammered in eighths and sixteenths |
 
 A profile also decides how often a cycle lifts the key and in which sections (by default half the cycles, in A' or B'; the ballad always lifts its last chorus). Later cycles repeat the form without the intro. Fills, builds and drops land on the last bars of their sections whatever their length, and the TUI's cycle time follows the playing genre's form.
 

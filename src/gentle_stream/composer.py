@@ -288,7 +288,8 @@ class Composer:
         """A contrasting progression of the same mode for section B; a fresh one every cycle."""
         a = self._degrees(self.style.progression, 6)
         shared = PROGRESSIONS[self.style.mode]
-        options = [p for p in (self.profile.progressions or {}).get(self.style.mode, shared) if self._degrees(p, 6) != a]
+        pool = (self.profile.progressions or {}).get(self.style.mode) or shared
+        options = [p for p in pool if self._degrees(p, 6) != a]
         if len(options) > 1 and self.prog_b in options:
             options.remove(self.prog_b)
         if not options:
