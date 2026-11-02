@@ -21,13 +21,11 @@ from typing import cast
 
 import numpy as np
 
-from ..composer import FIRST_FORM
 from ..samples import Hit, Program
 from ..synth import SR, adsr, bp, distort, hp, lp, mtof, osc
 from .base import Genre, Master
 from .lofi import Instruments as LofiInstruments
 
-SECTION_BARS = dict(FIRST_FORM)
 # rhythm guitar over a bar of 16ths: "m" palm-muted chug, "o" open accent (rings to the next hit), "." rest
 ROCK_PATTERNS = ("m.m.m.m.m.m.m.m.", "m.m.m.o...m.m.m.", "m.m.m.m.o...m.m.", "m.m.o.m.m.m.o.m.")
 METAL_PATTERNS = ("m.mmm.mmm.mmm.mm", "mmmmmmmmmmmmmmmm", "m.mmm.mmmmm.m.mm")
@@ -368,7 +366,7 @@ class RockGenre(Genre):
     def _drums(self, piece, p, metal, B):
         ins, add, rng, e = piece.inst, piece.add, piece.rng, p.energy
         dg = 0.75 + 0.35 * e
-        last = p.section_bar == SECTION_BARS.get(p.section, 4) - 1 and e >= 0.5
+        last = p.section_bar == p.section_len - 1 and e >= 0.5
         big = p.section.startswith("B")
         if p.section_bar == 0:
             add(ins.crash(), 0.0, 0.35, 0.5 * dg)

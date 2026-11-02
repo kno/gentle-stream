@@ -52,7 +52,7 @@ class _Recorder(Piece):
 
 
 def _plan(energy=0.85, layers=FULL, section="B", passing=None, bass=None):
-    return BarPlan(bar=13, section=section, section_bar=1, energy=energy, chord=Chord(1, (0, 3, 7, 10)),
+    return BarPlan(bar=13, section=section, section_bar=1, section_len=8, next_section="A", energy=energy, chord=Chord(1, (0, 3, 7, 10)),
                    passing=passing, key_offset=0, layers=layers,
                    melody=(Note(0, 74, 1.5), Note(1.5, 77, 0.5), Note(2, 76, 2)),
                    counter=(Note(0, 65, 2), Note(2, 62, 2)),

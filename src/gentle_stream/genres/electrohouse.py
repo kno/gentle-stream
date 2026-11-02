@@ -25,7 +25,6 @@ from typing import cast
 
 import numpy as np
 
-from ..composer import FIRST_FORM, FORM
 from ..samples import Hit, Program
 from ..synth import SR, adsr, bp, distort, hp, lp, mtof, osc
 from .base import Genre, Master
@@ -390,22 +389,11 @@ class SampledVoices:
         return self.s.hit(self.drums["crash"], g)
 
 
-def _section_lengths() -> tuple[dict[str, int], dict[str, str]]:
-    """Bars per section and the section that follows each one, from the composer's form."""
-    lengths = dict(FIRST_FORM)
-    nxt = {name: FORM[(i + 1) % len(FORM)][0] for i, (name, _) in enumerate(FORM)}
-    nxt[FIRST_FORM[0][0]] = FIRST_FORM[1][0]
-    return lengths, nxt
-
-
-LENGTHS, NEXT = _section_lengths()
-
-
 def build_bar(p) -> int | None:
     """0 or 1 for the two bars that build into a drop, otherwise None."""
-    if NEXT.get(p.section) not in STRONG:
+    if p.next_section not in STRONG:
         return None
-    i = p.section_bar - (LENGTHS[p.section] - BUILD_BARS)
+    i = p.section_bar - (p.section_len - BUILD_BARS)
     return i if 0 <= i < BUILD_BARS else None
 
 

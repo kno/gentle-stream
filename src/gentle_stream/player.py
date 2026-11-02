@@ -15,8 +15,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from . import genres
 from .binaural import Binaural
-from .composer import cycle_position
 from .engine import Engine
 from .journey import Journey, JourneySnapshot
 from .recorder import Recorder, RecordError
@@ -558,7 +558,7 @@ class Player:
     @property
     def cycle_remaining_seconds(self) -> float:
         """Seconds left in the song-form cycle playing now, before it loops with fresh variation."""
-        cycle_bar, cycle_len = cycle_position(self.now.bar)
+        cycle_bar, cycle_len = genres.get(self.now.style.genre).profile.cycle_position(self.now.bar)
         return (cycle_len - cycle_bar) * (240.0 / self.now.style.bpm) - self._offset / self.engine.sr
 
     @property

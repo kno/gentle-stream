@@ -478,7 +478,8 @@ class Engine:
         inst = genre.instruments(rng, self.sr, self._sampled)
         ton = 48 + KEYS.index(style.key)
         ton = ton - 12 if ton > 54 else ton
-        composer = Composer(style, seed, ton, genre.chord, skip_intro=skip_intro, motif=motif, tempo_ratio=tempo_ratio)
+        composer = Composer(style, seed, ton, genre.chord, skip_intro=skip_intro, motif=motif, tempo_ratio=tempo_ratio,
+                            profile=genre.profile)
         piece = Piece(style, rng, inst, ton, self.sr, acc)
         genre.start(piece)
         return _Voice(style, genre, seed, rng, inst, ton, composer, piece, acc)

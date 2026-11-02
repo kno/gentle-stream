@@ -24,7 +24,6 @@ from typing import cast
 import numpy as np
 from scipy.signal import sosfilt
 
-from ..composer import FIRST_FORM
 from ..samples import Hit, Program
 from ..synth import SR, adsr, bp, distort, hp, lp, mtof, osc
 from .base import Genre, Master
@@ -32,8 +31,6 @@ from .base import Genre, Master
 DUR_STEP = 0.05
 DROP_ENERGY = 0.7          # B/B' at or above this energy drop the full wobble
 DROPS = ("B", "B'")
-LENGTHS = dict(FIRST_FORM)
-BUILD_BEFORE = {"A": "B", "breakdown": "B'"}   # sections whose last bar builds into a drop
 # LFO periods in beats, all dividing a half bar: 1/4, 1/8, 1/16, 1/8 triplet, 1/4 triplet
 QUARTER, EIGHTH, SIXTEENTH, TRIPLET8, TRIPLET4 = 1.0, 0.5, 0.25, 1 / 3, 2 / 3
 DROP_RATES = (QUARTER, EIGHTH, EIGHTH, SIXTEENTH, TRIPLET8, TRIPLET4)
@@ -350,7 +347,7 @@ class DubstepGenre(Genre):
         e, k = p.energy, p.key_offset
         drop = p.section in DROPS and e >= DROP_ENERGY
         quiet = p.section in ("intro", "breakdown")
-        build = p.section in BUILD_BEFORE and p.section_bar == LENGTHS[p.section] - 1
+        build = p.next_section in DROPS and p.section_bar == p.section_len - 1   # the last bar before a drop builds
 
         # dark pad: the chord as root plus voice-led upper tones (loud when sparse, a bed under the drop)
         segments = [(p.chord, 0.0, 4.0 if p.passing is None else 2.0)]

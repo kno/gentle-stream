@@ -18,14 +18,12 @@ from typing import cast
 
 import numpy as np
 
-from ..composer import FIRST_FORM
 from ..samples import Hit, Program, reference_rms
 from ..style import MODES
 from ..synth import SR, adsr, bp, hp, lp, mtof, osc
 from .base import Genre, Master
 from .lofi import Instruments
 
-SECTION_BARS = dict(FIRST_FORM)
 # comping rhythms: (beat, swung off-beat?, length in beats); the off-beat lands on the swing position
 CALM = (((0, 0, 1.4), (1, 1, 1.0)),                      # Charleston
         ((0, 1, 1.0), (2, 0, 1.4)),                      # reverse Charleston
@@ -385,7 +383,7 @@ class JazzGenre(Genre):
                 add(ins.ride(vel), beat * B, 0.35, 0.17 * dg)
             if e >= 0.6 and rng.random() < 0.5:                  # a snare "drop" on a swung off-beat
                 add(ins.tap(0.55), (int(rng.integers(4)) + S) * B, 0.1, 0.11 * dg)
-        if e >= 0.5 and p.section_bar == SECTION_BARS[p.section] - 1:   # a triplet pickup into the next section
+        if e >= 0.5 and p.section_bar == p.section_len - 1:   # a triplet pickup into the next section
             for j in (1, 2):
                 add(ins.tap(0.5 + 0.15 * j), (3 + j / 3) * B, 0.1, 0.12 * dg)
 

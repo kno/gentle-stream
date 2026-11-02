@@ -8,13 +8,14 @@ seed: it owns its random generator and never touches the audio one. Energy, the 
 lead plays are decided from `style` when a bar is planned (`plan`), not when its cycle is, so a live glide of
 `energy` or `lead_density` reaches the cycle already playing; none of them draws randomness, so a constant style
 plans exactly what it always did. A genre may reshape the diatonic chords
-through `chord_hook` (see `genres.base.Genre.chord`); everything else is shared by every genre.
+through `chord_hook` (see `genres.base.Genre.chord`) and composes with its own `Profile`: the form, the sections'
+energy and the melody's character. The rest (harmony rules, motif development, counter-melody, bass) is shared.
 """
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
-from typing import Callable
+from collections.abc import Callable
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -57,12 +58,61 @@ def _plays(lead_density: float) -> tuple[int, ...]:
     return (0, 1, 6, 7) if lead_density < 0.34 else (0, 1, 3, 4, 5, 7) if lead_density < 0.67 else tuple(range(8))
 
 
-def cycle_position(bar: int) -> tuple[int, int]:
-    """`bar`'s position within its song-form cycle, and that cycle's length in bars (the stream is endless, so
-    the form loops: the first cycle carries the intro, every later one is shorter)."""
-    if bar < FIRST_FORM_LEN:
-        return bar, FIRST_FORM_LEN
-    return (bar - FIRST_FORM_LEN) % FORM_LEN, FORM_LEN
+SECTION_BARS = (4, 8)   # the melody is written in 4-bar phrases: a section holds one or two of them
+
+
+@dataclass(frozen=True)
+class Profile:
+    """How a genre composes: the form of the first cycle and of every later one (sections from `ENERGY`), each
+    section's energy before the style scales it, the motif's bar rhythms ((beat, length) notes) and the melody's
+    character: the scale steps it moves by (drawn uniformly, so repeats weigh more), the chance and size of its one
+    leap up per motif, and how far it may wander from its anchor, in scale steps. The defaults are lo-fi's."""
+
+    first_form: tuple[tuple[str, int], ...] = FIRST_FORM
+    form: tuple[tuple[str, int], ...] = FORM
+    energy: dict[str, float] = field(default_factory=lambda: dict(ENERGY))
+    rhythms: tuple[tuple[tuple[float, float], ...], ...] = RHYTHMS
+    steps: tuple[int, ...] = (-1, -1, -2, 1, 0)
+    leap_chance: float = 0.18
+    leap: int = 3
+    span: int = 5
+
+    def __post_init__(self):
+        for label, form in (("first_form", self.first_form), ("form", self.form)):
+            if not form:
+                raise ValueError(f"{label} must have at least one section")
+            for name, bars in form:
+                if name not in ENERGY:
+                    raise ValueError(f"unknown section {name!r}: only {', '.join(ENERGY)}")
+                if bars not in SECTION_BARS:
+                    raise ValueError(f"section {name!r} must last 4 or 8 bars, not {bars}")
+                if name not in self.energy:
+                    raise ValueError(f"energy has no value for {name!r}")
+        if len(self.rhythms) < 2:
+            raise ValueError("rhythms must offer at least two bars")
+
+    @property
+    def first_len(self) -> int:
+        return sum(n for _, n in self.first_form)
+
+    @property
+    def form_len(self) -> int:
+        return sum(n for _, n in self.form)
+
+    def cycle_position(self, bar: int) -> tuple[int, int]:
+        """`bar`'s position within its song-form cycle, and that cycle's length in bars (the stream is endless, so
+        the form loops: the first cycle carries the intro, every later one plays `form`)."""
+        if bar < self.first_len:
+            return bar, self.first_len
+        return (bar - self.first_len) % self.form_len, self.form_len
+
+
+DEFAULT_PROFILE = Profile()
+
+
+def cycle_position(bar: int, profile: Profile | None = None) -> tuple[int, int]:
+    """`Profile.cycle_position` of `profile` (the default form when None)."""
+    return (profile or DEFAULT_PROFILE).cycle_position(bar)
 
 
 @dataclass(frozen=True)
@@ -83,6 +133,8 @@ class BarPlan:
     bar: int
     section: str
     section_bar: int
+    section_len: int         # bars in this section
+    next_section: str        # the section that follows it (the loop's first after a cycle's last)
     energy: float
     chord: Chord
     passing: Chord | None    # replaces `chord` from beat 3 (0-based beat 2) on
@@ -127,6 +179,8 @@ DEVELOPMENT = {
 class _Bar:
     section: str
     section_bar: int
+    section_len: int
+    next_section: str
     base: float              # the section's energy before the style scales it (see `plan`)
     chord: Chord
     passing: Chord | None = None
@@ -141,11 +195,14 @@ class _Bar:
 class Composer:
     def __init__(self, style: Style, seed: int, ton: int,
                  chord_hook: Callable[[Chord, tuple[int, ...]], Chord] | None = None,
-                 skip_intro: bool = False, motif: tuple | None = None, tempo_ratio: float = 1.0):
+                 skip_intro: bool = False, motif: tuple | None = None, tempo_ratio: float = 1.0,
+                 profile: Profile | None = None):
         """`motif` is the head of the previous piece's motif (`head`), carried across a genre step: it opens this
         piece's motif, in scale steps, so it sounds in the new key; at a new tempo more than AUGMENT_RATIO times
-        faster it is augmented (twice as long). Without it the piece invents its own."""
+        faster it is augmented (twice as long). Without it the piece invents its own. `profile` is the genre's way of
+        composing (the default one when None)."""
         self.style, self.ton = style, ton
+        self.profile = profile or DEFAULT_PROFILE
         self.chord_hook = chord_hook
         self.skip_intro = skip_intro
         self.rng = np.random.default_rng([seed, 0xC0])
@@ -177,7 +234,8 @@ class Composer:
         counter = b.counter if s.lead != "none" and energy >= COUNTER_ENERGY else ()
         if counter:
             layers.add("counter")
-        return BarPlan(bar, b.section, b.section_bar, energy, b.chord, b.passing, b.key_offset,
+        return BarPlan(bar, b.section, b.section_bar, b.section_len, b.next_section, energy, b.chord, b.passing,
+                       b.key_offset,
                        frozenset(layers), b.melody, counter, self._bass(bar, b, nxt, energy))
 
     def pivot(self, bar: int, semitones: int) -> None:
@@ -248,7 +306,8 @@ class Composer:
 
     # ------------------------------------------------------------ form
     def _plan_cycle(self) -> None:
-        form = FORM if self.skip_intro and self.cycle == 0 else (FIRST_FORM if self.cycle == 0 else FORM)
+        pr = self.profile
+        form = pr.form if self.skip_intro and self.cycle == 0 else (pr.first_form if self.cycle == 0 else pr.form)
         if self.cycle > 0:
             self.motif = self._develop(self.motif)
         self.prog_b = self._pick_b()
@@ -256,15 +315,16 @@ class Composer:
         if self.rng.random() < LIFT_CHANCE:
             lift_at = ("A'", "B'")[int(self.rng.integers(2))]
             lift = int(self.rng.choice([1, 2]))
-        for name, n in form:
-            linked = self._energy(ENERGY[name]) >= COUNTER_ENERGY
+        for k, (name, n) in enumerate(form):
+            nxt = form[k + 1][0] if k + 1 < len(form) else pr.form[0][0]
+            linked = self._energy(pr.energy[name]) >= COUNTER_ENERGY
             chords, passing = self._harmony(name, n)
             key = lift if name == lift_at else 0
             if key and self._bars:   # pivot: the dominant of the new key on the last beats before the lift
                 self._bars[-1].passing = self._dominant7(7 + key)
             start = len(self._bars)
             for i in range(n):
-                self._bars.append(_Bar(name, i, ENERGY[name], chords[i], passing[i], key, linked=linked,
+                self._bars.append(_Bar(name, i, n, nxt, pr.energy[name], chords[i], passing[i], key, linked=linked,
                                        approach=float(self.rng.random())))
             if name in MAIN:   # the counter-melody is planned for every main section; `plan` turns it on
                 self._melody(start, name, n, key)
@@ -274,18 +334,19 @@ class Composer:
     # ------------------------------------------------------------ melody
     def _make_motif(self):
         """Two bars of (beat, scale step, length): steps mostly down, at most one leap up."""
-        r1, r2 = (RHYTHMS[i] for i in self.rng.choice(len(RHYTHMS), 2, replace=False))
+        rhythms = self.profile.rhythms
+        r1, r2 = (rhythms[i] for i in self.rng.choice(len(rhythms), 2, replace=False))
         return self._line(((0, r1), (1, r2)), 0)
 
     def _line(self, bars, step):
-        out, leap = [], False
+        pr, out, leap = self.profile, [], False
         for bar, rh in bars:
             for beat, ln in rh:
                 out.append((bar * 4 + beat, step, ln))
-                d = int(self.rng.choice([-1, -1, -2, 1, 0]))
-                if not leap and self.rng.random() < 0.18:
-                    d, leap = 3, True
-                step = int(np.clip(step + d, -5, 5))
+                d = int(self.rng.choice(pr.steps))
+                if not leap and self.rng.random() < pr.leap_chance:
+                    d, leap = pr.leap, True
+                step = int(np.clip(step + d, -pr.span, pr.span))
         return tuple(out)
 
     @property

@@ -1,7 +1,8 @@
 """The genre plugin interface.
 
 The composer (`composer.Composer`) decides WHAT plays in every bar: song form, harmony, melody, counter-melody and
-bass line, shared by every genre. A `Genre` decides how it sounds: which voices play each part (procedural, or
+bass line. A genre shapes that writing through its `profile` (`composer.Profile`: the form, the sections' energy,
+the melody's character); the rules are shared by every genre. A `Genre` decides how it sounds: which voices play each part (procedural, or
 FluidR3_GM programs and drum kits when the samples backend is available), the rhythmic treatment of the chords
 (sustained, comped, arpeggiated, strummed...), the drum pattern for each section's energy, and the master chain.
 It also describes itself to the language model (description, tempo and mode hints, what the four shared
@@ -17,6 +18,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+from ..composer import DEFAULT_PROFILE, Profile
 
 if TYPE_CHECKING:
     from ..composer import BarPlan, Chord
@@ -79,6 +82,7 @@ class Genre:
     bpm: tuple[int, int] = (60, 90)             # typical tempo range (inside Style's 50-140)
     modes: tuple[str, ...] = ("minor",)         # modes that suit the genre, most typical first
     voices: dict[str, str] = {}                 # Style.chords/lead name -> what it sounds like in this genre
+    profile: Profile = DEFAULT_PROFILE          # how the composer writes for it (form, energy, melody)
 
     def instruments(self, rng: np.random.Generator, sr: int, sampled: SampleInstruments | None) -> Any:
         """The voices for a new piece: any object `schedule` knows how to play. `sampled` is the engine's shared
@@ -97,7 +101,7 @@ class Genre:
     def schedule(self, piece: Piece, plan: BarPlan) -> None:
         """Schedule one bar with `piece.add`: chords, bass, drums (when "drums" in plan.layers), lead (when
         "lead" in plan.layers) and counter (when "counter" in plan.layers). Times are seconds from the bar start;
-        a beat is 60 / piece.style.bpm seconds. Melody, counter and bass notes are MIDI numbers that already
+        a beat is 60 / piece.style.bpm seconds. Section lengths come from plan.section_len (the profile's form). Melody, counter and bass notes are MIDI numbers that already
         include plan.key_offset; chord tones are semitones above `piece.ton` and do not (add it, then `voice`)."""
         raise NotImplementedError
 

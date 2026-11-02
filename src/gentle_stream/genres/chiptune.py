@@ -16,14 +16,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..composer import FIRST_FORM
 from ..synth import SR, adsr, hp, lp, mtof, osc
 from .base import Genre, Master
 
 DUTY = {"piano": 0.5, "rhodes": 0.25, "nylon": 0.125, "pad": 0.25}   # Style.chords/lead -> pulse width
 ARP_SHAPES = ((0, 1, 2, 3), (0, 1, 2, 3, 2, 1), (0, 2, 1, 3), (3, 2, 1, 0))   # indexes into the 4-note pool
 KICK_PATTERNS = ((0, 2), (0, 2.5), (0, 1.5, 2), (0, 0.75, 2))
-SECTION_BARS = dict(FIRST_FORM)
 RAMP = 0.002   # seconds of de-click at the start and end of every tone
 MIX = 1.6      # channel gains below are relative; this sets the level against the lo-fi reference
 
@@ -195,7 +193,7 @@ class ChiptuneGenre(Genre):
                 add(ins.kick(), kb * B, 0, 0.22 * dg)
             if busy:
                 add(ins.kick(), 3.5 * B, 0, 0.16 * dg)
-            fill = full and s.drums != "soft" and p.section_bar == SECTION_BARS.get(p.section, 0) - 1
+            fill = full and s.drums != "soft" and p.section_bar == p.section_len - 1
             for sb in ((1, 3) if full else (2,)):
                 if not (fill and sb == 3):
                     add(ins.snare(), sb * B, 0.1, 0.20 * dg)
