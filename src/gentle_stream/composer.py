@@ -76,6 +76,8 @@ class Profile:
     span: int = 5
     chords_per_bar: int = 1    # 2: the progression moves on beat 3 too, twice as fast
     progressions: dict[str, tuple[tuple[int, ...], ...]] | None = None   # section B's choices per mode (None: shared)
+    lift_chance: float = LIFT_CHANCE   # how often a cycle lifts the key, on one of `lift_at` (absent ones never lift)
+    lift_at: tuple[str, ...] = ("A'", "B'")
 
     def __post_init__(self):
         for label, form in (("first_form", self.first_form), ("form", self.form)):
@@ -90,6 +92,8 @@ class Profile:
                     raise ValueError(f"energy has no value for {name!r}")
         if len(self.rhythms) < 2:
             raise ValueError("rhythms must offer at least two bars")
+        if not self.lift_at:
+            raise ValueError("lift_at must name at least one section")
         if self.chords_per_bar not in (1, 2):
             raise ValueError("chords_per_bar must be 1 or 2")
         for mode, progs in (self.progressions or {}).items():
@@ -323,8 +327,8 @@ class Composer:
             self.motif = self._develop(self.motif)
         self.prog_b = self._pick_b()
         lift_at, lift = None, 0
-        if self.rng.random() < LIFT_CHANCE:
-            lift_at = ("A'", "B'")[int(self.rng.integers(2))]
+        if self.rng.random() < pr.lift_chance:
+            lift_at = pr.lift_at[int(self.rng.integers(len(pr.lift_at)))]
             lift = int(self.rng.choice([1, 2]))
         for k, (name, n) in enumerate(form):
             nxt = form[k + 1][0] if k + 1 < len(form) else pr.form[0][0]

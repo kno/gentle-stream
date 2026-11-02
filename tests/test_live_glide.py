@@ -5,7 +5,7 @@ The golden hashes were captured once from the base commit f4ffaea (before any li
 checkout: 120 bars per genre, seed 2026, procedural instruments, sha256 over the float32 bytes of every bar. They
 are constants here on purpose; tests never read git history. Every genre but lo-fi was captured again once its own
 composition profile changed how it composes (feat/composition-profiles); lo-fi keeps the default profile and its
-original hashes. Genres added later (pop) were captured when they were added.
+original hashes. Genres added later (pop, ballad) were captured when they were added.
 """
 import hashlib
 
@@ -34,6 +34,7 @@ GOLDEN = {
     ("default", "cumbia"): "e3d4a5a2f9276d2206f3a4a36b9f2e85801b4b86182db3260cce0d2e77187bc5",
     ("default", "dubstep"): "4cfc5ac6524552c2774433bdcd639ff732763cb626be49a573da58b86e1f4e5c",
     ("default", "pop"): "4c5abade877ecdef99a596b4d80ce13c6e9b7eb9c7f96d659d3a50451fc199b2",
+    ("default", "ballad"): "bd52ae12a84963c49049f0a7c4f05bdf98c95e1f624c3923113d5ccad6f2dac7",
     ("busy", "lofi"): "3dcd51720d894c3402304fbc0865021dbba3b8d2318988bb2324cd8e77f56d82",
     ("busy", "ambient"): "d216615910ee9e8e5ab6cf22c21a06b96b86f2d2f84ec035402051cb5d6ade0a",
     ("busy", "chiptune"): "9595522a1696ac308cd34f08948dc4969c0d2cefdaaf8f6b0281c596d84089e5",
@@ -45,6 +46,7 @@ GOLDEN = {
     ("busy", "cumbia"): "a5c5d24053aa095a41351b3f6aff6ef383b701fee0d1b5716f48dd7df0a5c616",
     ("busy", "dubstep"): "71cf80f89d211948059724aea7b2cf1715499c41f8d596c2f316bc34bed3dd76",
     ("busy", "pop"): "20f86083fe0cff4a6287f33a926b2e43c0e20c8b421f05fa4ec2692781282b27",
+    ("busy", "ballad"): "dad8c2b4e672a3901c3798cc79398df906dac31e412431b31c8ebd33394b2afb",
 }
 
 

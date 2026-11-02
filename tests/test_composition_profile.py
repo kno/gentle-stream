@@ -172,3 +172,21 @@ def test_a_long_release_plays_a_melody_whose_answers_end_on_the_tonic():
     assert all(p.melody for p in rel)
     assert all(p.melody[-1].midi % 12 == TON % 12 for p in rel[7::8])   # each 8-bar group's answer lands on the tonic
     assert all(p.melody[-1].midi % 12 != TON % 12 for p in rel[3::8])   # its question stays open
+
+
+def test_a_profile_can_lift_the_key_on_every_cycle_in_its_last_chorus_only():
+    always = Profile(lift_chance=1.0, lift_at=("B'",))
+    for seed in range(6):
+        ps = Composer(Style(), seed, TON, profile=always).plan
+        lifted = {ps(b).section for b in range(44 + 40) if ps(b).key_offset}
+        assert lifted == {"B'"}, seed
+
+
+def test_a_profile_without_lifts_never_changes_key():
+    never = Profile(lift_chance=0.0)
+    assert not any(Composer(Style(), seed, TON, profile=never).plan(b).key_offset for seed in range(6) for b in range(84))
+
+
+def test_a_lift_aimed_at_a_section_the_form_lacks_never_happens():
+    absent = Profile(form=(("A", 8), ("B", 8)), first_form=(("A", 8), ("B", 8)), lift_chance=1.0, lift_at=("B'",))
+    assert not any(Composer(Style(), seed, TON, profile=absent).plan(b).key_offset for seed in range(6) for b in range(48))

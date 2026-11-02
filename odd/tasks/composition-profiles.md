@@ -38,7 +38,7 @@ Each is registered, offered to the model, works on both backends and passes the 
 | T2 Profile knobs that change writing: 16-bar sections, step/leap/range, rhythms, two chords per bar; tests | S2 | inline (worker unavailable: MODULE_NOT_FOUND) | done (T2 commit) |
 | T3 Profiles for the nine non-default genres; genre tests updated; README | S4 | inline | done (T3 commit) |
 | T4 `pop` genre, tests, README | S5 | inline | done (T4 commit) |
-| T5 `ballad` genre, tests, README | S5 | inline | pending |
+| T5 `ballad` genre (and the profile's `lift_chance`/`lift_at`), tests, README | S5 | inline | done (T5 commit) |
 | T6 `heavy` genre, tests, README | S5 | inline | pending |
 
 ## Log
