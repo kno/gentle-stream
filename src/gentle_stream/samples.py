@@ -291,6 +291,8 @@ class Program:
     velocity: tuple[int, int] = (40, 110)   # MIDI velocity for vel 0 .. 1
     tail: float = 1.0                       # release seconds rendered after the note off
     rms: float = 0.4
+    reference: float = 0.0   # seconds: level-match a held note of this length as a whole (0: the first half second
+                             # of a 1 s note), for sounds that fade while they hold
 
 
 @dataclass(frozen=True)
@@ -431,6 +433,10 @@ def reference_rms(sr: int = 44100) -> dict[str, float]:
 @lru_cache(maxsize=256)
 def _program_level(renderer: Renderer, sr: int, p: Program) -> float:
     v0, v1 = p.velocity
+    if p.reference:
+        ref = _finish(renderer.note(0, p.bank, p.program, 60, int(v0 + (v1 - v0) * 0.8), p.reference, p.tail), sr)
+        held = ref[: int(p.reference * sr)]
+        return p.rms / float(np.sqrt(np.mean(np.square(held))))
     ref = renderer.note(0, p.bank, p.program, 60, int(v0 + (v1 - v0) * 0.8), 1.0, p.tail)
     return p.rms / _rms(_finish(ref, sr), sr)
 

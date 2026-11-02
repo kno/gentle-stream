@@ -58,3 +58,7 @@ now checks five seeds (a carried head never changes; a fresh one may match by ch
 (3.07 dB > 3). Cause found: the sampled "ooh" choir in ambient's intro is ~5 dB under the procedural one in every mode,
 already at the base commit (-5.18 dB); the 8-bar intro of ambient's T3 profile weighs it more in the test's 12-bar
 window. A per-vowel reference does not explain it (procedural "o" is only 0.9 dB under "a"). Pending decision.
+
+**L5** — Decision: "Arreglar el desajuste (recomendado)". Cause: Voice Oohs fades while it holds and was calibrated on the
+first half second of a 1 s note (held notes 3-8 dB under, growing with length). Fix: `Program.reference` (a held
+note measured whole), used by Voice Oohs at 4 s against the procedural "o"; every other program unchanged.

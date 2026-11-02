@@ -166,3 +166,22 @@ def test_without_the_soundfont_the_choir_falls_back_to_the_procedural_voice():
     assert e.vocals_backend == "procedural"
     x = np.concatenate([e.render_bar() for _ in range(2)])
     assert np.all(np.isfinite(x))
+
+
+@needs_sf2
+@pytest.mark.parametrize("vowel", ["a", "o"])
+@pytest.mark.parametrize("midi", [60, 67])
+@pytest.mark.parametrize("seconds", [2.0, 4.0, 8.0])
+def test_a_held_sampled_choir_note_matches_the_procedural_voice_on_its_vowel_within_2_db(vowel, midi, seconds):
+    """Voice Oohs fades while it holds: a calibration on the first half second left long "ooh" notes 4-6 dB under."""
+    from gentle_stream import samples, vocals
+    from gentle_stream.engine import SR
+
+    renderer = samples.load_renderer(samples.soundfont_path())
+    assert renderer is not None
+    si = samples.SampleInstruments(renderer, np.random.default_rng(0), SR)
+    n = int(seconds * SR)
+    sampled = si.play(vocals.choir_program("ambient", vowel, SR), midi, seconds, vocals.VELOCITY)[:n]
+    procedural = vocals.sung(midi, seconds, vowel, SR)[:n]
+    level = lambda x: 20 * np.log10(np.sqrt(np.mean(np.square(x))))   # noqa: E731
+    assert abs(level(sampled) - level(procedural)) <= 2.0

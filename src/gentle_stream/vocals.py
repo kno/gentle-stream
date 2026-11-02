@@ -80,6 +80,16 @@ def reference_rms(sr: int = SR) -> float:
     return float(np.sqrt(np.mean(np.square(x[: int(0.5 * sr)]))))
 
 
+HELD_REFERENCE = 4.0   # seconds: Voice Oohs fades while it holds, so it is matched on a held note as a whole
+
+
+@lru_cache(maxsize=8)
+def held_rms(vowel: str, sr: int = SR) -> float:
+    """RMS of the procedural voice holding middle C on `vowel` for HELD_REFERENCE seconds (its release excluded)."""
+    x = sung(60, HELD_REFERENCE, vowel, sr)[: int(HELD_REFERENCE * sr)]
+    return float(np.sqrt(np.mean(np.square(x))))
+
+
 Singer = SampleInstruments | PackVoice   # who sings the choir instead of the procedural voice
 
 
@@ -95,8 +105,10 @@ def choir_program(genre: str, vowel: str, sr: int = SR) -> Program:
     """The FluidR3_GM program a genre's choir sings on `vowel`, level-matched to the procedural voice."""
     if genre in SYNTH_GENRES:
         program = SYNTH_VOICE
-    else:
-        program = CHOIR_AAHS if vowel == "a" else VOICE_OOHS
+    elif vowel == "a":
+        program = CHOIR_AAHS
+    else:   # Voice Oohs fades as it holds: on the first half second alone its long notes sang 4-6 dB under
+        return Program(VOICE_OOHS, velocity=(50, 100), tail=RELEASE, rms=held_rms("o", sr), reference=HELD_REFERENCE)
     return Program(program, velocity=(50, 100), tail=RELEASE, rms=reference_rms(sr))
 
 
