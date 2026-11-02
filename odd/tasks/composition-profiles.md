@@ -35,11 +35,11 @@ Each is registered, offered to the model, works on both backends and passes the 
 | Task | Specs | Route | Commit |
 | :--- | :--- | :--- | :--- |
 | T1 `Profile` with today's values; `BarPlan.section_len`/`next_section`; genres off `FIRST_FORM`; per-profile cycle clock; byte-identical | S2, S3 | inline | done (04f2f90) |
-| T2 Profile knobs that change writing: 16-bar sections, step/leap/range, rhythms, two chords per bar; tests | S2 | inline (worker unavailable: MODULE_NOT_FOUND) | done (T2 commit) |
-| T3 Profiles for the nine non-default genres; genre tests updated; README | S4 | inline | done (T3 commit) |
-| T4 `pop` genre, tests, README | S5 | inline | done (T4 commit) |
-| T5 `ballad` genre (and the profile's `lift_chance`/`lift_at`), tests, README | S5 | inline | done (T5 commit) |
-| T6 `heavy` genre, tests, README | S5 | inline | done (T6 commit) |
+| T2 Profile knobs that change writing: 16-bar sections, step/leap/range, rhythms, two chords per bar; tests | S2 | inline (worker unavailable: MODULE_NOT_FOUND) | done (66f0b19) |
+| T3 Profiles for the nine non-default genres; genre tests updated; README | S4 | inline | done (2711210) |
+| T4 `pop` genre, tests, README | S5 | inline | done (25d2c4b) |
+| T5 `ballad` genre (and the profile's `lift_chance`/`lift_at`), tests, README | S5 | inline | done (1afc9f3) |
+| T6 `heavy` genre, tests, README | S5 | inline | done (288ae7b) |
 
 ## Log
 
@@ -62,3 +62,6 @@ window. A per-vowel reference does not explain it (procedural "o" is only 0.9 dB
 **L5** — Decision: "Arreglar el desajuste (recomendado)". Cause: Voice Oohs fades while it holds and was calibrated on the
 first half second of a 1 s note (held notes 3-8 dB under, growing with length). Fix: `Program.reference` (a held
 note measured whole), used by Voice Oohs at 4 s against the procedural "o"; every other program unchanged.
+
+**L6** — Closed. Fix of the pre-existing Voice Oohs level: f1ef69e. Final full suite: 1858 passed. Lo-fi renders
+sample-identical to the base throughout (fingerprints, golden hashes). Not done (S6): 6/8 and 12/8 meters.
