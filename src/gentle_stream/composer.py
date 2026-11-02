@@ -403,6 +403,7 @@ class Composer:
         q, a, lift = DEVELOPMENT[name]
         if a is None:
             raise RuntimeError(f"missing answer transform for {name}")
+        q = q or a   # a section without a question (the release) answers in every phrase when it is long
         # (first phrase position, transform, index of the 8-bar group's first bar): a 4-bar section is a lone answer
         phrases = (((4, a, start - 4),) if n == 4 else
                    tuple((first, t, start + g) for g in range(0, n, 8) for first, t in ((0, q), (4, a))))

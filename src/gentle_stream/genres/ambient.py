@@ -17,6 +17,7 @@ import numpy as np
 from ..composer import Chord
 from ..samples import Program
 from ..synth import SR, bp, lp, mtof
+from ..composer import Profile
 from .base import Genre, Master
 from .lofi import Instruments as LofiInstruments
 
@@ -151,11 +152,21 @@ class SampledVoices(Voices):
         return self.s.play(self.PIANO, m, dur, vel)
 
 
+# Long slow sections and long notes: the melody floats in small steps, the energy barely moves.
+PROFILE = Profile(
+    first_form=(("intro", 8), ("A", 16), ("breakdown", 8), ("B", 16), ("release", 8)),
+    form=(("A", 16), ("breakdown", 8), ("B", 16), ("release", 8)),
+    energy={"intro": .3, "A": .4, "B": .55, "A'": .45, "breakdown": .25, "B'": .6, "release": .35},
+    rhythms=(((0, 2), (2, 2)), ((0, 3), (3, 1)), ((0, 2.5), (2.5, 1.5)), ((0, 1), (1, 3)), ((0, 1.5), (1.5, 2.5))),
+    steps=(-1, 1, 0, 0, -1), leap_chance=0.1, leap=2, span=4)
+
+
 class AmbientGenre(Genre):
     name = "ambient"
     description = "elegant ambient: slow swelling pads, high celesta, sustained sub, no drums, a lot of space"
     bpm = (50, 80)
     modes = ("lydian", "major", "dorian", "minor")
+    profile = PROFILE
     voices = {"piano": "soft distant piano", "rhodes": "celesta", "nylon": "harp", "pad": "slow evolving pad"}
 
     def instruments(self, rng: np.random.Generator, sr: int, sampled):

@@ -21,6 +21,7 @@ import numpy as np
 from ..samples import Hit, Program, reference_rms
 from ..style import MODES
 from ..synth import SR, adsr, bp, hp, lp, mtof, osc
+from ..composer import Profile
 from .base import Genre, Master
 from .lofi import Instruments
 
@@ -216,11 +217,22 @@ class SampledVoices:
 
 
 # ---------------------------------------------------------------- genre
+# AABA choruses with a short solo break; syncopated lines with wider leaps and the harmony moving twice a bar.
+PROFILE = Profile(
+    first_form=(("intro", 4), ("A", 8), ("A'", 8), ("B", 8), ("A'", 8)),
+    form=(("A", 8), ("A'", 8), ("B", 8), ("A'", 8), ("breakdown", 4)),
+    rhythms=(((0.5, 1), (1.5, .5), (2, .5), (2.5, 1.5)), ((0, .5), (.5, .5), (1, .5), (1.5, 1.5), (3, 1)),
+             ((1, .5), (1.5, .5), (2, .5), (2.5, .5), (3, 1)), ((0, 1.5), (1.5, .5), (2, .5), (2.5, 1.5)),
+             ((0.5, .5), (1, 1), (2.5, .5), (3, 1))),
+    steps=(-1, 1, -2, 2, -1, 1), leap_chance=0.35, leap=4, span=6, chords_per_bar=2)
+
+
 class JazzGenre(Genre):
     name = "jazz"
     description = "small-group jazz: extended chords, rootless comping, walking bass, brushed drums, strong swing"
     bpm = (60, 140)
     modes = ("dorian", "major", "mixolydian", "minor")
+    profile = PROFILE
     voices = {"piano": "acoustic piano comping", "rhodes": "rhodes electric piano", "nylon": "warm jazz guitar",
               "pad": "vibraphone (tenor sax when it plays the lead)"}
 

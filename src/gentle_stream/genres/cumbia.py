@@ -22,6 +22,7 @@ import numpy as np
 from ..composer import Chord
 from ..samples import Hit, Program
 from ..synth import SR, adsr, bp, distort, hp, lp, mtof, osc
+from ..composer import Profile
 from .base import Genre, Master
 
 DUR_STEP = 0.05
@@ -329,11 +330,21 @@ class SampledVoices:
         return self.s.hit(self.drums["timbal-low" if low else "timbal"], g)
 
 
+# Verse and chorus played twice each, as a dance band does; anticipated, step-wise lines.
+PROFILE = Profile(
+    first_form=(("intro", 4), ("A", 8), ("B", 8), ("A", 8), ("B", 8), ("breakdown", 4), ("B'", 8), ("release", 4)),
+    form=(("A", 8), ("B", 8), ("A", 8), ("B", 8), ("breakdown", 4), ("B'", 8), ("release", 4)),
+    rhythms=(((0, .5), (.5, .5), (1, 1), (2.5, 1.5)), ((0, 1), (1.5, .5), (2, 1), (3, 1)), ((.5, .5), (1, .5), (1.5, .5), (2, 2)),
+             ((0, 1.5), (1.5, 1.5), (3, 1))),
+    steps=(-1, 1, -1, 1, -2, 0), leap_chance=0.2)
+
+
 class CumbiaGenre(Genre):
     name = "cumbia"
     description = "cumbia: guacharaca scrape, tambora and congas, root-fifth bass, off-beat keys, accordion lead"
     bpm = (85, 110)
     modes = ("minor", "major")
+    profile = PROFILE
     voices = {"piano": "off-beat electric piano chords / musette accordion lead",
               "rhodes": "off-beat percussive organ / tango accordion lead",
               "nylon": "off-beat nylon guitar chops / dry-reed accordion lead",

@@ -27,6 +27,7 @@ import numpy as np
 
 from ..samples import Hit, Program
 from ..synth import SR, adsr, bp, distort, hp, lp, mtof, osc
+from ..composer import Profile
 from .base import Genre, Master
 
 DUR_STEP = 0.05
@@ -402,11 +403,22 @@ def _active(p, beat):
     return max((x for x in p.bass if x.beat <= beat), key=lambda x: x.beat, default=p.bass[0])
 
 
+# Builds into 16-bar drops: a long intro, A builds into the B drop, a breakdown, A' builds into the bigger B'.
+PROFILE = Profile(
+    first_form=(("intro", 16), ("A", 8), ("B", 16), ("breakdown", 8), ("A'", 8), ("B'", 16), ("release", 8)),
+    form=(("A", 8), ("B", 16), ("breakdown", 8), ("A'", 8), ("B'", 16), ("release", 8)),
+    energy={"intro": .3, "A": .55, "B": .95, "A'": .6, "breakdown": .25, "B'": 1.0, "release": .4},
+    rhythms=(((0, .5), (1, .5), (1.5, .5), (2.5, .5), (3, 1)), ((0, .75), (.75, .75), (1.5, .5), (2, 2)),
+             ((.5, .5), (1.5, .5), (2.5, .5), (3.5, .5)), ((0, 1), (1.5, 1), (3, 1))),
+    steps=(0, 1, -1, 2, -2, 0), leap_chance=0.2, leap=4)
+
+
 class ElectroHouseGenre(Genre):
     name = "electrohouse"
     description = "electro house: four-on-the-floor kick, dirty distorted bass, sidechain pumping, builds and drops"
     bpm = (124, 132)
     modes = ("minor", "phrygian", "dorian")
+    profile = PROFILE
     voices = {"piano": "supersaw chord stabs / bright saw lead", "rhodes": "FM electric piano stabs / square lead",
               "nylon": "short pluck synth", "pad": "wide sustained supersaw pad"}
 

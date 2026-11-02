@@ -36,7 +36,7 @@ Each is registered, offered to the model, works on both backends and passes the 
 | :--- | :--- | :--- | :--- |
 | T1 `Profile` with today's values; `BarPlan.section_len`/`next_section`; genres off `FIRST_FORM`; per-profile cycle clock; byte-identical | S2, S3 | inline | done (04f2f90) |
 | T2 Profile knobs that change writing: 16-bar sections, step/leap/range, rhythms, two chords per bar; tests | S2 | inline (worker unavailable: MODULE_NOT_FOUND) | done (T2 commit) |
-| T3 Profiles for the nine non-default genres; genre tests updated; README | S4 | inline | pending |
+| T3 Profiles for the nine non-default genres; genre tests updated; README | S4 | inline | done (T3 commit) |
 | T4 `pop` genre, tests, README | S5 | inline | pending |
 | T5 `ballad` genre, tests, README | S5 | inline | pending |
 | T6 `heavy` genre, tests, README | S5 | inline | pending |
@@ -47,3 +47,9 @@ Each is registered, offered to the model, works on both backends and passes the 
 queremos hacer algo más pop, rock, heavy, baladas..."
 
 **L2** — "vale, ahora haz los cambios que has dicho antes" → chose "Perfil de composición por género".
+
+**L3** — T3 evidence: lo-fi renders sample-identical to the base (fingerprints and its golden hashes); the nine other
+genres changed audio. Found and fixed: a release longer than 4 bars had no question transform (TypeError), now it
+answers in every phrase; ambient's one-note bar rhythms made `next` reuse a motif head, replaced by two-note bars.
+The live-glide golden hashes of the nine changed genres were recaptured; `test_next_still_starts_a_fresh_motif`
+now checks five seeds (a carried head never changes; a fresh one may match by chance).

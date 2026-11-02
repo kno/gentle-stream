@@ -26,6 +26,7 @@ from scipy.signal import sosfilt
 
 from ..samples import Hit, Program
 from ..synth import SR, adsr, bp, distort, hp, lp, mtof, osc
+from ..composer import Profile
 from .base import Genre, Master
 
 DUR_STEP = 0.05
@@ -318,11 +319,21 @@ class SampledVoices:
         return self.s.hit(self.drums["crash"], g)
 
 
+# Build, 16-bar drop, breakdown, 16-bar drop: a sparse melody of long notes over the wobble.
+PROFILE = Profile(
+    first_form=(("intro", 8), ("A", 8), ("B", 16), ("breakdown", 8), ("B'", 16), ("release", 8)),
+    form=(("A", 8), ("B", 16), ("breakdown", 8), ("B'", 16), ("release", 8)),
+    energy={"intro": .3, "A": .5, "B": .95, "A'": .6, "breakdown": .25, "B'": 1.0, "release": .4},
+    rhythms=(((0, 2), (2, 2)), ((0, 3), (3, 1)), ((0, 1), (1, 3)), ((0, .5), (.5, 3.5))),
+    steps=(-1, -2, 1, 0, -1), leap_chance=0.3, leap=4, span=4)
+
+
 class DubstepGenre(Genre):
     name = "dubstep"
     description = "dubstep: 140 bpm half-time drums, deep sine sub, LFO wobble and growl basses, heavy drops"
     bpm = (136, 140)
     modes = ("minor", "phrygian")
+    profile = PROFILE
     voices = {"piano": "wobble bass drops, saw plucks / saw lead", "rhodes": "growl bass drops, FM bell plucks",
               "nylon": "wobble bass drops, pulse plucks", "pad": "wobble bass drops, dark pad / soft sine lead"}
 

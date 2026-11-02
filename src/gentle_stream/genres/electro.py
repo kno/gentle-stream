@@ -17,6 +17,7 @@ import numpy as np
 
 from ..samples import Hit, Program
 from ..synth import SR, adsr, bp, distort, hp, lp, mtof, osc
+from ..composer import Profile
 from .base import Genre, Master
 
 DUR_STEP = 0.05
@@ -303,11 +304,21 @@ class SampledVoices:
         return self.s.hit(self.drums["rim"], g)
 
 
+# Short repeated riffs on syncopated sixteenths, close to their centre.
+PROFILE = Profile(
+    first_form=(("intro", 8), ("A", 8), ("B", 8), ("A'", 8), ("B", 8), ("breakdown", 4), ("B'", 8), ("release", 4)),
+    form=(("A", 8), ("B", 8), ("A'", 8), ("B", 8), ("breakdown", 4), ("B'", 8), ("release", 4)),
+    rhythms=(((0, .5), (.75, .25), (1, .5), (2, .5), (2.75, .75), (3.5, .5)), ((0, .25), (.5, .5), (1.5, .5), (2, 1), (3, .5)),
+             ((0, .5), (1.5, .5), (2, .5), (3, 1)), ((.5, .5), (1, .5), (2.5, 1.5))),
+    steps=(0, 0, 1, -1, 2, -2), leap_chance=0.15, leap=5, span=4)
+
+
 class ElectroGenre(Genre):
     name = "electro"
     description = "808 breakbeats, robotic synth riffs and arpeggios, funky synth bass (not four-on-the-floor)"
     bpm = (100, 130)
     modes = ("minor", "dorian", "major")
+    profile = PROFILE
     voices = {"piano": "square synth riff stabs / saw lead", "rhodes": "FM electric piano / square lead",
               "nylon": "pluck synth", "pad": "string synth pad"}
 

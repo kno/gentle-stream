@@ -121,7 +121,8 @@ def test_two_chords_per_bar_move_the_harmony_on_beat_three():
     a = [c.plan(b) for b in range(4, 12)]          # section A: cadence on its last two bars
     for p in a[:5]:
         assert p.passing is not None and p.passing.degree != p.chord.degree
-    assert [p.chord.degree for p in a[:3]] == [1, 6, 1] and [p.passing.degree for p in a[:3]] == [5, 4, 5]
+    assert [p.chord.degree for p in a[:3]] == [1, 6, 1]
+    assert [p.passing.degree for p in a[:3] if p.passing is not None] == [5, 4, 5]
     assert a[-1].chord.degree == 1 and a[-1].passing is None    # the cadence lands on the tonic and holds it
 
 
@@ -137,3 +138,37 @@ def test_custom_b_progressions_are_used_and_a_missing_mode_falls_back():
     assert [p.chord.degree for p in b[:4]] == [2, 3, 2, 3]
     minor = Composer(Style(mode="minor", progression=(1, 6, 3, 7)), 1, TON, profile=own)
     assert minor.plan(12).chord.degree != 0     # minor is not named: the shared progressions still play
+
+
+def test_lofi_keeps_the_default_profile_and_every_other_genre_composes_its_own_way():
+    assert genres.get("lofi").profile is DEFAULT_PROFILE
+    others = [g.profile for name, g in genres.REGISTRY.items() if name != "lofi"]
+    assert all(p != DEFAULT_PROFILE for p in others)
+    assert len({repr(p) for p in others}) == len(others)       # no two genres share a profile
+
+
+@pytest.mark.parametrize("name", [n for n in genres.NAMES if n != "lofi"])
+def test_a_genre_piece_plays_its_profile_form(name):
+    profile = genres.get(name).profile
+    c = Composer(Style(genre=name), 4, TON, genres.get(name).chord, profile=profile)
+    bars = profile.first_len + profile.form_len
+    assert runs([c.plan(b) for b in range(bars)]) == list(profile.first_form) + list(profile.form)
+
+
+def test_the_dubstep_build_lands_on_the_last_bar_before_each_16_bar_drop():
+    from gentle_stream.genres.dubstep import DROPS
+    profile = genres.get("dubstep").profile
+    c = Composer(Style(genre="dubstep"), 4, TON, profile=profile)
+    ps = [c.plan(b) for b in range(profile.first_len)]
+    builds = [p.bar for p in ps if p.next_section in DROPS and p.section_bar == p.section_len - 1]
+    drops = [p.bar for p in ps if p.section in DROPS and p.section_bar == 0]
+    assert [b + 1 for b in builds] == drops and {ps[d].section_len for d in drops} == {16}
+
+
+def test_a_long_release_plays_a_melody_whose_answers_end_on_the_tonic():
+    outro = Profile(first_form=(("A", 8), ("release", 16)), form=(("A", 8), ("release", 16)))
+    c = Composer(Style(lead_density=1.0), 1, TON, profile=outro)
+    rel = [c.plan(b) for b in range(8, 24)]
+    assert all(p.melody for p in rel)
+    assert all(p.melody[-1].midi % 12 == TON % 12 for p in rel[7::8])   # each 8-bar group's answer lands on the tonic
+    assert all(p.melody[-1].midi % 12 != TON % 12 for p in rel[3::8])   # its question stays open

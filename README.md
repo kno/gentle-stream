@@ -47,7 +47,7 @@ Describe a feeling, a concept, a place or a scene, in any language. Gentle Shell
 
 ### Real composition — Not a loop
 
-A composer plans every piece with a **song form** (intro → A → B → A' → breakdown → B' → release, then the form loops with fresh variation), cadences that resolve, passing chords, an occasional key lift, a **motif** developed by repetition, sequence, inversion and augmentation, a counter-melody in contrary motion and a bass line that walks into the next chord. Press `n` and you get a new piece with the same mood: new key, progression, melody and groove.
+A composer plans every piece with its genre's **song form** (lo-fi's is intro → A → B → A' → breakdown → B' → release; rock repeats its chorus, jazz plays AABA choruses, dubstep builds into 16-bar drops; then the form loops with fresh variation), cadences that resolve, passing chords, an occasional key lift, a **motif** developed by repetition, sequence, inversion and augmentation, a counter-melody in contrary motion and a bass line that walks into the next chord. Press `n` and you get a new piece with the same mood: new key, progression, melody and groove.
 
 ---
 
@@ -607,6 +607,23 @@ The genre is part of the style: it shows on the details line, survives `n` and i
 | `dubstep` | 140 bpm half-time drums, deep sine sub, LFO wobble bass synced to 1/4–1/16 and triplets, growls, risers and drops | 136–140 bpm | Power and Standard kit drums; sub, wobble, growl and risers stay synthesized |
 
 `rock` covers metal too: with busy drums at energy 0.7 or more it switches to 16th-note chugs and gallops, double kick and china accents.
+
+Each genre also composes its own way, through a composition profile (`composer.Profile`): the form, each section's energy, the bar rhythms its motifs are built from and the melody's character (how it steps, how often and how far it leaps, how far it wanders). The harmony rules, the motif development, the counter-melody and the bass are shared.
+
+| Genre | Form (first cycle) | Melody |
+| :--- | :--- | :--- |
+| `lofi` | intro 4, A 8, B 8, A' 8, breakdown 4, B' 8, release 4 | the reference: mostly falling steps, one small leap |
+| `ambient` | intro 8, A 16, breakdown 8, B 16, release 8 | long notes in small steps; the energy barely moves |
+| `chiptune` | intro 4, A 8, A' 8, B 8, B' 8 (a game loop) | fast, wide, with frequent leaps |
+| `synthwave` | intro 8, A 8, B 8, A' 8, B 8, breakdown 8, B' 16, release 8 | long held notes, syncopated pushes, big leaps |
+| `jazz` | intro 4, then AABA choruses (A 8, A' 8, B 8, A' 8) with a 4-bar break | syncopated, wider leaps; two chords a bar |
+| `rock` | intro 4, verse, chorus, verse, chorus, an 8-bar break, last chorus, release 4 | driving eighth notes |
+| `electro` | intro 8, A 8, B 8, A' 8, B 8, breakdown 4, B' 8, release 4 | short riffs on syncopated sixteenths |
+| `electrohouse` | intro 16, A 8, drop B 16, breakdown 8, A' 8, drop B' 16, release 8 | short stabs |
+| `cumbia` | intro 4, verse and chorus twice each, breakdown 4, B' 8, release 4 | anticipated, step-wise |
+| `dubstep` | intro 8, build A 8, drop B 16, breakdown 8, drop B' 16, release 8 | sparse long notes |
+
+Later cycles repeat the form without the intro. Fills, builds and drops land on the last bars of their sections whatever their length, and the TUI's cycle time follows the playing genre's form.
 
 The four shared tone colours (`piano`, `rhodes`, `nylon`, `pad`) mean something different in each genre (in chiptune they are pulse widths, in rock they are guitars), so the model's answer schema and saved prompts stay the same everywhere.
 

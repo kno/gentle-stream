@@ -3,7 +3,9 @@ rendering exactly what it rendered before live glides existed.
 
 The golden hashes were captured once from the base commit f4ffaea (before any live-evolution change) in a scratch
 checkout: 120 bars per genre, seed 2026, procedural instruments, sha256 over the float32 bytes of every bar. They
-are constants here on purpose; tests never read git history.
+are constants here on purpose; tests never read git history. Every genre but lo-fi was captured again once its own
+composition profile changed how it composes (feat/composition-profiles); lo-fi keeps the default profile and its
+original hashes.
 """
 import hashlib
 
@@ -22,25 +24,25 @@ GOLDEN_STYLES = {
 }
 GOLDEN = {
     ("default", "lofi"): "589cef6fbb213f1ad92371949ef5bdbf3b5ffb2df02a7e9be664a8663b9f2439",
-    ("default", "ambient"): "51d0bde57f73a78e1ed4b299694cbc38b778c70c60d532cd6cdc0e4c36658c7d",
-    ("default", "chiptune"): "78c99d9aa9334eb764314e6891391f8de66a9a43260c5c1f91355310fd62ff44",
-    ("default", "synthwave"): "b446a8674c60464c338085de8d85701f41f7a2b1546443a411edd7e664e8e082",
-    ("default", "jazz"): "c603aa4d6c431c51ef0a5de5adb0df222dec75229a1aafe732deabeccd9a886e",
-    ("default", "rock"): "cdb1f91c4982c1431de77ae487b8079143c0c8f492fb4d8bc7f95bcfdddd55e6",
-    ("default", "electro"): "5c17b51ca1649aeccbe5e9867c36d52dd8c8e0efcbad014aa62deab6466a8b31",
-    ("default", "electrohouse"): "486e5bd23ea6674b180d473ea0d10111613e276685236ed9ae46d6ad13673bf7",
-    ("default", "cumbia"): "0735431a9336109f3ecaa0c17ebc5431b03a473f6ef399d46206763e8e92e5e5",
-    ("default", "dubstep"): "553e7756005032287b4b779edf7ca0149774f1d62bbd2524e6c4d878dcb02203",
+    ("default", "ambient"): "0376b51777fdd1d633229a545e454d7341739301c6855cf429f960515b71c0ed",
+    ("default", "chiptune"): "9bf2cbaf37ec6bb4a1ae09b153ae03d4c19cb7b369145fa9bd7b97a3dbaafe75",
+    ("default", "synthwave"): "9e542413226aaff17b2a1a432d64e592d7967f98dd7302fbfca066d21f5a8ac6",
+    ("default", "jazz"): "9980e36487c95ff5c9a4ced4e278332121bec8abd4119789a9eb9e280bc7094e",
+    ("default", "rock"): "6a0430ff44a63bbcd797cf96b35712067ea126d45ef36f3201c575a338a13500",
+    ("default", "electro"): "115dc12732dfadf1d6522382bb44656eeebf93d524905d31175e6053d8166755",
+    ("default", "electrohouse"): "8146fc408654480e71d059d7587a79c8f63451d3df79a9761e34efc9c9cd3f3a",
+    ("default", "cumbia"): "e3d4a5a2f9276d2206f3a4a36b9f2e85801b4b86182db3260cce0d2e77187bc5",
+    ("default", "dubstep"): "4cfc5ac6524552c2774433bdcd639ff732763cb626be49a573da58b86e1f4e5c",
     ("busy", "lofi"): "3dcd51720d894c3402304fbc0865021dbba3b8d2318988bb2324cd8e77f56d82",
-    ("busy", "ambient"): "8e608caaf659b6bcdaf4a995b6c5a8c6cf9f556a1aced1f0e995dc15d86b5683",
-    ("busy", "chiptune"): "c787bc6bab63dcff80ae6c9703848658cfed4b8938a32f2a02dc798cd4f92b0d",
-    ("busy", "synthwave"): "4eda4ff7bef7252e0544db8ab74276732448225f635a6523ed6166306a799c92",
-    ("busy", "jazz"): "3a6e988ea51d0bb77f28a1f638cfd9793a8aa3c4f29cc04d6c61c041c5451e87",
-    ("busy", "rock"): "b15a7204e1a04f79ddfe941c298799bf23f2b4b2eb20d88840419a8c270fb49a",
-    ("busy", "electro"): "06545a6e8d4411b69e986f414a837f1d6ad6e8e25d93ba91bd67324ccabf8f3c",
-    ("busy", "electrohouse"): "ea058a2aa73819e96d85a705441fe4cf8de2092497b12f1bb3693d2060f7c197",
-    ("busy", "cumbia"): "192f2f1efb2930ec6f6123b926f41f6944d33681f51c97b2d6176de8d638583a",
-    ("busy", "dubstep"): "8e3e46fefb9989acac29250ce4f20e08fd8ea3f9a06579bba80f48f0d24e0645",
+    ("busy", "ambient"): "d216615910ee9e8e5ab6cf22c21a06b96b86f2d2f84ec035402051cb5d6ade0a",
+    ("busy", "chiptune"): "9595522a1696ac308cd34f08948dc4969c0d2cefdaaf8f6b0281c596d84089e5",
+    ("busy", "synthwave"): "3f7b2101c1e425536e442cb2876b6fc3cc8b4c6c8692b3efbb1b01c0ac13bdf0",
+    ("busy", "jazz"): "b3635317422f0eda32b247ce2d59b7706e702c8e2d27c5374f2ba7742dea096a",
+    ("busy", "rock"): "8544ebcc1fcd584dfb446267328a7d85da17edfb5602393456b93f19be8ff3b6",
+    ("busy", "electro"): "9c6cf02e96d260f32fc225fe945d09e6de87a7543384b159f23ab4c524a786fa",
+    ("busy", "electrohouse"): "43e1121c77001ab57c8c3bdef310e1b699844f743a94120c296c5d51381e990e",
+    ("busy", "cumbia"): "a5c5d24053aa095a41351b3f6aff6ef383b701fee0d1b5716f48dd7df0a5c616",
+    ("busy", "dubstep"): "71cf80f89d211948059724aea7b2cf1715499c41f8d596c2f316bc34bed3dd76",
 }
 
 

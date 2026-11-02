@@ -72,9 +72,13 @@ def test_a_genre_step_in_a_journey_carries_the_head():
 
 
 def test_next_still_starts_a_fresh_motif():
-    e = Engine(STYLE, seed=4, samples=False)
-    e.render_bar()
-    before = head(e.composer.motif)
-    e.queue_next()
-    e.render_bar()
-    assert head(e.composer.motif) != before
+    # a carried motif keeps its head on every seed; a fresh one may match by chance (ambient's heads are short)
+    changed = []
+    for seed in range(4, 9):
+        e = Engine(STYLE, seed=seed, samples=False)
+        e.render_bar()
+        before = head(e.composer.motif)
+        e.queue_next()
+        e.render_bar()
+        changed.append(head(e.composer.motif) != before)
+    assert sum(changed) >= 3

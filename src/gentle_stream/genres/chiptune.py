@@ -17,6 +17,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..synth import SR, adsr, hp, lp, mtof, osc
+from ..composer import Profile
 from .base import Genre, Master
 
 DUTY = {"piano": 0.5, "rhodes": 0.25, "nylon": 0.125, "pad": 0.25}   # Style.chords/lead -> pulse width
@@ -125,11 +126,21 @@ class Chip:
         return self._drums["hat"]
 
 
+# A game loop, AA'BB': fast arpeggio-like lines over a wide range, with frequent leaps.
+PROFILE = Profile(
+    first_form=(("intro", 4), ("A", 8), ("A'", 8), ("B", 8), ("B'", 8)),
+    form=(("A", 8), ("A'", 8), ("B", 8), ("B'", 8), ("breakdown", 4)),
+    rhythms=(((0, .5), (.5, .5), (1, .5), (1.5, .5), (2, 1), (3, 1)), ((0, .25), (.25, .25), (.5, .5), (1, 1), (2, .5), (2.5, .5), (3, 1)),
+             ((0, 1), (1, .5), (1.5, .5), (2, .5), (2.5, .5), (3, 1)), ((0, .5), (.5, 1), (1.5, .5), (2, 2))),
+    steps=(1, -1, 2, -2, 1, -1), leap_chance=0.4, leap=4, span=7)
+
+
 class ChiptuneGenre(Genre):
     name = "chiptune"
     description = "8-bit: square and triangle waves, fast arpeggios, noise drums; original retro-game music"
     bpm = (100, 140)
     modes = ("major", "mixolydian", "minor", "dorian")
+    profile = PROFILE
     voices = {"piano": "50% square wave", "rhodes": "25% pulse wave", "nylon": "thin 12.5% pulse wave",
               "pad": "soft swelling 25% pulse wave"}
 

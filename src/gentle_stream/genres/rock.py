@@ -23,6 +23,7 @@ import numpy as np
 
 from ..samples import Hit, Program
 from ..synth import SR, adsr, bp, distort, hp, lp, mtof, osc
+from ..composer import Profile
 from .base import Genre, Master
 from .lofi import Instruments as LofiInstruments
 
@@ -270,12 +271,22 @@ class SampledInstruments(Instruments):
     def china(self): return self._hit("china")
 
 
+# Verse, chorus, verse, chorus, a guitar break and a double last chorus; driving eighth-note melodies.
+PROFILE = Profile(
+    first_form=(("intro", 4), ("A", 8), ("B", 8), ("A'", 8), ("B'", 8), ("breakdown", 8), ("B'", 8), ("release", 4)),
+    form=(("A", 8), ("B", 8), ("A'", 8), ("B'", 8), ("breakdown", 8), ("B'", 8), ("release", 4)),
+    rhythms=(((0, .5), (.5, .5), (1, 1), (2, .5), (2.5, 1.5)), ((0, 1), (1, .5), (1.5, .5), (2, 2)),
+             ((0, .5), (.5, .5), (1, .5), (1.5, .5), (2, 1), (3, 1)), ((0, 2), (2, 1), (3, 1)), ((.5, .5), (1, 1), (2, 2))),
+    steps=(-1, 1, 0, -2, 2), leap_chance=0.25, leap=4)
+
+
 class RockGenre(Genre):
     name = "rock"
     description = ("rock or metal: distorted guitar power chords, palm mutes, driving drums "
                    "(busy drums with energy 0.7+ is metal, with double kick)")
     bpm = (90, 140)
     modes = ("minor", "phrygian", "dorian", "mixolydian")
+    profile = PROFILE
     voices = {"piano": "distorted guitar", "rhodes": "overdriven guitar", "nylon": "clean electric guitar",
               "pad": "distorted guitar with a string section"}
 

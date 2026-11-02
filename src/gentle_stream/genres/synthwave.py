@@ -18,6 +18,7 @@ import numpy as np
 
 from ..samples import Hit, Program
 from ..synth import SR, adsr, bp, distort, hp, lp, mtof, osc
+from ..composer import Profile
 from .base import Genre, Master
 
 DUR_STEP = 0.05
@@ -287,11 +288,21 @@ class SampledVoices:
         return self.s.hit(self.drums["crash"], g)
 
 
+# Cinematic: long intro and outro, a 16-bar final chorus; long held notes with syncopated pushes and big leaps.
+PROFILE = Profile(
+    first_form=(("intro", 8), ("A", 8), ("B", 8), ("A'", 8), ("B", 8), ("breakdown", 8), ("B'", 16), ("release", 8)),
+    form=(("A", 8), ("B", 8), ("A'", 8), ("B", 8), ("breakdown", 8), ("B'", 16), ("release", 8)),
+    rhythms=(((0, 1.5), (1.5, 1), (2.5, 1.5)), ((0, 3), (3, 1)), ((0, .75), (.75, .75), (1.5, 2.5)), ((0, 2), (2, 2)),
+             ((1, 1), (2, 2))),
+    steps=(-1, 1, -1, 2, 0), leap_chance=0.22, leap=5, span=6)
+
+
 class SynthwaveGenre(Genre):
     name = "synthwave"
     description = "synthwave: 80s analog synths, detuned saw pads, pulsing octave bass, big gated-reverb snare"
     bpm = (80, 118)
     modes = ("minor", "dorian", "major")
+    profile = PROFILE
     voices = {"piano": "brassy polysynth stabs / bright saw lead", "rhodes": "FM electric piano / square lead",
               "nylon": "plucked pulse synth", "pad": "detuned saw pad"}
 
