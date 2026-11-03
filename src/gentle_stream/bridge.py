@@ -15,10 +15,11 @@ import subprocess
 import threading
 from dataclasses import dataclass, field
 
-from .genres import NAMES as GENRE_NAMES, REGISTRY
-from .style import CHORD_INSTRUMENTS, DRUMS, KEYS, LEAD_INSTRUMENTS, MODES, Style
 from .engine import GLIDE_FIELDS
+from .genres import NAMES as GENRE_NAMES
+from .genres import REGISTRY
 from .journey import CURVES, Journey
+from .style import CHORD_INSTRUMENTS, DRUMS, KEYS, LEAD_INSTRUMENTS, MODES, Style
 
 QUIET_FLAGS = ("--no-session", "-nt", "-ns", "-np", "-nc", "--no-mcp", "--no-themes", "--no-skill-registry")
 

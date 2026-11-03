@@ -1,6 +1,9 @@
 import threading
+from typing import Any, cast
 
 import pytest
+from textual.binding import Binding
+from textual.widgets import Input, OptionList
 
 from gentle_stream.app import ModelPicker, PresetPicker, SaveDialog, StreamApp, format_time
 from gentle_stream.bridge import InterpretError, Usage
@@ -17,7 +20,7 @@ class FakeShell:
     def __init__(self, answer=None, error=None, models=("claude-bridge/claude-haiku-5-5", "openai-codex/gpt-6-luna"),
                  usage=None):
         self.answer, self.error, self.models, self.usage = answer, error, list(models), usage
-        self.model = None
+        self.model: str | None = None
         self.calls = []
         self.release = threading.Event()
         self.release.set()
@@ -27,7 +30,7 @@ class FakeShell:
         self.release.wait(5)
         if self.error:
             raise InterpretError(self.error)
-        return Style.from_dict({**self.answer, "mood": mood}, current)
+        return Style.from_dict({**cast(dict, self.answer), "mood": mood}, current)
 
     def interpret_with_usage(self, mood, current):
         return self.interpret(mood, current), self.usage
@@ -108,7 +111,7 @@ async def test_a_mood_is_interpreted_and_queued():
         assert "Summer Storm" in text(app, "#status")
         queued = player.engine._pending_style or player.engine.style
         assert (queued.name, queued.mode, queued.mood) == ("Summer Storm", "mixolydian", "summer storm")
-        assert app.query_one("#mood").value == ""
+        assert app.query_one("#mood", Input).value == ""
 
 
 @pytest.mark.asyncio
@@ -320,7 +323,7 @@ async def test_s_saves_the_audible_style_under_a_typed_name(store):
         await pilot.press("s")
         await pilot.pause(0.1)
         assert isinstance(app.screen, SaveDialog)
-        field = app.screen.query_one("Input")
+        field = app.screen.query_one(Input)
         assert field.value == audible.name               # prefilled with the style name
         field.value = ""
         await pilot.press(*"late night", "enter")
@@ -330,7 +333,7 @@ async def test_s_saves_the_audible_style_under_a_typed_name(store):
         preset = store.get("late night")
         assert preset.style.to_dict() == {**audible.to_dict(), "name": "late night"}
         assert preset.mood == audible.mood
-        assert app.query_one("#mood").value == ""        # the dialog's Enter is not a mood request
+        assert app.query_one("#mood", Input).value == ""        # the dialog's Enter is not a mood request
 
 
 @pytest.mark.asyncio
@@ -340,7 +343,7 @@ async def test_saving_an_existing_name_says_it_replaced_it(store):
     async with app.run_test() as pilot:
         await pilot.press("s")
         await pilot.pause(0.1)
-        app.screen.query_one("Input").value = "late night"
+        app.screen.query_one(Input).value = "late night"
         await pilot.press("enter")
         await pilot.pause(0.1)
         assert "Replaced “late night”" in text(app, "#status")
@@ -354,7 +357,7 @@ async def test_an_empty_name_is_rejected(store):
     async with app.run_test() as pilot:
         await pilot.press("s")
         await pilot.pause(0.1)
-        app.screen.query_one("Input").value = "   "
+        app.screen.query_one(Input).value = "   "
         await pilot.press("enter")
         await pilot.pause(0.1)
         assert isinstance(app.screen, SaveDialog)
@@ -386,7 +389,7 @@ async def test_p_applies_a_saved_prompt_instantly_without_gentle_shell(store):
         await pilot.press("p")
         await pilot.pause(0.1)
         assert isinstance(app.screen, PresetPicker)
-        listed = str(app.screen.query_one("OptionList").get_option_at_index(1).prompt)
+        listed = str(app.screen.query_one(OptionList).get_option_at_index(1).prompt)
         assert "Rainy Café" in listed and "rainy night in a small café" in listed
         await pilot.press("down", "enter")             # Archive, Rainy Café
         await pilot.pause(0.1)
@@ -409,7 +412,7 @@ async def test_d_deletes_the_highlighted_preset(store):
         await pilot.press("d")
         await pilot.pause(0.1)
         assert [p.name for p in store.list()] == ["Rainy Café"]
-        assert app.screen.query_one("OptionList").option_count == 1
+        assert app.screen.query_one(OptionList).option_count == 1
         await pilot.press("delete")
         await pilot.pause(0.1)
         assert store.list() == []
@@ -448,7 +451,7 @@ async def test_b_leaves_the_music_playing_in_the_background(runtime):
     from gentle_stream import client
 
     player = client.ensure()
-    app = StreamApp(player, FakeShell())
+    app = StreamApp(cast(Any, player), cast(Any, FakeShell()))
     async with app.run_test() as pilot:
         await pilot.pause(0.2)
         assert "Playing" in text(app, "#state")
@@ -462,7 +465,7 @@ async def test_q_quits_and_stops_the_background_music(runtime):
     from gentle_stream import client
 
     player = client.ensure()
-    app = StreamApp(player, FakeShell())
+    app = StreamApp(cast(Any, player), cast(Any, FakeShell()))
     async with app.run_test() as pilot:
         await pilot.pause(0.2)
         await pilot.press("q")
@@ -478,7 +481,7 @@ async def test_an_attached_tui_shows_and_controls_the_running_music(runtime):
     other.set_style(RAIN)
     wait_for(lambda: other.spectrum(8) is not None and other.now.style == RAIN, timeout=20)
     shell = FakeShell(answer={"name": "Summer Storm", "mode": "mixolydian"})
-    app = StreamApp(client.ensure(), shell)
+    app = StreamApp(cast(Any, client.ensure()), cast(Any, shell))
     async with app.run_test() as pilot:
         await pilot.pause(0.2)
         assert "Rainy Café" in text(app, "#title")
@@ -503,7 +506,7 @@ async def test_an_attached_tui_shows_and_controls_the_running_music(runtime):
 async def test_the_tui_leaves_when_the_music_is_stopped_elsewhere(runtime):
     from gentle_stream import client
 
-    app = StreamApp(client.ensure(), FakeShell())
+    app = StreamApp(cast(Any, client.ensure()), cast(Any, FakeShell()))
     async with app.run_test() as pilot:
         await pilot.pause(0.2)
         client.connect().close()                       # e.g. `gentle-stream ctl stop` from another terminal
@@ -525,7 +528,7 @@ async def test_the_footer_shows_back_and_quit():
     app, _ = make_app(FakeShell())
     async with app.run_test() as pilot:
         await pilot.pause(0.1)
-        keys = {b.key: b.description for b in app.BINDINGS if b.show}
+        keys = {b.key: b.description for b in app.BINDINGS if isinstance(b, Binding) and b.show}
         assert "b" in keys and "q" in keys
         assert "keep" in keys["b"].lower() and "stop" in keys["q"].lower()
 
@@ -687,7 +690,9 @@ async def test_pm012_picking_a_builtin_or_saved_journey_starts_it_immediately():
         await pilot.pause(0.1)
         assert "Journey alpha" in text(app, "#status")
     first = next(iter(BUILTIN.values()))
-    assert started == [first.to_dict(), JourneyStore().get("alpha").to_dict()]
+    alpha = JourneyStore().get("alpha")
+    assert alpha is not None
+    assert started == [first.to_dict(), alpha.to_dict()]
 
 
 @pytest.mark.asyncio
@@ -706,10 +711,12 @@ async def test_pm012_create_saves_the_generated_journey_and_reopens_the_picker_o
         await pilot.pause(0.3)
         assert shell.prompts == ["slow night drive"]
         assert isinstance(app.screen, JourneyPickerModal)
-        assert picker_ids(app)[app.screen.query_one("OptionList").highlighted] == "saved:night-drive"
+        highlighted = app.screen.query_one(OptionList).highlighted
+        assert highlighted is not None and picker_ids(app)[highlighted] == "saved:night-drive"
         await pilot.press("enter")
         await pilot.pause(0.1)
     saved = JourneyStore().get("night-drive")
+    assert saved is not None
     expected = Journey.from_dict({**valid_journey("night-drive"), "title": "night-drive"}, name="night-drive")
     assert saved == expected
     assert started == [saved.to_dict()]
@@ -734,7 +741,7 @@ async def test_pm012_typed_name_wins_and_builtin_generated_name_stays_open():
         await pilot.press(*"second", "enter")
         await pilot.pause(0.3)
         assert isinstance(app.screen, JourneyPromptModal)
-        assert app.screen.query_one("#prompt").value == "second"
+        assert app.screen.query_one("#prompt", Input).value == "second"
         assert "built-in" in str(app.screen.query_one("#journey-error").render())
     assert JourneyStore().get("warm-up") is None
 
@@ -806,7 +813,7 @@ def test_pm012_in_process_player_starts_a_journey_object():
 
     player = Player(Engine(Style(name="Midnight Rain"), seed=1), stream_factory=lambda **k: FakeStream(**k))
     queued = []
-    player.engine.queue_journey = queued.append
+    setattr(player.engine, "queue_journey", queued.append)   # noqa: B010  (records instead of queueing)
     player.journey_start(BUILTIN["warm-up"].to_dict())
     assert queued == [BUILTIN["warm-up"]]
 

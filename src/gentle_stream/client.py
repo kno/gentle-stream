@@ -11,6 +11,7 @@ controls do nothing and `spectrum()` raises `PlayerGone`, which the TUI takes as
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import select
@@ -181,10 +182,8 @@ class PlayerClient:
         self.binaural = Binaural.from_dict(binaural) if isinstance(binaural, dict) else None
 
     def _control(self, cmd: str, **args) -> None:
-        try:
+        with contextlib.suppress(PlayerGone):   # the next poll notices and the TUI leaves
             self._update(self.request(cmd, **args))
-        except PlayerGone:
-            pass   # the next poll notices and the TUI leaves
 
     # ------------------------------------------------------------ Player interface
     @property

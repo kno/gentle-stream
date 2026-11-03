@@ -255,7 +255,7 @@ class JazzGenre(Genre):
         tones = list(chord.tones[:4])
         root = tones[0]
         kind = quality([t - root for t in tones])
-        ninth, eleventh, thirteenth = deg(8) - root, deg(10) - root, deg(12) - root
+        ninth, thirteenth = deg(8) - root, deg(12) - root
         # the raised dominant (minor modes) takes its scale's b9/b13: idiomatic on a V7
         if kind == "dominant":
             tones += [root + (ninth if ninth in (13, 14, 15) else 14), root + (thirteenth if thirteenth in (20, 21)

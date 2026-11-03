@@ -318,7 +318,7 @@ class SynthwaveGenre(Genre):
     def schedule(self, piece, plan):
         p = plan
         s, ins, add, st = piece.style, piece.inst, piece.add, piece.state
-        B = 60 / s.bpm; BAR = 4 * B
+        B = 60 / s.bpm
         e, k = p.energy, p.key_offset
         high = e >= ARP_ENERGY and p.section != "breakdown"
         # pads: the chord (and the passing chord on beats 3-4) as root plus voice-led upper tones

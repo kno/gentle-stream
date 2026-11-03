@@ -1,6 +1,5 @@
 """Ambient (elegant) genre: pads, celesta, no drums, a lot of space (S2)."""
 import numpy as np
-import pytest
 
 from gentle_stream import genres
 from gentle_stream.composer import Composer
@@ -114,7 +113,7 @@ def test_rendered_audio_is_soft_and_has_no_drum_transients():
     """No drums: above 3 kHz the level never jumps from one 10 ms window to the next the way hats, snares and
     brushes do (the lo-fi busy beat's 99.5th-percentile rise is about 1.4 in natural-log units)."""
     e = Engine(Style(genre="ambient", drums="busy", energy=0.9, bpm=66), seed=5, samples=False)
-    x = hp(np.concatenate([e.render_bar() for _ in range(12)])[:, 0], 3000)
+    x = np.asarray(hp(np.concatenate([e.render_bar() for _ in range(12)])[:, 0], 3000))
     w = int(0.01 * SR)
     rms = np.sqrt(np.mean(x[:len(x) // w * w].reshape(-1, w) ** 2, axis=1))
     rms = rms[len(rms) // 4:]                              # past the fade-in and intro

@@ -56,9 +56,9 @@ import sys
 import threading
 from dataclasses import dataclass
 from multiprocessing.connection import Listener
+from pathlib import Path
 
 log = logging.getLogger("gentle_stream.daemon")
-from pathlib import Path
 
 AUDIO_FACTORY_ENV = "GENTLE_STREAM_AUDIO_FACTORY"   # testing seam: "module:attr" replaces sounddevice.OutputStream
 MAX_BANDS = 512
