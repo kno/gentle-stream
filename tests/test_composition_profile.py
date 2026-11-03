@@ -74,7 +74,7 @@ def test_the_profile_energy_sets_each_section_energy():
 
 
 @pytest.mark.parametrize("kwargs, message", [
-    ({"form": (("A", 8), ("chorus", 8))}, "unknown section 'chorus'"),
+    ({"form": (("A", 8), ("solo", 8))}, "unknown section 'solo'"),
     ({"form": (("A", 6),)}, "section 'A' must last 4, 8 or 16 bars, not 6"),
     ({"form": ()}, "form must have at least one section"),
     ({"energy": {"A": 0.5}}, "energy has no value for 'intro'"),

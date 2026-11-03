@@ -17,16 +17,18 @@ from ..synth import SR, bp, hp, lp
 from .base import Genre, Master
 from .lofi import Instruments as LofiInstruments
 
-CHORUS = ("B", "B'")
+CHORUS = ("chorus",)
 DRUMS = {"kick": (36, 105, 0.4, 0.30), "snare": (38, 105, 0.4, 0.20), "clap": (39, 100, 0.3, 0.14),
          "hat": (42, 85, 0.15, 0.05), "crash": (49, 105, 1.8, 0.08)}   # GM key, velocity, seconds, rms
 
 # Intro, verse, chorus, verse, chorus, an instrumental bridge, the chorus twice more, a short outro.
 PROFILE = Profile(
-    first_form=(("intro", 4), ("A", 8), ("B", 8), ("A'", 8), ("B", 8), ("breakdown", 8), ("B'", 8), ("B'", 8),
-                ("release", 4)),
-    form=(("A", 8), ("B", 8), ("A'", 8), ("B", 8), ("breakdown", 8), ("B'", 8), ("B'", 8), ("release", 4)),
-    energy={"intro": .35, "A": .5, "B": .85, "A'": .55, "breakdown": .4, "B'": .95, "release": .45},
+    first_form=(("intro", 4), ("verse", 8), ("chorus", 8), ("verse", 8), ("chorus", 8), ("breakdown", 8),
+                ("chorus", 8), ("chorus", 8), ("release", 4)),
+    form=(("verse", 8), ("chorus", 8), ("verse", 8), ("chorus", 8), ("breakdown", 8), ("chorus", 8), ("chorus", 8),
+          ("release", 4)),
+    energy={"intro": .35, "verse": .42, "chorus": .85, "breakdown": .4, "release": .45},
+    tail_tilt=True,
     rhythms=(((0, .5), (.5, 1), (1.5, .5), (2, 2)), ((0, 1), (1, .5), (1.5, 1.5), (3, 1)),
              ((.5, .5), (1, .5), (1.5, .5), (2, 1), (3, 1)), ((0, 1.5), (1.5, .5), (2, 1), (3, 1)),
              ((0, .5), (.5, .5), (1, 1), (2, .5), (2.5, 1.5))),
@@ -76,6 +78,7 @@ class PopGenre(Genre):
     bpm = (90, 128)
     modes = ("major", "minor", "mixolydian")
     profile = PROFILE
+    counter_mode = "echo"
     voices = {"piano": "bright pop piano", "rhodes": "electric piano", "nylon": "acoustic guitar strums",
               "pad": "synth pad"}
 

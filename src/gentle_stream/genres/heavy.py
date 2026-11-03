@@ -15,6 +15,7 @@ PROFILE = Profile(
     first_form=(("intro", 8), ("A", 8), ("B", 8), ("A'", 8), ("B", 8), ("breakdown", 8), ("B'", 16), ("release", 4)),
     form=(("A", 8), ("B", 8), ("A'", 8), ("B", 8), ("breakdown", 8), ("B'", 16), ("release", 4)),
     energy={"intro": .5, "A": .7, "B": .9, "A'": .75, "breakdown": .5, "B'": 1.0, "release": .5},
+    tail_tilt=True,
     rhythms=(((0, .5), (.5, .5), (1, .5), (1.5, .5), (2, 1), (3, 1)),
              ((0, .25), (.25, .25), (.5, .5), (1.5, .5), (2, .5), (2.5, .5), (3, 1)),
              ((0, 1), (1, .5), (1.5, .5), (2, .5), (2.5, 1.5)), ((0, .75), (.75, .75), (1.5, .5), (2, 2))),
@@ -29,6 +30,7 @@ class HeavyGenre(RockGenre):
     bpm = (100, 140)
     modes = ("minor", "phrygian")
     profile = PROFILE
+    counter_mode = "echo"
 
     @staticmethod
     def flavor(style) -> str:

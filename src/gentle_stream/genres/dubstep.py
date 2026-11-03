@@ -324,6 +324,7 @@ PROFILE = Profile(
     first_form=(("intro", 8), ("A", 8), ("B", 16), ("breakdown", 8), ("B'", 16), ("release", 8)),
     form=(("A", 8), ("B", 16), ("breakdown", 8), ("B'", 16), ("release", 8)),
     energy={"intro": .3, "A": .5, "B": .95, "A'": .6, "breakdown": .25, "B'": 1.0, "release": .4},
+    tail_tilt=True,
     rhythms=(((0, 2), (2, 2)), ((0, 3), (3, 1)), ((0, 1), (1, 3)), ((0, .5), (.5, 3.5))),
     steps=(-1, -2, 1, 0, -1), leap_chance=0.3, leap=4, span=4)
 

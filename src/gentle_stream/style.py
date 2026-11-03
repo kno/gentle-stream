@@ -45,7 +45,7 @@ def _clamp(value, lo, hi, default):
 
 
 def genre_names() -> tuple[str, ...]:
-    from .genres import NAMES   # imported late: the genre modules may import this module
+    from .genres import NAMES   # noqa: I001  (imported late on purpose: the genre modules import this one)
     return NAMES
 
 
@@ -67,6 +67,7 @@ class Style:
     mode: str = "minor"
     bpm: float = 72.0
     progression: tuple[int, ...] = (1, 6, 3, 7)
+    hook: tuple[int, ...] | None = None   # the chorus's own progression (None: section B's)
     chords: str = "piano"
     lead: str = "piano"
     drums: str = "lofi"
@@ -91,6 +92,13 @@ class Style:
             prog = ()
         if len(prog) < 2:
             prog = b.progression
+        hook = data.get("hook", b.hook)
+        if hook is not None:
+            try:
+                hook = tuple(int(x) for x in hook if 1 <= int(x) <= 7)[:8]
+            except (TypeError, ValueError):
+                hook = ()
+            hook = hook if len(hook) >= 2 else b.hook
         name = data.get("name", b.name)
         name = " ".join(str(name).split())[:40] or b.name
         mood = data.get("mood", b.mood)
@@ -102,6 +110,7 @@ class Style:
             mode=_choice(data.get("mode"), tuple(MODES), b.mode),
             bpm=round(_clamp(data.get("bpm"), 50, 140, b.bpm), 1),
             progression=prog,
+            hook=hook,
             chords=_choice(data.get("chords"), CHORD_INSTRUMENTS, b.chords),
             lead=_choice(data.get("lead"), LEAD_INSTRUMENTS, b.lead),
             drums=_choice(data.get("drums"), DRUMS, b.drums),
@@ -117,6 +126,7 @@ class Style:
     def to_dict(self) -> dict:
         d = asdict(self)
         d["progression"] = list(self.progression)
+        d["hook"] = list(self.hook) if self.hook is not None else None
         return d
 
     def variation(self, rng: np.random.Generator) -> Style:
@@ -125,13 +135,14 @@ class Style:
         key = KEYS[(KEYS.index(self.key) + int(rng.choice([0, 2, -2, 5, -5, 3, -3]))) % 12]
         options = [p for p in PROGRESSIONS[self.mode] if p != self.progression] or [self.progression]
         prog = tuple(options[int(rng.integers(len(options)))])
+        hook = self.hook and tuple(self.hook[1:] + self.hook[:1])   # the chorus keeps its shape, rotated
         chords, lead = self.chords, self.lead
         if rng.random() < 0.5:
             chords = CHORD_INSTRUMENTS[int(rng.integers(len(CHORD_INSTRUMENTS)))]
         if lead != "none" and rng.random() < 0.5:
             lead = CHORD_INSTRUMENTS[int(rng.integers(len(CHORD_INSTRUMENTS)))]
         bpm = float(np.clip(self.bpm + rng.integers(-6, 7), 50, 140))
-        return replace(self, key=key, progression=prog, chords=chords, lead=lead, bpm=bpm,
+        return replace(self, key=key, progression=prog, hook=hook, chords=chords, lead=lead, bpm=bpm,
                        swing=float(np.clip(self.swing + rng.uniform(-0.03, 0.03), 0, 0.3)))
 
     def summary(self) -> str:

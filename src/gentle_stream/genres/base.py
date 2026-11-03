@@ -56,7 +56,8 @@ class Piece:
         i = int(t * self.sr)
         if i < 0 or i >= len(self._acc):
             return
-        j = min(len(self._acc), i + len(sig)); s = sig[:j - i] * g
+        j = min(len(self._acc), i + len(sig))
+        s = sig[:j - i] * g
         self._acc[i:j, 0] += s * np.sqrt(0.5 * (1 - pan))
         self._acc[i:j, 1] += s * np.sqrt(0.5 * (1 + pan))
 
@@ -83,6 +84,7 @@ class Genre:
     modes: tuple[str, ...] = ("minor",)         # modes that suit the genre, most typical first
     voices: dict[str, str] = {}                 # Style.chords/lead name -> what it sounds like in this genre
     profile: Profile = DEFAULT_PROFILE          # how the composer writes for it (form, energy, melody)
+    counter_mode: str = "contrary"              # the counter-melody moves against the lead, or "echo" answers it
 
     def instruments(self, rng: np.random.Generator, sr: int, sampled: SampleInstruments | None) -> Any:
         """The voices for a new piece: any object `schedule` knows how to play. `sampled` is the engine's shared

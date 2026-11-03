@@ -47,7 +47,7 @@ Describe a feeling, a concept, a place or a scene, in any language. Gentle Shell
 
 ### Real composition — Not a loop
 
-A composer plans every piece with its genre's **song form** (lo-fi's is intro → A → B → A' → breakdown → B' → release; rock repeats its chorus, jazz plays AABA choruses, dubstep builds into 16-bar drops; then the form loops with fresh variation), cadences that resolve, passing chords, an occasional key lift, a **motif** developed by repetition, sequence, inversion and augmentation, a counter-melody in contrary motion and a bass line that walks into the next chord. Press `n` and you get a new piece with the same mood: new key, progression, melody and groove.
+A composer plans every piece with its genre's **song form** (lo-fi's is intro → A → B → A' → breakdown → B' → release; rock repeats its chorus, jazz plays AABA choruses, dubstep builds into 16-bar drops; then the form loops with fresh variation), cadences that resolve, passing chords, an occasional key lift, a **motif** developed by repetition, sequence, inversion and augmentation (each cycle grows a fresh tail, so a looped form is never the same music again), a counter-melody in contrary motion (or, in pop and heavy, one that answers the lead's last bar) and a bass line that walks into the next chord. Press `n` and you get a new piece with the same mood: new key, progression, melody and groove.
 
 ---
 
@@ -625,11 +625,11 @@ Each genre also composes its own way, through a composition profile (`composer.P
 | `electrohouse` | intro 16, A 8, drop B 16, breakdown 8, A' 8, drop B' 16, release 8 | short stabs |
 | `cumbia` | intro 4, verse and chorus twice each, breakdown 4, B' 8, release 4 | anticipated, step-wise |
 | `dubstep` | intro 8, build A 8, drop B 16, breakdown 8, drop B' 16, release 8 | sparse long notes |
-| `pop` | intro 4, verse, chorus, verse, chorus, an 8-bar instrumental bridge, the chorus twice, release 4 | a catchy hook: the chorus repeats note for note, doubled an octave up |
+| `pop` | intro 4, verse, chorus, verse, chorus, an 8-bar breakdown, the chorus twice, release 4 | a catchy hook: every chorus comes back note for note (and a repeated section within a cycle plays exactly as before), doubled an octave up |
 | `ballad` | intro 4, two verses, chorus, a 4-bar break, a last chorus a step or two higher (always), release 8 | long notes and expressive leaps; two chords a bar |
 | `heavy` | a riff intro 8, verse and chorus twice, an 8-bar breakdown, a 16-bar last chorus, release 4 | riffs: a few notes hammered in eighths and sixteenths |
 
-A profile also decides how often a cycle lifts the key and in which sections (by default half the cycles, in A' or B'; the ballad always lifts its last chorus). Later cycles repeat the form without the intro. Fills, builds and drops land on the last bars of their sections whatever their length, and the TUI's cycle time follows the playing genre's form.
+A style can give its chorus its own progression with `"hook": [4, 5, 6, 4]` (2 to 8 scale degrees); without it the chorus takes section B's progression. A profile also decides how often a cycle lifts the key and in which sections (by default half the cycles, in A' or B'; the ballad always lifts its last chorus). Later cycles repeat the form without the intro. Fills, builds and drops land on the last bars of their sections whatever their length, and the TUI's cycle time follows the playing genre's form.
 
 The four shared tone colours (`piano`, `rhodes`, `nylon`, `pad`) mean something different in each genre (in chiptune they are pulse widths, in rock they are guitars), so the model's answer schema and saved prompts stay the same everywhere.
 

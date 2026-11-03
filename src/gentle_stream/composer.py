@@ -26,8 +26,9 @@ RHYTHMS = (((0, 1.5), (1.5, .5), (2, 2)), ((0.5, 1), (1.5, 1), (2.5, 1.5)), ((0,
 # (section, bars); the intro opens a piece, then the form loops for as long as the piece plays
 FIRST_FORM = (("intro", 4), ("A", 8), ("B", 8), ("A'", 8), ("breakdown", 4), ("B'", 8), ("release", 4))
 FORM = FIRST_FORM[1:]
-ENERGY = {"intro": .3, "A": .55, "B": .8, "A'": .62, "breakdown": .25, "B'": .95, "release": .4}
-MAIN = ("A", "B", "A'", "B'", "release")   # sections that carry the melody and close on the tonic
+ENERGY = {"intro": .3, "verse": .5, "A": .55, "B": .8, "A'": .62, "chorus": .85, "breakdown": .25, "B'": .95,
+          "release": .4}
+MAIN = ("verse", "A", "B", "A'", "B'", "chorus", "release")   # sections that carry the melody and close on the tonic
 COUNTER_ENERGY = 0.7
 LIFT_CHANCE = 0.5
 AUGMENT_RATIO = 1.5   # a carried motif head plays at half speed when the new tempo is this much faster
@@ -78,6 +79,7 @@ class Profile:
     progressions: dict[str, tuple[tuple[int, ...], ...]] | None = None   # section B's choices per mode (None: shared)
     lift_chance: float = LIFT_CHANCE   # how often a cycle lifts the key, on one of `lift_at` (absent ones never lift)
     lift_at: tuple[str, ...] = ("A'", "B'")
+    tail_tilt: bool = False   # the developed tail starts higher or lower every third cycle
 
     def __post_init__(self):
         for label, form in (("first_form", self.first_form), ("form", self.form)):
@@ -176,7 +178,10 @@ def _identity(motif):
 
 # per main section: (question transform, answer transform, starting step); the release is a lone answer
 DEVELOPMENT = {
+    "verse": (None, _identity, 0),
     "A": (_identity, lambda m: sequence(m, -1), 0),
+    # the chorus lifts a step for its question and repeats it for the answer: the repeated line is the hook
+    "chorus": (lambda m: sequence(m, 1), _identity, 0),
     "B": (invert, lambda m: sequence(invert(m), 1), 2),
     "A'": (_identity, augment, 0),
     "B'": (lambda m: sequence(invert(m), 1), lambda m: augment(invert(m)), 2),
@@ -205,13 +210,14 @@ class Composer:
     def __init__(self, style: Style, seed: int, ton: int,
                  chord_hook: Callable[[Chord, tuple[int, ...]], Chord] | None = None,
                  skip_intro: bool = False, motif: tuple | None = None, tempo_ratio: float = 1.0,
-                 profile: Profile | None = None):
+                 profile: Profile | None = None, echo_counter: bool = False):
         """`motif` is the head of the previous piece's motif (`head`), carried across a genre step: it opens this
         piece's motif, in scale steps, so it sounds in the new key; at a new tempo more than AUGMENT_RATIO times
         faster it is augmented (twice as long). Without it the piece invents its own. `profile` is the genre's way of
         composing (the default one when None)."""
         self.style, self.ton = style, ton
         self.profile = profile or DEFAULT_PROFILE
+        self.echo_counter = echo_counter
         self.chord_hook = chord_hook
         self.skip_intro = skip_intro
         self.rng = np.random.default_rng([seed, 0xC0])
@@ -220,6 +226,7 @@ class Composer:
         self.motif = self._make_motif() if motif is None else self._carry(motif, tempo_ratio)
         self.anchor = self._anchor()
         self.prog_b: tuple[int, ...] | None = None
+        self.prog_chorus: tuple[int, ...] | None = None
         self.cycle = 0
         self._bars: list[_Bar] = []
         self._lock = threading.RLock()   # a sung phrase asks for coming bars from another thread than the render's
@@ -284,6 +291,13 @@ class Composer:
     def _degrees(self, prog, n):
         return [prog[i % len(prog)] for i in range(n)]
 
+    def _pick_hook(self) -> tuple[int, ...] | None:
+        """The chorus's hook: the `hook` progression when the style names one, else section B's."""
+        hook = self.style.hook
+        if hook is None:
+            return None
+        return tuple(hook)
+
     def _pick_b(self) -> tuple[int, ...]:
         """A contrasting progression of the same mode for section B; a fresh one every cycle."""
         a = self._degrees(self.style.progression, 6)
@@ -298,7 +312,12 @@ class Composer:
         return tuple(options[int(self.rng.integers(len(options)))])
 
     def _harmony(self, name: str, n: int):
-        prog = self.prog_b if name in ("B", "B'") else self.style.progression
+        if name in ("B", "B'") or (name == "chorus" and self.prog_chorus is None):
+            prog = self.prog_b                # the chorus takes section B's progression unless it has a hook
+        elif name == "chorus":
+            prog = self.prog_chorus
+        else:
+            prog = self.style.progression
         pre, dom = CADENCES[self.style.mode]
         raised = self.style.mode in RAISED
         passing: list[Chord | None] = [None] * n
@@ -325,14 +344,22 @@ class Composer:
         pr = self.profile
         form = pr.form if self.skip_intro and self.cycle == 0 else (pr.first_form if self.cycle == 0 else pr.form)
         if self.cycle > 0:
-            self.motif = self._develop(self.motif)
+            self.motif = self._develop(self.motif, self.cycle)
         self.prog_b = self._pick_b()
+        self.prog_chorus = self._pick_hook()
         lift_at, lift = None, 0
         if self.rng.random() < pr.lift_chance:
             lift_at = pr.lift_at[int(self.rng.integers(len(pr.lift_at)))]
             lift = int(self.rng.choice([1, 2]))
+        seen: dict[str, list[_Bar]] = {}   # a section that comes back in the same cycle plays exactly as before
         for k, (name, n) in enumerate(form):
             nxt = form[k + 1][0] if k + 1 < len(form) else pr.form[0][0]
+            if name in seen and lift_at != name:
+                for i, before in enumerate(seen[name]):
+                    self._bars.append(_Bar(name, i, n, nxt, before.base, before.chord, before.passing,
+                                           before.key_offset, melody=before.melody, counter=before.counter,
+                                           linked=before.linked, phrase=before.phrase, approach=before.approach))
+                continue
             linked = self._energy(pr.energy[name]) >= COUNTER_ENERGY
             chords, passing = self._harmony(name, n)
             key = lift if name == lift_at else 0
@@ -345,6 +372,7 @@ class Composer:
             if name in MAIN:   # the counter-melody is planned for every main section; `plan` turns it on
                 self._melody(start, name, n, key)
                 self._counter(start, n, key)
+            seen[name] = list(self._bars[start:start + n])
         self.cycle += 1
 
     # ------------------------------------------------------------ melody
@@ -377,11 +405,14 @@ class Composer:
         rh = RHYTHMS[int(self.rng.integers(len(RHYTHMS)))]
         return head + self._line(((1, rh),), head[-1][1] - 1)
 
-    def _develop(self, motif):
-        """Keep the head (first bar), grow a new tail: the piece's identity stays, the phrase moves on."""
+    def _develop(self, motif, cycle: int):
+        """Keep the head (first bar), grow a new tail: the piece's identity stays, the phrase moves on. Each cycle
+        develops it differently (theme and variations), so a looped form is not the same music again."""
         head = tuple(x for x in motif if x[0] < 4)
-        rh = RHYTHMS[int(self.rng.integers(len(RHYTHMS)))]
-        return head + self._line(((1, rh),), head[-1][1] - 1)
+        rhythms = self.profile.rhythms
+        rh = rhythms[int(self.rng.integers(len(rhythms)))]
+        tilt = (0, 1, -1)[cycle % 3] if self.profile.tail_tilt else 0   # the head's end, a step up, a step down
+        return head + self._line(((1, rh),), head[-1][1] - 1 + tilt)
 
     def _anchor(self) -> int:
         scale = self._scale(0)
@@ -457,6 +488,9 @@ class Composer:
             b = self._bars[i]
             beats = ((0, 4),) if b.section_bar % 4 == 3 else ((0, 2), (2, 2))   # each 4-bar phrase ends held
             notes = []
+            echo = self.echo_counter and i > start
+            if echo:   # answers the lead's last bar an octave down, on the chord tones
+                beats = tuple((nt.beat, nt.length) for nt in self._bars[i - 1].melody[:2]) or beats
             for beat, ln in beats:
                 cands = [m for m in range(lo, hi + 1) if m % 12 in self._tones(b, beat)]
                 lead = self._sounding(i, beat)

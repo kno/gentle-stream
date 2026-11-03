@@ -65,30 +65,34 @@ def test_pop_is_registered_and_offered_to_the_model():
 
 def test_the_form_alternates_verses_and_a_repeated_chorus():
     order = [(p.section, p.section_len) for p, _ in bars() if p.section_bar == 0]
-    assert order == [("intro", 4), ("A", 8), ("B", 8), ("A'", 8), ("B", 8), ("breakdown", 8), ("B'", 8), ("B'", 8),
-                     ("release", 4)]
+    assert order == [("intro", 4), ("verse", 8), ("chorus", 8), ("verse", 8), ("chorus", 8), ("breakdown", 8),
+                     ("chorus", 8), ("chorus", 8), ("release", 4)]
 
 
-def test_both_choruses_sing_the_same_hook():
+def test_every_chorus_plays_the_same_hook():
     played = bars()
-    choruses = [[p.melody for p, _ in played if p.section == "B" and p.section_bar == i] for i in range(8)]
-    assert all(len(set(c)) == 1 for c in choruses)    # the second B repeats the first note for note
-    assert any(c[0] for c in choruses)
+    choruses = []                                        # each chorus occurrence, bar by bar
+    for p, _ in played:
+        if p.section == "chorus" and p.section_bar == 0:
+            choruses.append([])
+        if choruses and p.section == "chorus":
+            choruses[-1].append((tuple((n.beat, n.midi) for n in p.melody), p.chord.degree))
+    assert len(choruses) >= 4 and all(c == choruses[0] for c in choruses)   # the hook comes back note for note
 
 
 def test_the_chorus_melody_is_doubled_an_octave_up_and_the_verse_is_not():
     checked = set()
     for plan, events in bars():
-        if "lead" not in plan.layers or not plan.melody or plan.section not in ("A", "A'", "B", "B'"):
+        if "lead" not in plan.layers or not plan.melody or plan.section not in ("verse", "chorus"):
             continue
         lead = [(b, m) for v, b, m in events if v == "keys:piano"]
         up = [any(m == n.midi + 12 and abs(b - n.beat) < 0.05 for b, m in lead) for n in plan.melody]
-        assert all(up) if plan.section in ("B", "B'") else not any(up), plan.bar
-        checked.add(plan.section[0])
-    assert checked == {"A", "B"}
+        assert all(up) if plan.section in ("chorus",) else not any(up), plan.bar
+        checked.add("v" if plan.section == "verse" else "c")
+    assert checked == {"v", "c"}
 
 
-@pytest.mark.parametrize("section", ["A", "B"])
+@pytest.mark.parametrize("section", ["verse", "chorus"])
 def test_backbeat_kick_on_one_and_three_snare_on_two_and_four(section):
     plan, events = next((p, e) for p, e in bars() if p.section == section and p.section_bar == 1)
     kicks = sorted(b for v, b, _ in events if v == "kick")
@@ -103,32 +107,32 @@ def test_claps_double_the_snare_only_in_the_chorus():
         if plan.section_bar != 1 or "drums" not in plan.layers:
             continue
         claps = [round(b, 1) for v, b, _ in events if v == "clap"]   # a few ms behind the snare: a flam, not a mask
-        assert claps == ([1, 3] if plan.section in ("B", "B'") else []), plan.section
+        assert claps == ([1, 3] if plan.section in ("chorus",) else []), plan.section
 
 
 def test_a_snare_fill_leads_into_every_chorus_and_a_crash_opens_it():
     played = bars()
     for plan, events in played:
-        last_before_chorus = plan.next_section in ("B", "B'") and plan.section_bar == plan.section_len - 1
+        last_before_chorus = plan.next_section in ("chorus",) and plan.section_bar == plan.section_len - 1
         fill = [b for v, b, _ in events if v == "snare" and b >= 3]
         if "drums" in plan.layers and last_before_chorus:
             assert fill == [3, 3.25, 3.5, 3.75], plan.bar
-        if plan.section in ("B", "B'") and plan.section_bar == 0 and "drums" in plan.layers:
+        if plan.section in ("chorus",) and plan.section_bar == 0 and "drums" in plan.layers:
             assert ("crash", 0.0, None) in events
 
 
 def test_the_chorus_bass_drives_eighth_notes_on_the_roots_and_the_verse_plays_the_composer_line():
     for plan, events in bars():
         notes = [(b, m) for v, b, m in events if v == "bass"]
-        if plan.section in ("B", "B'"):
+        if plan.section in ("chorus",):
             assert [b for b, _ in notes] == [i / 2 for i in range(8)]
             assert {m for b, m in notes if b < 2} == {plan.bass[0].midi}
-        elif plan.section in ("A", "A'"):
+        elif plan.section in ("verse",):
             assert notes == [(n.beat, n.midi) for n in plan.bass]
 
 
 def test_soft_drums_skip_the_fill():
     soft = replace(STYLE, drums="soft")
     for plan, events in bars(soft):
-        if plan.next_section in ("B", "B'") and plan.section_bar == plan.section_len - 1 and "drums" in plan.layers:
+        if plan.next_section in ("chorus",) and plan.section_bar == plan.section_len - 1 and "drums" in plan.layers:
             assert sorted(b for v, b, _ in events if v == "snare") == [1, 3]

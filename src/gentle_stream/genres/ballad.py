@@ -28,6 +28,7 @@ PROFILE = Profile(
     first_form=(("intro", 4), ("A", 8), ("A'", 8), ("B", 8), ("breakdown", 4), ("B'", 8), ("release", 8)),
     form=(("A", 8), ("B", 8), ("A'", 8), ("B", 8), ("breakdown", 4), ("B'", 8), ("release", 4)),
     energy={"intro": .25, "A": .4, "B": .7, "A'": .45, "breakdown": .3, "B'": .9, "release": .35},
+    tail_tilt=True,
     rhythms=(((0, 3), (3, 1)), ((0, 1.5), (1.5, .5), (2, 2)), ((0, 2), (2, 1), (3, 1)), ((.5, .5), (1, 3)),
              ((0, 1), (1, 1), (2, 2))),
     steps=(-1, 1, -1, 0, 2), leap_chance=0.4, leap=4, span=6, chords_per_bar=2,

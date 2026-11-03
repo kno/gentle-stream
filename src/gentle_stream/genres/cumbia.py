@@ -334,6 +334,7 @@ class SampledVoices:
 PROFILE = Profile(
     first_form=(("intro", 4), ("A", 8), ("B", 8), ("A", 8), ("B", 8), ("breakdown", 4), ("B'", 8), ("release", 4)),
     form=(("A", 8), ("B", 8), ("A", 8), ("B", 8), ("breakdown", 4), ("B'", 8), ("release", 4)),
+    tail_tilt=True,
     rhythms=(((0, .5), (.5, .5), (1, 1), (2.5, 1.5)), ((0, 1), (1.5, .5), (2, 1), (3, 1)), ((.5, .5), (1, .5), (1.5, .5), (2, 2)),
              ((0, 1.5), (1.5, 1.5), (3, 1))),
     steps=(-1, 1, -1, 1, -2, 0), leap_chance=0.2)
