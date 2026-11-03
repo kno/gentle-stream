@@ -237,7 +237,7 @@ def _sing(piece: Piece, line, key: str, vowel: str, bar: int, pan: float, gain: 
     beat = 60 / piece.style.bpm
     previous = piece.state.get(key)
     for note in line:
-        start = bar * 4 + note.beat
+        start = bar * piece.style.beats + note.beat
         connected = previous is not None and abs(previous[1] - start) < 1e-6
         midi = previous[0] if previous is not None and connected else None
         audio = melodic_note(note.midi, note.length * beat, vowel, midi, piece.style.genre, sampled, piece.sr)

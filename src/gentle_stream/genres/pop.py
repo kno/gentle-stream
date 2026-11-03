@@ -88,7 +88,7 @@ class PopGenre(Genre):
     def schedule(self, piece, plan):
         p, s, v = plan, piece.style, piece.inst
         B = 60 / s.bpm
-        BAR = 4 * B
+        BAR = s.beats * B
         e, k, add = p.energy, p.key_offset, piece.add
         chorus = p.section in CHORUS
         keys = v.keys(s.chords)

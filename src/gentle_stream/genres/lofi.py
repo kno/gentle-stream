@@ -102,7 +102,8 @@ class LofiGenre(Genre):
     def schedule(self, piece, plan):
         p = plan
         s, ins, bar = piece.style, piece.inst, p.bar
-        B = 60 / s.bpm; BAR = 4 * B
+        B = 60 / s.bpm
+        BAR = s.beats * B
         e, k = p.energy, p.key_offset
         add = piece.add
         chord_fn = getattr(ins, s.chords)

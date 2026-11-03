@@ -513,7 +513,7 @@ class ElectroHouseGenre(Genre):
         # the build: one riser across both bars, a snare roll that speeds up and swells into the drop
         if build is not None:
             if build == 0:
-                add(ins.riser(BUILD_BARS * 4 * B), 0, 0, 0.12 + 0.06 * e)
+                add(ins.riser(BUILD_BARS * s.beats * B), 0, 0, 0.12 + 0.06 * e)
             if s.drums != "none":
                 hits = [j / 2 for j in range(8)] if build == 0 else (
                     [j / 4 for j in range(12)] + [3 + j / 8 for j in range(8)])

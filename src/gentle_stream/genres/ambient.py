@@ -194,7 +194,7 @@ class AmbientGenre(Genre):
         p = plan
         s, v, add, st = piece.style, piece.inst, piece.add, piece.state
         B = 60 / s.bpm
-        BAR = 4 * B
+        BAR = piece.style.beats * B
         e, k = p.energy, p.key_offset
         quiet = p.section in ("intro", "breakdown")
         lead = "lead" in p.layers and s.lead != "none"

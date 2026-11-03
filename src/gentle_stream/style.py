@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass, fields, replace
 
 import numpy as np
 
+METERS = {"4/4": 4, "6/8": 6, "12/8": 12}   # beats in a bar (the meter's own pulse)
 KEYS = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 MODES = {
     "minor": (0, 2, 3, 5, 7, 8, 10),
@@ -67,6 +68,7 @@ class Style:
     mode: str = "minor"
     bpm: float = 72.0
     progression: tuple[int, ...] = (1, 6, 3, 7)
+    meter: str = "4/4"
     hook: tuple[int, ...] | None = None   # the chorus's own progression (None: section B's)
     chords: str = "piano"
     lead: str = "piano"
@@ -110,6 +112,7 @@ class Style:
             mode=_choice(data.get("mode"), tuple(MODES), b.mode),
             bpm=round(_clamp(data.get("bpm"), 50, 140, b.bpm), 1),
             progression=prog,
+            meter=_choice(data.get("meter"), tuple(METERS), b.meter),
             hook=hook,
             chords=_choice(data.get("chords"), CHORD_INSTRUMENTS, b.chords),
             lead=_choice(data.get("lead"), LEAD_INSTRUMENTS, b.lead),
@@ -122,6 +125,11 @@ class Style:
             lead_density=_clamp(data.get("lead_density"), 0, 1, b.lead_density),
             voice=_clamp(data.get("voice"), 0, 1, b.voice),
         )
+
+    @property
+    def beats(self) -> int:
+        """Beats in a bar: 4 in 4/4, 6 in 6/8, 12 in 12/8 (bpm counts one of these pulses a minute)."""
+        return METERS[self.meter]
 
     def to_dict(self) -> dict:
         d = asdict(self)

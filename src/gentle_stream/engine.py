@@ -460,7 +460,7 @@ class Engine:
 
     @property
     def bar_seconds(self) -> float:
-        return 240.0 / self.style.bpm
+        return self.style.beats * 60.0 / self.style.bpm
 
     # ------------------------------------------------------------ piece setup
     def _start_piece(self, style: Style, skip_intro: bool = False, motif: tuple | None = None) -> None:

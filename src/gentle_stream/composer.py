@@ -216,6 +216,8 @@ class Composer:
         faster it is augmented (twice as long). Without it the piece invents its own. `profile` is the genre's way of
         composing (the default one when None)."""
         self.style, self.ton = style, ton
+        self.beats = style.beats          # the meter's pulse count in a bar (4 in 4/4, 6 in 6/8)
+        self.k = self.beats / 4           # a pattern written for four beats stretches into this bar
         self.profile = profile or DEFAULT_PROFILE
         self.echo_counter = echo_counter
         self.chord_hook = chord_hook
@@ -386,7 +388,7 @@ class Composer:
         pr, out, leap = self.profile, [], False
         for bar, rh in bars:
             for beat, ln in rh:
-                out.append((bar * 4 + beat, step, ln))
+                out.append((bar * self.beats + beat * self.k, step, ln * self.k))
                 d = int(self.rng.choice(pr.steps))
                 if not leap and self.rng.random() < pr.leap_chance:
                     d, leap = pr.leap, True
@@ -396,7 +398,7 @@ class Composer:
     @property
     def head(self) -> tuple:
         """The first bar of the motif: what a genre step carries into the next piece."""
-        return tuple(note for note in self.motif if note[0] < 4)
+        return tuple(note for note in self.motif if note[0] < self.beats)
 
     def _carry(self, head: tuple, tempo_ratio: float) -> tuple:
         """A motif opening with the carried `head` and a fresh tail (or the head alone, augmented over both bars)."""
@@ -408,7 +410,7 @@ class Composer:
     def _develop(self, motif, cycle: int):
         """Keep the head (first bar), grow a new tail: the piece's identity stays, the phrase moves on. Each cycle
         develops it differently (theme and variations), so a looped form is not the same music again."""
-        head = tuple(x for x in motif if x[0] < 4)
+        head = tuple(x for x in motif if x[0] < self.beats)
         rhythms = self.profile.rhythms
         rh = rhythms[int(self.rng.integers(len(rhythms)))]
         tilt = (0, 1, -1)[cycle % 3] if self.profile.tail_tilt else 0   # the head's end, a step up, a step down
@@ -423,7 +425,7 @@ class Composer:
         return sorted(self.ton + key + 12 + o + 12 * k for o in self.scale_iv for k in range(4))
 
     def _tones(self, b: _Bar, beat: float) -> set[int]:
-        chord = b.passing if b.passing is not None and beat >= 2 else b.chord
+        chord = b.passing if b.passing is not None and beat >= 2 * self.k else b.chord
         return {(self.ton + t + b.key_offset) % 12 for t in chord.tones[:4]}
 
     @staticmethod
@@ -454,11 +456,11 @@ class Composer:
                 src = body[0] if k < 2 else body[1]
                 notes = []
                 for beat, st, ln in src:
-                    if int(beat // 4) != (k if k < 2 else 0):
+                    if int(beat // self.beats) != (k if k < 2 else 0):
                         continue
-                    b = beat % 4
+                    b = beat % self.beats
                     m = scale[int(np.clip(self.anchor + lift + st, 0, len(scale) - 1))]
-                    if b in (0, 2):
+                    if b in (0, 2 * self.k):
                         m = self._nearest(m, self._tones(bar, b))
                     notes.append(Note(b, m, ln))
                     last = m
@@ -468,7 +470,7 @@ class Composer:
             bar = self._bars[base + pos]
             pcs = self._tones(bar, 0)
             m = self._nearest(last, {tonic}) if first else self._nearest(last, pcs, avoid={tonic})
-            bar.melody, bar.phrase = (Note(0, m, 4),), pos
+            bar.melody, bar.phrase = (Note(0, m, self.beats),), pos
 
     def _sounding(self, i: int, beat: float) -> int | None:
         for j in range(i, -1, -1):
@@ -486,7 +488,8 @@ class Composer:
             prev = (last.midi, self._sounding(start - 1, last.beat))
         for i in range(start, start + n):
             b = self._bars[i]
-            beats = ((0, 4),) if b.section_bar % 4 == 3 else ((0, 2), (2, 2))   # each 4-bar phrase ends held
+            beats = (((0, self.beats),) if b.section_bar % 4 == 3
+                     else ((0, 2 * self.k), (2 * self.k, 2 * self.k)))   # each 4-bar phrase ends held
             notes = []
             echo = self.echo_counter and i > start
             if echo:   # answers the lead's last bar an octave down, on the chord tones
@@ -516,11 +519,11 @@ class Composer:
         target = self._bass_midi(nxt.chord, nxt.key_offset)
         moves = target % 12 != root % 12
         end = 3.5 if moves else 4
-        notes = [Note(0, root, 2 if b.passing is not None else 2.5)]
+        notes = [Note(0, root, (2 if b.passing is not None else 2.5) * self.k)]
         if b.passing is not None:
-            notes.append(Note(2, self._bass_midi(b.passing, b.key_offset), end - 2))
+            notes.append(Note(2 * self.k, self._bass_midi(b.passing, b.key_offset), (end - 2) * self.k))
         elif energy >= 0.4 and b.section != "breakdown":
-            notes.append(Note(2.5, root + (7 if i % 2 else 0), end - 2.5))
+            notes.append(Note(2.5 * self.k, root + (7 if i % 2 else 0), (end - 2.5) * self.k))
         if moves:
             if b.approach < 0.4:
                 a = target - 1
@@ -529,5 +532,5 @@ class Composer:
             else:   # diatonic step from below
                 pcs = {(self.ton + o + nxt.key_offset) % 12 for o in self.scale_iv}
                 a = target - 1 if (target - 1) % 12 in pcs else target - 2
-            notes.append(Note(3.5, a, 0.5))
+            notes.append(Note(3.5 * self.k, a, 0.5 * self.k))
         return tuple(notes)

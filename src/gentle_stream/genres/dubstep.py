@@ -403,7 +403,7 @@ class DubstepGenre(Genre):
 
         # build-up: a riser over the whole bar and an accelerating, swelling snare roll into the drop
         if build:
-            add(ins.riser(4 * B), 0, 0, 0.25)
+            add(ins.riser(s.beats * B), 0, 0, 0.25)
             if s.drums != "none":
                 for i, b in enumerate(ROLL):
                     add(ins.snare(), b * B, 0.05, 0.08 + 0.22 * i / (len(ROLL) - 1))

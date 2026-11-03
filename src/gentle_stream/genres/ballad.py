@@ -103,7 +103,7 @@ class BalladGenre(Genre):
         # strings: the chord held through the bar from the first chorus on, and under the release
         if chorus or p.section == "release":
             for i, m in enumerate(piece.voice([x + k for x in p.chord.tones])):
-                add(v.strings(m - 12 if i == 0 else m, 4 * B * 0.98, 0.5 + 0.4 * e), 0, (i - 1) * 0.35, 0.10)
+                add(v.strings(m - 12 if i == 0 else m, s.beats * B * 0.98, 0.5 + 0.4 * e), 0, (i - 1) * 0.35, 0.10)
         # bass: the composer's line, held
         for i, n in enumerate(p.bass):
             add(v.bass(n.midi, n.length * B * 0.98), n.beat * B, 0, 0.24 if i == 0 else 0.16)

@@ -49,6 +49,8 @@ Describe a feeling, a concept, a place or a scene, in any language. Gentle Shell
 
 A composer plans every piece with its genre's **song form** (lo-fi's is intro → A → B → A' → breakdown → B' → release; rock repeats its chorus, jazz plays AABA choruses, dubstep builds into 16-bar drops; then the form loops with fresh variation), cadences that resolve, passing chords, an occasional key lift, a **motif** developed by repetition, sequence, inversion and augmentation (each cycle grows a fresh tail, so a looped form is never the same music again), a counter-melody in contrary motion (or, in pop and heavy, one that answers the lead's last bar) and a bass line that walks into the next chord. Press `n` and you get a new piece with the same mood: new key, progression, melody and groove.
 
+A style can also name its **meter**: `"meter": "4/4"` (the default), `"6/8"` or `"12/8"`. The bar lasts as many of its beats as the meter has (`bpm` counts that pulse: a quarter in 4/4, an eighth in 6/8 and 12/8), and the melody, bass, counter-melody and choir are written in those beats while phrases stay four bars long. Anything but 4/4 is additive: every 4/4 style renders exactly as before. The genres' own drum and comping patterns are still shaped for four beats and stretch into a longer bar, so 6/8 and 12/8 are a starting point rather than a finished idiom.
+
 ---
 
 ### Thirteen genres — Lo-fi by default
