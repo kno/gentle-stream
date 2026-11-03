@@ -13,8 +13,8 @@ Branch `feat/ballad-bridge`, stacked on `feat/meter` (`3de9f6f`). Two matched of
 | Task | Specs | Route | Commit |
 | :--- | :--- | :--- | :--- |
 | T1 Render and inspect the baseline WAV | S2 | inline | untracked `listen/ballad-bridge-before.wav` |
-| T2 Compose and schedule the bridge with focused RED/GREEN tests | S1 | inline | bridge work-unit commit |
-| T3 Render the matching after WAV, verify comparison and full suite, commit | S1, S2 | inline | bridge work-unit commit |
+| T2 Compose and schedule the bridge with focused RED/GREEN tests | S1 | inline | `55b1235` |
+| T3 Render the matching after WAV, verify comparison and full suite, commit | S1, S2 | inline | `55b1235` |
 
 ## Log
 
