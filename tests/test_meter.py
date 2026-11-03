@@ -55,3 +55,82 @@ def test_every_genre_renders_in_six_eight(name, tmp_path, monkeypatch):
     audio = np.concatenate([e.render_bar() for _ in range(8)])
     assert np.all(np.isfinite(audio)) and np.abs(audio).max() <= 0.9 + 1e-6
     assert np.abs(audio).max() > 0.01          # it plays, not silence
+
+
+# ------------------------------------------------------------ a journey can be a waltz
+def test_a_journey_names_its_meter_and_round_trips():
+    from gentle_stream.journey import Journey
+
+    j = Journey.from_dict({"version": 1, "name": "waltz", "meter": "6/8",
+                           "stages": [{"name": "One", "seconds": 30, "to": {"bpm": 120}}]})
+    assert j.meter == "6/8" and j.to_dict()["meter"] == "6/8"
+    plain = Journey.from_dict({"version": 1, "name": "plain", "stages": [{"name": "One", "seconds": 30, "to": {}}]})
+    assert plain.meter is None and "meter" not in plain.to_dict()
+    with pytest.raises(ValueError, match='"meter" must be one of 4/4, 6/8, 12/8'):
+        Journey.from_dict({"version": 1, "name": "x", "meter": "3/4", "stages": [{"name": "A", "seconds": 30, "to": {}}]})
+
+
+def test_a_journey_in_six_eight_starts_a_piece_in_six_eight_and_keeps_running():
+    from gentle_stream.journey import Journey
+
+    e = Engine(Style(bpm=120), seed=1, samples=False)
+    assert e.bar_seconds == pytest.approx(2.0)
+    e.queue_journey(Journey.from_dict({"version": 1, "name": "waltz", "meter": "6/8", "stages": [
+        {"name": "One", "seconds": 30, "to": {"bpm": 120}}]}))
+    e.render_bar()
+    e.render_bar()
+    assert e.bar_seconds == pytest.approx(3.0) and e.journey is not None
+    assert e.composer.beats == 6
+
+
+def test_a_journey_without_a_meter_leaves_the_bar_alone():
+    from gentle_stream.journey import Journey
+
+    e = Engine(Style(meter="6/8", bpm=120), seed=1, samples=False)
+    e.queue_journey(Journey.from_dict({"version": 1, "name": "plain",
+                                       "stages": [{"name": "One", "seconds": 30, "to": {"energy": 0.9}}]}))
+    e.render_bar()
+    e.render_bar()
+    assert e.bar_seconds == pytest.approx(3.0) and e.journey is not None
+
+
+def test_the_tempo_bound_follows_the_meter():
+    from gentle_stream.engine import bpm_range
+
+    assert bpm_range("4/4") == (50.0, 140.0)
+    assert bpm_range("6/8") == (75.0, 210.0) and bpm_range("12/8") == (150.0, 420.0)
+
+
+def test_a_six_eight_journey_keeps_its_waltz_tempo_and_four_four_still_stops_at_140():
+    from gentle_stream.journey import Journey
+
+    def stage(meter):
+        data = {"version": 1, "name": "w", "stages": [{"name": "A", "seconds": 40, "to": {"bpm": 184}}]}
+        j = Journey.from_dict({**data, "meter": meter} if meter else data)
+        return j.stages[0].to["bpm"]
+
+    assert stage("6/8") == 184.0 and stage("12/8") == 184.0 and stage(None) == 140.0
+
+
+def test_a_glide_in_six_eight_reaches_a_waltz_tempo():
+    for meter, want in (("6/8", 184.0), ("4/4", 140.0)):
+        e = Engine(Style(meter=meter, bpm=120), seed=1, samples=False)
+        e.queue_glide({"bpm": 184}, 0)
+        e.render_bar()
+        e.render_bar()
+        assert e.style.bpm == pytest.approx(want), meter
+
+
+def test_resuming_into_a_saved_style_does_not_start_a_new_piece_for_the_meter():
+    """A resumed journey brings the meter its saved style already has; queuing another piece would drop the resumption."""
+    from gentle_stream.journey import Journey
+
+    e = Engine(Style(bpm=120), seed=1, samples=False)
+    walk = Journey.from_dict({"version": 1, "name": "waltz", "meter": "6/8", "stages": [
+        {"name": "One", "seconds": 600, "to": {"bpm": 120}}]})
+    e.queue_journey(walk, at=120.0, start={"bpm": 120.0})
+    e.render_bar()
+    e.render_bar()
+    assert e.bar_seconds == pytest.approx(2.0)          # the bar did not change: no fresh piece
+    assert e._pending_style is None
+    assert e.journey is not None and e.journey.meter == "6/8"   # the journey runs, the piece was not restarted

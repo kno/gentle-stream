@@ -39,10 +39,10 @@ from types import MappingProxyType
 
 from .binaural import BEAT, CARRIER, DEFAULT_BEAT, DEFAULT_CARRIER, MAX_LEVEL
 from .binaural import FIELDS as BINAURAL_FIELDS
-from .engine import GLIDE_FIELDS
+from .engine import GLIDE_FIELDS, bpm_range
 from .presets import PresetError, normalize_name
 from .storage import write_json_atomic
-from .style import DRUMS
+from .style import DRUMS, METERS
 
 ENDS = ("sustain", "release")
 BINAURAL_RANGES = {"carrier": CARRIER, "beat": BEAT, "level": (0.0, MAX_LEVEL)}
@@ -336,6 +336,7 @@ class Journey:
     description: str = ""
     title: str = ""   # how it is shown; the name with a capital initial by default ("warm-up" -> "Warm-up")
     drums: str | None = None   # "energy": the drum level follows the energy (stages naming one win)
+    meter: str | None = None   # the bar's meter ("6/8": a waltz); a new piece starts in it
     _ends: tuple[float, ...] = field(init=False, repr=False, compare=False)   # cumulative stage end times
 
     def __post_init__(self) -> None:
@@ -359,6 +360,9 @@ class Journey:
         version = data.get("version")
         if isinstance(version, bool) or version != 1:
             raise ValueError('"version" must be 1')
+        meter = data.get("meter")
+        if meter is not None and meter not in METERS:
+            raise ValueError(f'"meter" must be one of {", ".join(METERS)}')
         raw_stages = data.get("stages")
         if not isinstance(raw_stages, list):
             raise ValueError('"stages" must be an array')
@@ -398,7 +402,7 @@ class Journey:
                     continue
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                     raise ValueError(f'stage {number}: "to.{key}" must be a number')
-                lo, hi = GLIDE_FIELDS[key]
+                lo, hi = bpm_range(meter or "4/4") if key == "bpm" else GLIDE_FIELDS[key]
                 result = round(min(hi, max(lo, float(value))), 1) if key == "bpm" else min(hi, max(lo, float(value)))
                 if result != value:
                     warnings.append(f'stage {number}: "to.{key}" clamped from {value!r} to {result!r}')
@@ -438,7 +442,7 @@ class Journey:
         if drums is not None and drums != "energy":
             raise ValueError('"drums" must be "energy"')
         return cls(journey_name, tuple(stages), end=end, description=data.get("description", ""),
-                   title=data.get("title", ""), drums=drums)
+                   title=data.get("title", ""), drums=drums, meter=meter)
 
     def to_dict(self) -> dict:
         stages_list = []
@@ -468,6 +472,8 @@ class Journey:
                 "end": self.end, "stages": stages_list}
         if self.drums is not None:
             data["drums"] = self.drums
+        if self.meter is not None:
+            data["meter"] = self.meter
         return data
 
     @property

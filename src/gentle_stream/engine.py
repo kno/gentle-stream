@@ -47,7 +47,7 @@ from .genres.base import Genre, Master, Piece
 from .genres.lofi import Instruments  # noqa: F401  (re-exported: the procedural lo-fi voices)
 from .mastering import Compressor, ConvolutionReverb, procedural_ir, soft_clip
 from .sing import Note
-from .style import DEFAULT, DRUMS, KEYS, Style
+from .style import DEFAULT, DRUMS, KEYS, METERS, Style
 from .synth import SR, StatefulFilter, _sos, bp, hp, lp, mtof  # noqa: F401  (re-exported)
 from .voicepacks import PackVoice
 
@@ -133,8 +133,16 @@ class JourneyControlError(ValueError):
     """A control error on a journey; the message is meant for the terminal."""
 
 
-def _bounded(name: str, value: float) -> float:
-    lo, hi = GLIDE_FIELDS[name]
+def bpm_range(meter: str = "4/4") -> tuple[float, float]:
+    """The bpm bounds for a meter: bpm counts the meter's own pulse, so 6/8 (eighths) takes proportionally higher
+    numbers than 4/4 (quarters), and 12/8 higher still."""
+    lo, hi = GLIDE_FIELDS["bpm"]
+    scale = METERS.get(meter, 4) / 4
+    return lo * scale, hi * scale
+
+
+def _bounded(name: str, value: float, meter: str = "4/4") -> float:
+    lo, hi = bpm_range(meter) if name == "bpm" else GLIDE_FIELDS[name]
     value = float(np.clip(float(value), lo, hi))
     return round(value, 1) if name == "bpm" else value
 
@@ -228,7 +236,7 @@ class Engine:
         if unknown or not fields:
             raise ValueError(f"cannot glide {', '.join(map(repr, unknown))}" if unknown else "no fields to glide")
         seconds = float(np.clip(float(seconds), 0, MAX_GLIDE_SECONDS))
-        new = {name: _Glide(_bounded(name, value), seconds) for name, value in fields.items()}
+        new = {name: _Glide(_bounded(name, value, self.style.meter), seconds) for name, value in fields.items()}
         with self._lock:
             driver = self._pending_journey if self._journey_queued else self._driving
             driven = [name for name in fields if driver is not None and name in driver.fields]
@@ -376,6 +384,9 @@ class Engine:
         with self._lock:
             self._journey_queued, self._pending_journey = True, journey
             self._pending_resume = (at, start, binaural_start) if at > 0 or start is not None else None
+            if journey.meter is not None and journey.meter != self.style.meter and self._pending_resume is None:
+                # a meter is structural: the bar changes length, so a fresh piece in it starts with the journey
+                self._pending_style = replace(self.style, meter=journey.meter)
 
     def journey_resume_state(self) -> dict | None:
         """What resuming the running journey needs: it, its rendered seconds and the values it started from."""
@@ -683,7 +694,7 @@ class Engine:
         for name, g in glides.items():
             if not g.started:
                 g = replace(g, start=now, source=getattr(self.style, name), started=True)
-            values[name] = _bounded(name, g.at(now))
+            values[name] = _bounded(name, g.at(now), self.style.meter)
             running[name] = g
         self._evolve(values)
         with self._lock:   # a glide queued or cancelled meanwhile by another thread wins over this bookkeeping
@@ -744,7 +755,7 @@ class Engine:
         if self._override is None:
             return values
         offsets = self._override[2]
-        return {name: _bounded(name, value + offsets.get(name, 0.0)) for name, value in values.items()}
+        return {name: _bounded(name, value + offsets.get(name, 0.0), self.style.meter) for name, value in values.items()}
 
     def _journey_values(self, running: _Running | None, t: float) -> dict[str, float]:
         """The values of `running` (the journey playing) for the bar about to render, `t` seconds into it; empty
@@ -752,7 +763,7 @@ class Engine:
         if running is None:
             return {}
         _, _, values = running.journey.at(t, running.start)
-        return {name: _bounded(name, value) for name, value in values.items()}
+        return {name: _bounded(name, value, self.style.meter) for name, value in values.items()}
 
     @staticmethod
     def _take(acc: np.ndarray, n: int) -> np.ndarray:
