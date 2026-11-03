@@ -5,7 +5,7 @@ import pytest
 
 from gentle_stream import genres
 from gentle_stream.composer import Composer
-from gentle_stream.engine import Engine
+from gentle_stream.engine import SR, Engine
 from gentle_stream.style import METERS, Style
 
 TON = 50
@@ -134,3 +134,49 @@ def test_resuming_into_a_saved_style_does_not_start_a_new_piece_for_the_meter():
     assert e.bar_seconds == pytest.approx(2.0)          # the bar did not change: no fresh piece
     assert e._pending_style is None
     assert e.journey is not None and e.journey.meter == "6/8"   # the journey runs, the piece was not restarted
+
+
+def lofi_events(meter, section="A", bar=5, seed=4):
+    """[(kind, beat)] of one lo-fi bar, scheduled through a spy instrument set."""
+    from gentle_stream.genres.base import Piece
+    from gentle_stream.genres.lofi import GENRE
+
+    style = Style(genre="lofi", meter=meter, bpm=120, energy=0.7, swing=0.0)   # the grid itself, not the swing
+    spy_pending, events = [], []
+    piece = Piece(style, np.random.default_rng(seed), None, 50, SR, np.zeros((SR * 8, 2)))
+
+    class Spy:
+        def __getattr__(self, name):
+            if name.startswith("_"):
+                raise AttributeError(name)
+            return lambda *a, **k: spy_pending.append(name) or np.zeros(8)
+
+    piece.inst = Spy()
+    GENRE.start(piece)
+    beat = 60 / style.bpm
+
+    def add(sig, t, pan=0.0, g=1.0):
+        events.append((spy_pending.pop(0), round(t / beat, 2)))
+
+    piece.add = add
+    comp = Composer(style, seed, 50, GENRE.chord, profile=GENRE.profile)
+    plan = next(comp.plan(b) for b in range(60) if comp.plan(b).section == section and comp.plan(b).section_bar == bar)
+    GENRE.schedule(piece, plan)
+    return events
+
+
+def test_lofi_hats_follow_the_groups_of_three_in_six_eight():
+    events = lofi_events("6/8")
+    hats = [b for kind, b in events if kind == "hat"]
+    assert hats == [0, 1, 2, 3, 4, 5]                     # one per eighth, the bar's six beats
+    assert sorted(b for kind, b in events if kind == "kick") == [0, 3]
+
+
+def test_lofi_keeps_its_four_four_pattern():
+    events = lofi_events("4/4")
+    from gentle_stream.genres.lofi import KICK_PATTERNS
+
+    hats = [b for kind, b in events if kind == "hat"]
+    assert hats == [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]        # eighths as before
+    kicks = tuple(sorted(b for kind, b in events if kind == "kick"))
+    assert kicks in KICK_PATTERNS                           # its own four-beat patterns, drawn per piece

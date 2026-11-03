@@ -49,3 +49,8 @@ rhythmic patterns (still four-beat shaped inside a longer bar).
   eighths in the verse, the chord on each half in the chorus, a side-stick and one hat per group in the drums, and
   4/4 keeps its exact pattern (golden hashes unchanged). Three mutants killed. Other genres still stretch a four-beat
   pattern: lofi, jazz's 12/8 shuffle and electrohouse's two literal 4s are the next slice.
+
+- L6: Phase 2b: lo-fi in a compound bar puts a hat on each of the bar's eighths, the kick on both halves and the
+  brush where the bar turns, keeping its four-beat patterns untouched (three mutants killed, the golden hashes
+  unchanged). Still open (2c): jazz's 12/8 shuffle and electrohouse's two literal 4s (build progress and the
+  dirty-bass LFO phase), both internal normalisations rather than audible patterns.

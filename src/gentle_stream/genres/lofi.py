@@ -123,25 +123,37 @@ class LofiGenre(Genre):
         # bass: root, back-half note, approach into the next root
         for i, n in enumerate(p.bass):
             add(ins.sub(n.midi, n.length * B * (0.95 if i else 1.0)), n.beat * B, 0, 0.30 if i == 0 else 0.20)
-        # drums: sparse at low energy, the style's full pattern from the middle up
+        # drums: sparse at low energy, the style's full pattern from the middle up; in a compound bar (6/8, 12/8)
+        # the pattern follows its groups of three instead of four beats
         if "drums" in p.layers:
             dg = 0.7 + 0.6 * e
             full = e >= 0.45
-            for kb in (piece.state["kick_beats"] if full else (0,)):
-                add(ins.kick(), kb * B, 0, (0.42 if kb == int(kb) else 0.30) * dg)
-            if s.drums == "busy" and e >= 0.6:
-                add(ins.kick(), 3.75 * B, 0, 0.16 * dg)
-            for b in ((1, 3) if full else (3,)):
-                add(ins.brush(), b * B + 0.01, 0.08, 0.20 * dg)
-            if full and s.drums != "soft" and bar % 2:
-                add(ins.rim(), 3 * B + 0.01, -0.1, 0.10 * dg)
-            steps = 4 if s.drums == "busy" and e >= 0.6 else 2
             hat_g = {"soft": 0.03, "lofi": 0.05, "busy": 0.045}[s.drums] * (1.0 if full else 0.6)
-            for b in range(4):
-                for h in range(steps):
-                    off = h * B / steps + (B * s.swing * 2 / steps if h % 2 else 0)
-                    add(ins.hat(0.6 if h % 2 else 1.0), b * B + off, -0.3,
+            if s.beats > 4:
+                half = s.beats // 2
+                for kb in ((0, half) if full else (0,)):
+                    add(ins.kick(), kb * B, 0, 0.42 * dg)
+                for b in ((half,) if full else (0,)):
+                    add(ins.brush(), b * B + 0.01, 0.08, 0.20 * dg)
+                for b in range(s.beats):
+                    off = B * s.swing * 2 if b % 2 else 0.0
+                    add(ins.hat(0.6 if b % 2 else 1.0), b * B + off, -0.3,
                         hat_g * dg * (0.8 + 0.4 * piece.rng.random()))
+            else:
+                for kb in (piece.state["kick_beats"] if full else (0,)):
+                    add(ins.kick(), kb * B, 0, (0.42 if kb == int(kb) else 0.30) * dg)
+                if s.drums == "busy" and e >= 0.6:
+                    add(ins.kick(), 3.75 * B, 0, 0.16 * dg)
+                for b in ((1, 3) if full else (3,)):
+                    add(ins.brush(), b * B + 0.01, 0.08, 0.20 * dg)
+                if full and s.drums != "soft" and bar % 2:
+                    add(ins.rim(), 3 * B + 0.01, -0.1, 0.10 * dg)
+                steps = 4 if s.drums == "busy" and e >= 0.6 else 2
+                for b in range(4):
+                    for h in range(steps):
+                        off = h * B / steps + (B * s.swing * 2 / steps if h % 2 else 0)
+                        add(ins.hat(0.6 if h % 2 else 1.0), b * B + off, -0.3,
+                            hat_g * dg * (0.8 + 0.4 * piece.rng.random()))
         # lead and counter-melody (the counter on the chord instrument, quieter and slower)
         if "lead" in p.layers:
             lead_fn = getattr(ins, s.lead)
