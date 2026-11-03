@@ -180,3 +180,50 @@ def test_lofi_keeps_its_four_four_pattern():
     assert hats == [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]        # eighths as before
     kicks = tuple(sorted(b for kind, b in events if kind == "kick"))
     assert kicks in KICK_PATTERNS                           # its own four-beat patterns, drawn per piece
+
+
+def test_electrohouse_lfo_follows_the_bar_s_own_beats():
+    from gentle_stream.genres.electrohouse import GENRE
+
+    plan = Composer(Style(genre="electrohouse"), 3, 50, profile=GENRE.profile).plan(3)   # never the first bar
+    cut = GENRE.bass_cut
+    assert cut(plan, 0, None) == cut(plan, 0, None, 4)        # 4/4 keeps exactly its own numbers
+    assert cut(plan, 0, None, 6) != cut(plan, 0, None, 4)     # the phase counts the bar's pulses
+
+
+def test_electrohouse_build_progress_follows_the_bar_s_own_beats():
+    from gentle_stream.genres.electrohouse import GENRE
+
+    plan = Composer(Style(genre="electrohouse"), 3, 50, profile=GENRE.profile).plan(0)
+    cut = GENRE.bass_cut
+    # mid-build, the cutoff differs when progress uses four versus six pulses per bar
+    assert cut(plan, 3, 1, 6) != cut(plan, 3, 1, 4)
+
+
+def test_electrohouse_schedule_hands_the_cut_the_bar_s_beats(monkeypatch):
+    from gentle_stream.genres import electrohouse as E
+    from gentle_stream.genres.base import Piece
+
+    seen = []
+    real = E.GENRE.bass_cut
+
+    def spy(p, beat, build, beats=4):
+        seen.append(beats)
+        return real(p, beat, build, beats)
+
+    monkeypatch.setattr(E.GENRE, "bass_cut", spy)
+    style = Style(genre="electrohouse", meter="6/8", bpm=180)
+    piece = Piece(style, np.random.default_rng(5), None, 50, SR, np.zeros((SR * 8, 2)))
+
+    class Spy:
+        def __getattr__(self, name):
+            if name.startswith("_"):
+                raise AttributeError(name)
+            return lambda *a, **k: np.zeros(8)
+
+    piece.inst = Spy()
+    E.GENRE.start(piece)
+    piece.add = lambda *a, **k: None
+    plan = Composer(style, 5, 50, E.GENRE.chord, profile=E.GENRE.profile).plan(20)
+    E.GENRE.schedule(piece, plan)
+    assert seen and set(seen) == {6}

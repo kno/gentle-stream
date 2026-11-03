@@ -28,7 +28,10 @@ prompt hints that go with them. Until then, a genre's patterns keep their shape 
 | :--- | :--- | :--- | :--- |
 | T1 `Style.meter`, `beats`, `bar_seconds`; tests | S2, S4 | inline | done |
 | T2 Composer and choir in the meter's beats; phrase boundaries in bars; tests | S3, S4 | inline | done |
-| T3 Engine clock, journeys and the sung lookahead; a 6/8 render of every genre; README | S3, S4 | inline | pending |
+| T3 Engine clock, journeys and the sung lookahead; a 6/8 render of every genre; README | S3, S4 | inline | `ea13b78`, `628c2a8` |
+| T4 Ballad compound accompaniment | S5 | inline | `29f9907` |
+| T5 Lo-fi compound percussion | S5 | inline | `caacc3b` |
+| T6 Electrohouse build and LFO meter normalisation | S5 | inline | phase 2c slice |
 
 ## Log
 
@@ -53,4 +56,9 @@ rhythmic patterns (still four-beat shaped inside a longer bar).
 - L6: Phase 2b: lo-fi in a compound bar puts a hat on each of the bar's eighths, the kick on both halves and the
   brush where the bar turns, keeping its four-beat patterns untouched (three mutants killed, the golden hashes
   unchanged). Still open (2c): jazz's 12/8 shuffle and electrohouse's two literal 4s (build progress and the
-  dirty-bass LFO phase), both internal normalisations rather than audible patterns.
+  dirty-bass LFO phase). Jazz's existing 4/4 swing already uses a triplet feel; a distinct 12/8 jazz arrangement
+  remains a listening-led decision, not an internal normalisation.
+
+- L7: Phase 2c: electrohouse's build progress (pad sweep, snare crescendo and dirty-bass cutoff) and dirty-bass
+  LFO now count the bar's own pulses instead of a literal four. The 4/4 calculation is unchanged. Three focused
+  tests cover the cutoff and scheduling handoff; 3/3 mutants killed. Full suite: 1909 passed.

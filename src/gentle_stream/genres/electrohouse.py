@@ -453,7 +453,7 @@ class ElectroHouseGenre(Genre):
         def pad_cut(beat):
             if build is None:
                 return base
-            return base * (SWEEP_TOP / base) ** ((build * 4 + beat) / (4 * BUILD_BARS))
+            return base * (SWEEP_TOP / base) ** ((build * s.beats + beat) / (s.beats * BUILD_BARS))
 
         segments = [(p.chord, 0.0, 4.0 if p.passing is None else 2.0)]
         if p.passing is not None:
@@ -494,7 +494,8 @@ class ElectroHouseGenre(Genre):
             for step, iv, ln in (st["riff16"] if strong else st["riff8"]):
                 beat = step / 4
                 m = _active(p, beat).midi + iv
-                tonal(ins.bass(m, ln * B / 4 * 0.85, 0.9 if iv == 0 else 0.75, self.bass_cut(p, beat, build)),
+                tonal(ins.bass(m, ln * B / 4 * 0.85, 0.9 if iv == 0 else 0.75,
+                               self.bass_cut(p, beat, build, s.beats)),
                       beat * B, 0, 0.36)
         # drums: kick on every beat, clap on 2 and 4, open hats on the off-beats, 16th closed hats on the drops
         if drums:
@@ -518,7 +519,7 @@ class ElectroHouseGenre(Genre):
                 hits = [j / 2 for j in range(8)] if build == 0 else (
                     [j / 4 for j in range(12)] + [3 + j / 8 for j in range(8)])
                 for b in hits:
-                    prog = (build * 4 + b) / (4 * BUILD_BARS)
+                    prog = (build * s.beats + b) / (s.beats * BUILD_BARS)
                     add(ins.snare(), b * B, 0.1, (0.08 + 0.2 * prog) * (0.8 + 0.4 * e))
         # lead with a dotted-eighth echo; the counter-melody on a quiet pluck
         if "lead" in p.layers and s.lead != "none":
@@ -529,13 +530,13 @@ class ElectroHouseGenre(Genre):
                 add(ins.lead(n.midi, n.length * B * 0.85, 0.6, "nylon"), n.beat * B + 0.01, -0.35, 0.06)
 
     @staticmethod
-    def bass_cut(p, beat, build):
-        """Dirty-bass cutoff: brighter with energy, drifting with a slow LFO in absolute beats; darker at the
-        start of a build, opening into the drop."""
-        lfo = 0.5 - 0.5 * np.cos(2 * np.pi * (p.bar * 4 + beat) / LFO_BEATS)
+    def bass_cut(p, beat, build, beats: int = 4):
+        """Dirty-bass cutoff: brighter with energy, drifting with a slow LFO in absolute beats (of a bar of `beats`
+        pulses); darker at the start of a build, opening into the drop."""
+        lfo = 0.5 - 0.5 * np.cos(2 * np.pi * (p.bar * beats + beat) / LFO_BEATS)
         cut = (350 + 900 * p.energy) * 2 ** (1.0 * lfo)
         if build is not None:
-            cut *= 2 ** (-1 + 1.5 * (build * 4 + beat) / (4 * BUILD_BARS))
+            cut *= 2 ** (-1 + 1.5 * (build * beats + beat) / (beats * BUILD_BARS))
         return _q(cut)
 
     def master(self, style):
