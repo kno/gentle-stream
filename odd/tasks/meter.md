@@ -44,3 +44,8 @@ bar-length effects (ballad's strings, dubstep's riser, electrohouse's build rise
 next phase (S5): electrohouse's build and LFO progressions, which normalise by a literal 4, and every genre's own
 rhythmic patterns (still four-beat shaped inside a longer bar).
 - L4: the note that holds a phrase now lasts the whole bar (`self.beats`, not a literal 4).
+
+- L5: Phase 2a (this branch): the ballad composes in the meter's groups of three — a broken chord over the bar's
+  eighths in the verse, the chord on each half in the chorus, a side-stick and one hat per group in the drums, and
+  4/4 keeps its exact pattern (golden hashes unchanged). Three mutants killed. Other genres still stretch a four-beat
+  pattern: lofi, jazz's 12/8 shuffle and electrohouse's two literal 4s are the next slice.

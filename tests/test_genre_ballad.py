@@ -107,3 +107,31 @@ def test_a_crash_opens_the_last_chorus_only():
 def test_the_melody_sings_long_notes():
     notes = [n for p, _ in bars() for n in p.melody]
     assert np.mean([n.length for n in notes]) >= 1.5        # beats; lo-fi's motif averages about 1
+
+
+# ------------------------------------------------------------ compound time: a waltz
+def waltz(**extra):
+    from dataclasses import replace
+    return replace(STYLE, meter="6/8", bpm=180, **extra)
+
+
+def test_a_six_eight_verse_breaks_the_chord_in_groups_of_three():
+    plan, events = next((p, e) for p, e in bars(waltz()) if p.section == "A" and p.section_bar == 1)
+    keys = sorted({round(b, 2) for v, b, _ in events if v == "keys:piano"})
+    assert keys == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]              # six eighths, two groups of three
+    assert not [v for v, _, _ in events if v in ("kick", "stick", "hat")]
+
+
+def test_a_six_eight_chorus_marks_each_half_of_the_bar():
+    plan, events = next((p, e) for p, e in bars(waltz()) if p.section == "B" and p.section_bar == 1)
+    keys = sorted({round(b) for v, b, _ in events if v == "keys:piano"})   # its tones a few ms apart
+    assert keys == [0, 3]                                       # the chord on each half
+    assert [round(b, 2) for v, b, _ in events if v == "kick"] == [0.0]
+    assert [round(b, 2) for v, b, _ in events if v == "stick"] == [3.0]
+    assert sorted({round(b, 2) for v, b, _ in events if v == "hat"}) == [0.0, 3.0]
+
+
+def test_four_four_ballad_keeps_its_own_pattern():
+    plan, events = next((p, e) for p, e in bars() if p.section == "A" and p.section_bar == 1)
+    keys = sorted({round(b, 2) for v, b, _ in events if v == "keys:piano"})
+    assert keys == [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]     # eighths, as before

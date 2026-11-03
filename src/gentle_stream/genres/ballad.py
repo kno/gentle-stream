@@ -89,13 +89,23 @@ class BalladGenre(Genre):
         e, k, add = p.energy, p.key_offset, piece.add
         chorus = p.section in CHORUS
         keys = v.keys(s.chords)
-        # keys: broken chords in eighths in the verse, block chords on beats 1 and 3 in the chorus
-        for chord, at in ((p.chord, 0), (p.passing or p.chord, 2)):
+        # a compound bar (6/8, 12/8) breathes in groups of three: a waltz's oom-pah-pah, not four beats stretched
+        compound = s.beats > 4
+        group = 3 if compound else 2
+        starts = tuple(range(0, s.beats, group)) if compound else (0, 2)
+        for chord, at in ([(p.chord, 0), (p.passing or p.chord, s.beats // 2)] if compound
+                          else [(p.chord, 0), (p.passing or p.chord, 2)]):
             vc = piece.voice([x + k for x in chord.tones])
             piece.center = cast(int, float(np.mean(vc)))
             if chorus or s.chords == "pad":
+                length = (group if compound else 2) * B * 0.95
                 for i, m in enumerate(vc):
-                    add(keys(m, 2 * B * 0.95, 0.75), at * B + i * 0.012, (i - 1.5) * 0.2, 0.09)
+                    add(keys(m, length, 0.75), at * B + i * 0.012, (i - 1.5) * 0.2, 0.09)
+            elif compound:      # the broken chord follows the bar's groups of three
+                for j in range(group):
+                    tone = ARPEGGIO[j % len(ARPEGGIO)]
+                    m = vc[min(tone, len(vc) - 1)]
+                    add(keys(m, B * 1.4, 0.65 + 0.1 * (j == 0)), (at + j) * B, (tone - 1) * 0.25, 0.08)
             else:
                 for j, tone in enumerate(ARPEGGIO[:4]):
                     m = vc[min(tone, len(vc) - 1)]
@@ -112,10 +122,16 @@ class BalladGenre(Genre):
             dg = 0.6 + 0.5 * e
             add(v.drum("kick"), 0, 0, 0.34 * dg)
             if s.drums == "busy":
-                add(v.drum("kick"), 2.5 * B, 0, 0.22 * dg)
-            add(v.drum("stick"), 2 * B, 0.1, 0.16 * dg)
-            for b in range(4):
-                add(v.drum("hat"), b * B, -0.3, 0.035 * dg)
+                add(v.drum("kick"), (s.beats / 2 + 0.5 if compound else 2.5) * B, 0, 0.22 * dg)
+            if compound:    # a soft side-stick where each half of the bar turns, and one hat per group
+                for b in starts[1:]:
+                    add(v.drum("stick"), b * B, 0.1, 0.16 * dg)
+                for b in starts:
+                    add(v.drum("hat"), b * B, -0.3, 0.035 * dg)
+            else:
+                add(v.drum("stick"), 2 * B, 0.1, 0.16 * dg)
+                for b in range(4):
+                    add(v.drum("hat"), b * B, -0.3, 0.035 * dg)
             if p.section == "B'" and p.section_bar == 0:
                 add(v.drum("crash"), 0, 0.3, 0.10 * dg)
         # lead: the melody, a touch louder in the chorus; the counter-melody on the strings
