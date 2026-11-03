@@ -630,7 +630,7 @@ Each genre also composes its own way, through a composition profile (`composer.P
 | `cumbia` | intro 4, verse and chorus twice each, breakdown 4, B' 8, release 4 | anticipated, step-wise |
 | `dubstep` | intro 8, build A 8, drop B 16, breakdown 8, drop B' 16, release 8 | sparse long notes |
 | `pop` | intro 4, verse, chorus, verse, chorus, an 8-bar breakdown, the chorus twice, release 4 | a catchy hook: every chorus comes back note for note (and a repeated section within a cycle plays exactly as before), doubled an octave up |
-| `ballad` | intro 4, two verses, chorus, a 4-bar break, a last chorus a step or two higher (always), release 8 | long notes and expressive leaps; two chords a bar |
+| `ballad` | intro 4, two verses, chorus, a 4-bar break (a melodic bridge in 6/8 or 12/8), a last chorus a step or two higher (always), release 8 | long notes and expressive leaps; two chords a bar; compound-time bridge thins the piano and builds the strings into the last chorus |
 | `heavy` | a riff intro 8, verse and chorus twice, an 8-bar breakdown, a 16-bar last chorus, release 4 | riffs: a few notes hammered in eighths and sixteenths |
 
 A style can give its chorus its own progression with `"hook": [4, 5, 6, 4]` (2 to 8 scale degrees); without it the chorus takes section B's progression. A mood can ask for it in words ("a chorus with its own progression"): the model may answer with `hook`. A profile also decides how often a cycle lifts the key and in which sections (by default half the cycles, in A' or B'; the ballad always lifts its last chorus). Later cycles repeat the form without the intro. Fills, builds and drops land on the last bars of their sections whatever their length, and the TUI's cycle time follows the playing genre's form.

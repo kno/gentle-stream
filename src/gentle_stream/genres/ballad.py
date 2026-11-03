@@ -1,8 +1,8 @@
 """Ballad: piano and strings, slow and expressive, building to a last chorus a step higher.
 
 The verses (A, A') are a broken-chord piano over held bass notes, with no drums; the choruses (B, B') bring block
-chords, a string section and soft drums (kick on 1, a side-stick on 3, quarter hats), and the last chorus always
-lifts the key. The harmony moves twice a bar and the melody sings long notes with expressive leaps up. With the
+chords, a string section and soft drums (kick on 1, a side-stick on 3, quarter hats). In compound meter a four-bar
+bridge thins the piano and brings in the strings before the last chorus, which always lifts the key. The harmony moves twice a bar and the melody sings long notes with expressive leaps up. With the
 samples backend the keys are FluidR3_GM, the strings a String Ensemble, the bass an Acoustic Bass and the drums the
 Standard kit; without it the lo-fi voices play them (the warm pad stands in for the strings).
 """
@@ -28,7 +28,7 @@ PROFILE = Profile(
     first_form=(("intro", 4), ("A", 8), ("A'", 8), ("B", 8), ("breakdown", 4), ("B'", 8), ("release", 8)),
     form=(("A", 8), ("B", 8), ("A'", 8), ("B", 8), ("breakdown", 4), ("B'", 8), ("release", 4)),
     energy={"intro": .25, "A": .4, "B": .7, "A'": .45, "breakdown": .3, "B'": .9, "release": .35},
-    tail_tilt=True,
+    tail_tilt=True, compound_bridge=True,
     rhythms=(((0, 3), (3, 1)), ((0, 1.5), (1.5, .5), (2, 2)), ((0, 2), (2, 1), (3, 1)), ((.5, .5), (1, 3)),
              ((0, 1), (1, 1), (2, 2))),
     steps=(-1, 1, -1, 0, 2), leap_chance=0.4, leap=4, span=6, chords_per_bar=2,
@@ -97,7 +97,10 @@ class BalladGenre(Genre):
                           else [(p.chord, 0), (p.passing or p.chord, 2)]):
             vc = piece.voice([x + k for x in chord.tones])
             piece.center = cast(int, float(np.mean(vc)))
-            if chorus or s.chords == "pad":
+            if compound and p.section == "breakdown":
+                # A single low piano note per chord leaves space for the new bridge melody.
+                add(keys(vc[0], group * B * 0.9, 0.6), at * B, -0.15, 0.07)
+            elif chorus or s.chords == "pad":
                 length = (group if compound else 2) * B * 0.95
                 for i, m in enumerate(vc):
                     add(keys(m, length, 0.75), at * B + i * 0.012, (i - 1.5) * 0.2, 0.09)
@@ -111,7 +114,7 @@ class BalladGenre(Genre):
                     m = vc[min(tone, len(vc) - 1)]
                     add(keys(m, 1.5 * B, 0.65 + 0.1 * (j == 0)), (at + j / 2) * B, (tone - 1) * 0.25, 0.08)
         # strings: the chord held through the bar from the first chorus on, and under the release
-        if chorus or p.section == "release":
+        if chorus or p.section == "release" or (compound and p.section == "breakdown" and p.section_bar >= 2):
             for i, m in enumerate(piece.voice([x + k for x in p.chord.tones])):
                 add(v.strings(m - 12 if i == 0 else m, s.beats * B * 0.98, 0.5 + 0.4 * e), 0, (i - 1) * 0.35, 0.10)
         # bass: the composer's line, held

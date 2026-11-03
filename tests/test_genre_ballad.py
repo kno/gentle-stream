@@ -131,6 +131,26 @@ def test_a_six_eight_chorus_marks_each_half_of_the_bar():
     assert sorted({round(b, 2) for v, b, _ in events if v == "hat"}) == [0.0, 3.0]
 
 
+def test_compound_ballad_bridge_has_a_new_phrase_and_quiet_accompaniment():
+    played = bars(waltz())
+    bridge = [(p, e) for p, e in played if p.section == "breakdown"]
+    assert len(bridge) == 4
+    assert all("lead" in p.layers and p.melody for p, _ in bridge)
+    assert tuple(p.melody for p, _ in bridge) != tuple(
+        p.melody for p, _ in played if p.section == "B" and p.section_bar >= 4
+    )
+    for p, events in bridge:
+        assert [v for v, _, _ in events if v.startswith("keys:") and v == "keys:rhodes"]
+        assert len([v for v, _, _ in events if v == "keys:piano"]) == 2
+        assert bool([v for v, _, _ in events if v == "strings"]) == (p.section_bar >= 2)
+        assert not [v for v, _, _ in events if v in ("kick", "stick", "hat")]
+    assert played[32][0].section == "B'"  # the last chorus still follows the four-bar bridge
+
+
+def test_four_four_breakdown_remains_without_a_lead():
+    assert all("lead" not in p.layers for p, _ in bars() if p.section == "breakdown")
+
+
 def test_four_four_ballad_keeps_its_own_pattern():
     plan, events = next((p, e) for p, e in bars() if p.section == "A" and p.section_bar == 1)
     keys = sorted({round(b, 2) for v, b, _ in events if v == "keys:piano"})

@@ -80,6 +80,7 @@ class Profile:
     lift_chance: float = LIFT_CHANCE   # how often a cycle lifts the key, on one of `lift_at` (absent ones never lift)
     lift_at: tuple[str, ...] = ("A'", "B'")
     tail_tilt: bool = False   # the developed tail starts higher or lower every third cycle
+    compound_bridge: bool = False   # a four-bar melodic breakdown in compound-meter ballads
 
     def __post_init__(self):
         for label, form in (("first_form", self.first_form), ("form", self.form)):
@@ -374,6 +375,8 @@ class Composer:
             if name in MAIN:   # the counter-melody is planned for every main section; `plan` turns it on
                 self._melody(start, name, n, key)
                 self._counter(start, n, key)
+            elif name == "breakdown" and pr.compound_bridge and self.beats > 4:
+                self._bridge(start, n, key)
             seen[name] = list(self._bars[start:start + n])
         self.cycle += 1
 
@@ -471,6 +474,27 @@ class Composer:
             pcs = self._tones(bar, 0)
             m = self._nearest(last, {tonic}) if first else self._nearest(last, pcs, avoid={tonic})
             bar.melody, bar.phrase = (Note(0, m, self.beats),), pos
+
+    def _bridge(self, start: int, n: int, key: int) -> None:
+        """A contrasting four-bar phrase: a held opening, then a rising pickup into the final chorus.
+
+        It uses only the already-planned harmony, so adding the bridge consumes no random draws and leaves the
+        following chorus's melody and voicings intact.
+        """
+        scale = self._scale(key)
+        half = self.beats / 2
+        for i in range(n):
+            bar = self._bars[start + i]
+            anchor = scale[min(self.anchor + i, len(scale) - 1)]
+            first = self._nearest(anchor, self._tones(bar, 0))
+            second = self._nearest(first + 4, self._tones(bar, half))
+            if i == n - 2:
+                notes = (Note(0, first, self.beats),)
+            elif i == n - 1:
+                notes = (Note(half, first, half / 2), Note(half * 1.5, second, half / 2))
+            else:
+                notes = (Note(0, first, half), Note(half, second, half))
+            bar.melody, bar.phrase = notes, i
 
     def _sounding(self, i: int, beat: float) -> int | None:
         for j in range(i, -1, -1):
