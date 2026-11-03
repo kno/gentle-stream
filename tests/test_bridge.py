@@ -76,7 +76,7 @@ def test_command_runs_non_interactive_with_the_chosen_model(fake):
     args = argv()
     assert args[0] == "--" and "-p" in args and "--no-session" in args and "-nt" in args
     assert args[args.index("--model") + 1] == "claude-bridge/claude-haiku-5-5"
-    assert "calm" in args[-1] and '"progression"' in args[-1]
+    assert "calm" in args[-1] and '"progression"' in args[-1] and '"hook"' in args[-1]
     assert args[args.index("--mode") + 1] == "json"
 
 
@@ -222,3 +222,13 @@ def test_usage_formats_compactly_and_adds_up():
     assert (total.input, total.output, total.total) == (18069, 714, 35383)
     assert total.cost_usd == pytest.approx(0.0015139)
     assert total.format() == "35.4k tokens · $0.0015"
+
+
+def test_a_mood_can_ask_for_a_chorus_hook(fake):
+    run, _ = fake
+    answer = {"name": "Hook", "genre": "pop", "mode": "major", "hook": [4, 5, 6, 4]}
+    gs = GentleShell(binary=str(run(jsonl(text(json.dumps(answer))))))
+    s = gs.interpret("pop con un estribillo propio", Style())
+    assert s.genre == "pop" and s.hook == (4, 5, 6, 4)
+    # the fake answers the same JSON every time; an answer without a hook is what from_dict sees from a real one
+    assert Style.from_dict({"name": "x"}, Style(hook=(1, 5, 6, 4))).hook == (1, 5, 6, 4)

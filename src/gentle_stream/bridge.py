@@ -40,6 +40,8 @@ Reply with ONLY one JSON object, no prose, with exactly these fields:
 - "mode": one of {modes}
 - "bpm": number 50-140
 - "progression": 4 scale degrees (integers 1-7) that fit the mode and the feeling
+- "hook": optional: 4 scale degrees (integers 1-7) for the chorus of a song form, when the request asks for a
+  chorus with its own progression; leave it out otherwise
 - "chords": one of {chords}
 - "lead": one of {leads}
 - "drums": one of {drums}
