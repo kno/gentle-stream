@@ -13,7 +13,8 @@ from gentle_stream.app import (
     SaveDialog,
 )
 from gentle_stream.journey import BUILTIN, Journey, JourneyStore, edit_preview
-from tests.test_app import FakeShell, make_app, text
+from gentle_stream.journey_preferences import PreferenceStore
+from tests.test_app import FakeShell, JourneyShell, make_app, text, valid_journey
 
 OLD = Journey.from_dict({"version": 1, "name": "talk", "title": "Talk", "end": "sustain", "stages": [
     {"name": "Warm", "seconds": 60, "to": {"energy": 0.3}},
@@ -67,6 +68,84 @@ async def with_journey(pilot, player, journey=OLD):
     if player.engine.journey is None:
         raise AssertionError("the journey did not start")
     await drive(pilot, player, lambda: player.now.journey is not None)   # and audible, for the snapshot
+
+
+@pytest.mark.asyncio
+async def test_picker_recommends_saved_journeys_and_can_clear_preferences():
+    ballad = Journey.from_dict({"version": 1, "name": "Ballad", "stages": [{"name": "A", "seconds": 60,
+                                                               "genre": "ballad", "to": {}}]})
+    jazz = Journey.from_dict({"version": 1, "name": "Jazz", "stages": [{"name": "A", "seconds": 60,
+                                                           "genre": "jazz", "to": {}}]})
+    store = JourneyStore()
+    store.save("Ballad", ballad)
+    store.save("Jazz", jazz)
+    PreferenceStore().saved(["jazz"])
+    app, _ = make_app(FakeShell())
+    async with app.run_test() as pilot:
+        await pilot.press("J")
+        await pilot.pause(0.2)
+        options = app.screen.query_one(OptionList)
+        ids = [options.get_option_at_index(i).id for i in range(options.option_count)]
+        assert ids.index("saved:Jazz") < ids.index("saved:Ballad")
+        await pilot.press("p")
+        await pilot.pause(0.1)
+        assert "jazz" in str(app.screen.query_one("#preferences-summary").render()).lower()
+        await pilot.click("#preferences-clear")
+        await pilot.pause(0.1)
+        assert PreferenceStore().scores() == {}
+        await pilot.press("escape")
+        await pilot.pause(0.1)
+        options = app.screen.query_one(OptionList)
+        ids = [options.get_option_at_index(i).id for i in range(options.option_count)]
+        assert ids.index("saved:Ballad") < ids.index("saved:Jazz")
+
+
+@pytest.mark.asyncio
+async def test_generated_journey_receives_bounded_genre_preferences_from_tui():
+    PreferenceStore().saved(["ballad"])
+    PreferenceStore().skipped("jazz")
+    generated = valid_journey("personal")
+    generated["stages"][0]["genre"] = "ballad"
+    shell = JourneyShell(journey=generated)
+    app, _ = make_app(shell)
+    async with app.run_test() as pilot:
+        await pilot.press("J", "enter")
+        await pilot.pause(0.1)
+        app.screen.query_one("#prompt", Input).value = "a quiet morning"
+        await pilot.press("enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause(0.1)
+        assert len(shell.prompts) == 1
+        assert "a quiet morning" in shell.prompts[0]
+        assert "ballad" in shell.prompts[0] and "jazz" in shell.prompts[0]
+        assert "request takes priority" in shell.prompts[0]
+        assert PreferenceStore().scores() == {"ballad": 4, "jazz": -1}
+
+
+@pytest.mark.asyncio
+async def test_saving_a_journey_records_its_genres_in_preferences():
+    journey = Journey.from_dict({"version": 1, "name": "Ballad", "stages": [
+        {"name": "A", "seconds": 60, "genre": "ballad", "to": {}}]})
+    app, _ = make_app(FakeShell())
+    async with app.run_test() as pilot:
+        app._save_journey(journey)
+        await pilot.pause(0.1)
+        app.screen.query_one(Input).value = "Evening"
+        await pilot.press("enter")
+        await pilot.pause(0.2)
+        assert JourneyStore().get("Evening") is not None
+        assert PreferenceStore().scores() == {"ballad": 4}
+
+
+@pytest.mark.asyncio
+async def test_successful_tui_skip_is_a_weak_signal_for_the_audible_genre():
+    app, player = make_app(FakeShell())
+    async with app.run_test() as pilot:
+        await with_journey(pilot, player)
+        genre = player.now.style.genre
+        await pilot.press("j")
+        await choose(pilot, "skip")
+        assert PreferenceStore().scores() == {genre: -1}
 
 
 # ------------------------------------------------------------ edit the running journey

@@ -402,6 +402,8 @@ gentle-stream journey play ./sunrise.json
 gentle-stream journey stop             # the music stays where the journey left it
 ```
 
+The TUI learns modest genre preferences from your explicit actions: saving a journey adds a positive signal for each genre named in its stages; skipping a stage adds a smaller negative signal for the genre audible at the time. Automatically saving a newly generated journey is not treated as a preference. In the journey picker (`J`), saved journeys with stronger signals appear first; press `p` to inspect or clear the local scores. Scores are stored locally in `journey-preferences.json`, without prompts or a playback history. When creating a journey **from the TUI**, a summary of the genre scores is sent with your description to the selected model as a weak suggestion; your explicit request takes priority. The CLI does not learn or apply these preferences.
+
 Describe one in words and keep the ones you like. `create` is the only command that calls a model; saved journeys live in `journeys.json` next to `presets.json` (`$XDG_CONFIG_HOME/gentle-stream/`, default `~/.config`), written atomically like the saved prompts, and play by name like the built-ins (whose names cannot be reused):
 
 ```bash

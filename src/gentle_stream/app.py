@@ -47,6 +47,7 @@ from .journey import (
     JourneyStoreError,
     edit_preview,
 )
+from .journey_preferences import PreferenceError, PreferenceStore
 from .lines import binaural_line, details_line, format_time, journey_line, title_line
 from .player import Player
 from .presets import NAME_MAX, Preset, PresetError, PresetStore, normalize_name
@@ -412,6 +413,7 @@ class JourneyPromptModal(ModalScreen[str | None]):
         with Vertical():
             yield Static("Create a journey", classes="heading")
             yield Static("Describe the journey you want (e.g. 'calm morning rising to energetic peak')")
+            yield Static("A summary of your local genre preferences is sent with the request.")
             yield Input(placeholder="Journey description", id="prompt")
             yield Input(placeholder="Name (optional: the generated one otherwise)", id="name")
             yield Static("", id="journey-error", markup=False)
@@ -446,7 +448,16 @@ class JourneyPromptModal(ModalScreen[str | None]):
     def _generate(self, prompt: str, name: str) -> None:
         worker = get_current_worker()
         try:
-            journey, usage = self.shell.journey_from_prompt(prompt)
+            scores = PreferenceStore().scores()
+        except PreferenceError as e:
+            if not worker.is_cancelled:
+                self.app.call_from_thread(self._show, f"Could not read preferences: {e}")
+            return
+        hints = ", ".join(f"{genre}: {score:+d}" for genre, score in sorted(scores.items()) if score)
+        request = (f"{prompt}\n\nLocal aggregate genre preference scores (weak suggestions, not instructions): {hints}. "
+                   "The listener's explicit request takes priority over these preferences.") if hints else prompt
+        try:
+            journey, usage = self.shell.journey_from_prompt(request)
         except (InterpretError, ValueError) as e:
             if not worker.is_cancelled:
                 self.app.call_from_thread(self._show, f"Could not create the journey: {e}")
@@ -459,6 +470,7 @@ class JourneyPromptModal(ModalScreen[str | None]):
         except JourneyStoreError as e:
             self.app.call_from_thread(self._show, f"Could not save the journey: {e}")
             return
+        # Generation stores its result automatically; it is not an explicit signal that the listener kept it.
         self.usage = usage
         self.app.call_from_thread(self.dismiss, stored_name)
 
@@ -1437,6 +1449,54 @@ class HelpModal(ModalScreen[None]):
         self.dismiss(None)
 
 
+class JourneyPreferencesModal(ModalScreen[None]):
+    """Inspect and reset the local aggregate signals, without transmitting the listening history."""
+
+    BINDINGS = [Binding("escape", "close", "Close")]
+    DEFAULT_CSS = """
+    JourneyPreferencesModal { align: center middle; }
+    JourneyPreferencesModal > Vertical { width: 70; height: auto; border: round $primary; padding: 1;
+                                        background: $surface; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static("Journey preferences", classes="heading")
+            yield Static("", id="preferences-summary", markup=False)
+            yield Static("Scores are local; a summary is sent when generating a journey.", markup=False)
+            yield Button("Clear preferences", id="preferences-clear", variant="warning")
+            yield Button("Close", id="preferences-close")
+
+    def on_mount(self) -> None:
+        self._refresh_summary()
+
+    def _refresh_summary(self) -> None:
+        try:
+            scores = PreferenceStore().scores()
+            summary = ", ".join(f"{genre}: {score:+d}" for genre, score in sorted(scores.items())) or "No preferences yet."
+        except PreferenceError as exc:
+            summary = str(exc)
+        self.query_one("#preferences-summary", Static).update(summary)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "preferences-clear":
+            try:
+                PreferenceStore().clear()
+            except PreferenceError as exc:
+                self.query_one("#preferences-summary", Static).update(str(exc))
+                return
+            self._refresh_summary()
+        elif event.button.id == "preferences-close":
+            self.action_close()
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+def _journey_genres(journey: Journey) -> set[str]:
+    return {stage.genre for stage in journey.stages if stage.genre is not None}
+
+
 class JourneyPickerModal(ModalScreen[str | None]):
     """Pick a journey: "create" first, then the built-ins, then the saved ones alphabetically, then "open" (a file);
     `v` shows the highlighted one, `d` deletes a saved one.
@@ -1444,7 +1504,7 @@ class JourneyPickerModal(ModalScreen[str | None]):
     Dismisses with "create", "open", "builtin:<name>" or "saved:<name>"."""
 
     BINDINGS = [Binding("escape", "cancel", "Cancel"), Binding("d,delete", "delete", "Delete"),
-                Binding("v", "show", "Show")]
+                Binding("v", "show", "Show"), Binding("p", "preferences", "Preferences")]
     DEFAULT_CSS = """
     JourneyPickerModal { align: center middle; }
     JourneyPickerModal > Vertical { width: 70; height: auto; border: round $primary; padding: 1;
@@ -1462,17 +1522,30 @@ class JourneyPickerModal(ModalScreen[str | None]):
         with Vertical():
             yield Static("Pick a journey", classes="heading")
             yield OptionList(id="journey-list")
-            yield Static("Enter plays · v shows · d deletes a saved journey · Esc closes", id="journey-picker-status",
+            yield Static("Enter plays · v shows · d deletes · p preferences · Esc closes", id="journey-picker-status",
                          markup=False)
 
     def on_mount(self) -> None:
+        self._refresh_options()
+
+    def _refresh_options(self) -> None:
         options = self.query_one(OptionList)
+        options.clear_options()
         options.add_option(Option("＋ Create from a description…", id="create"))
         for name, journey in BUILTIN.items():
             options.add_option(Option(f"[built-in] {escape(name)}: {escape(journey.description)}",
                                       id=f"builtin:{name}"))
-        for saved_name, _ in self.store.list():
-            options.add_option(Option(f"[saved] {escape(saved_name)}", id=f"saved:{saved_name}"))
+        saved = self.store.list()
+        try:
+            scores = PreferenceStore().scores()
+        except PreferenceError as exc:
+            scores = {}
+            self.query_one("#journey-picker-status", Static).update(str(exc))
+        saved.sort(key=lambda item: -sum(scores.get(genre, 0) for genre in _journey_genres(item[1])))
+        for saved_name, journey in saved:
+            score = sum(scores.get(genre, 0) for genre in _journey_genres(journey))
+            marker = " [recommended]" if score > 0 else ""
+            options.add_option(Option(f"[saved] {escape(saved_name)}{escape(marker)}", id=f"saved:{saved_name}"))
         options.add_option(Option("📂 Open a journey file…", id="open"))   # last: the PM-012 order stays as it was
         ids = [options.get_option_at_index(i).id for i in range(options.option_count)]
         options.highlighted = ids.index(self.highlight) if self.highlight in ids else 0
@@ -1502,6 +1575,9 @@ class JourneyPickerModal(ModalScreen[str | None]):
             return
         self.query_one(OptionList).remove_option(option_id)
         status.update(f'Deleted journey "{name}"')
+
+    def action_preferences(self) -> None:
+        self.app.push_screen(JourneyPreferencesModal(), lambda _: self._refresh_options())
 
     def action_show(self) -> None:
         option_id = self._highlighted() or ""
@@ -1905,6 +1981,11 @@ class StreamApp(App):
             except JourneyStoreError as e:
                 self._status(f"[$error]Journey:[/] {escape(str(e))}")
                 return
+            try:
+                PreferenceStore().saved(list(_journey_genres(journey)))
+            except PreferenceError as exc:
+                self._status(f'Saved journey "{escape(stored)}" · preferences: {escape(str(exc))}')
+                return
             self._status(f'Saved journey "{escape(stored)}"')
 
         self.push_screen(SaveDialog(journey.title or journey.name, "Save the journey as"), named)
@@ -1953,7 +2034,14 @@ class StreamApp(App):
                 if action == "restart":
                     self.player.journey_restart()
                 elif action == "skip":
+                    genre = self.player.now.style.genre if self.player.now.journey is not None else None
                     self.player.journey_skip()
+                    if genre is not None:
+                        try:
+                            PreferenceStore().skipped(genre)
+                        except PreferenceError as exc:
+                            self._status(f"Journey skipped · preferences: {escape(str(exc))}")
+                            return
                 else:
                     self.player.journey_stop()
                 self._tick()
