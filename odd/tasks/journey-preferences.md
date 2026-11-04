@@ -17,9 +17,9 @@ Branch `feat/journey-preferences`, stacked on `feat/ballad-finales`.
 | Task | Specs | Route | Commit |
 | :--- | :--- | :--- | :--- |
 | T1 Local, safe preference signals and weak skip scoring | S1, S4 | inline | `c98879b` |
-| T2 TUI recommendations, inspect and clear preferences | S1-S4 | inline | TUI work unit |
-| T3 TUI natural-language generation uses bounded preference summary | S2-S3 | inline | TUI work unit |
-| T4 Functional checks, independent verification and delivery | S1-S4 | inline | TUI work unit |
+| T2 TUI recommendations, inspect and clear preferences | S1-S4 | inline | `20b6183` |
+| T3 TUI natural-language generation uses bounded preference summary | S2-S3 | inline | `20b6183` |
+| T4 Functional checks, independent verification and delivery | S1-S4 | inline | `20b6183` |
 
 ## Log
 
