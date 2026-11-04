@@ -14,9 +14,9 @@ Branch `feat/ballad-finales`, stacked on `feat/ballad-bridge` (`1fa8a85`). A bou
 
 | Task | Specs | Route | Commit |
 | :--- | :--- | :--- | :--- |
-| T1 Write RED tests for an offline ballad cadence and unchanged default render/Stop | S1, S2 | inline | finale work-unit commit |
-| T2 Add a ballad cadence and schedule it at finite render and release-journey boundaries | S1-S3 | inline | finale work-unit commit |
-| T3 Run focused/full verification, differential checks, and deliver reviewable branch | S1-S3 | inline | finale work-unit commit |
+| T1 Write RED tests for an offline ballad cadence and unchanged default render/Stop | S1, S2 | inline | `57aebf3` |
+| T2 Add a ballad cadence and schedule it at finite render and release-journey boundaries | S1-S3 | inline | `57aebf3` |
+| T3 Run focused/full verification, differential checks, and deliver reviewable branch | S1-S3 | inline | `57aebf3` |
 
 ## Log
 
