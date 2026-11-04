@@ -196,6 +196,7 @@ class Engine:
         self._fade = (0, 0)                     # (samples done, samples in all) of that crossfade
         self._driving: Journey | None = None    # the journey playing, as other threads may see it (under _lock)
         self._running: _Running | None = None   # the journey playing; render thread only
+        self._journey_finale: tuple[_Running, int] | None = None   # release cue, at most once per cadence step
         self._snapshot: JourneySnapshot | None = None   # its progress at the bar rendered last
         self._rendered: tuple[Journey, float] | None = None   # its journey and seconds at the end of that bar
         self.piece_seconds = 0.0
@@ -548,8 +549,8 @@ class Engine:
         return self._incoming is not None
 
     # ------------------------------------------------------------ rendering
-    def render_bar(self) -> np.ndarray:
-        """Render the next bar as float32 stereo samples of shape (n, 2)."""
+    def render_bar(self, finale_step: int | None = None) -> np.ndarray:
+        """Render the next bar; `finale_step` (0 or 1) cues a ballad cadence for a finite offline render."""
         with self._lock:
             style, nxt = self._pending_style, self._pending_next
             queued, journey, control = self._journey_queued, self._pending_journey, self._journey_control
@@ -653,7 +654,23 @@ class Engine:
                 self._journey_phrase(running, t)
         if running is not None and (self.bar + 1) % 4 == 0 and self._incoming is None:
             self._prepare_genre_step(running, t + self.bar_seconds)
-        self._schedule_bar()
+        previous_finale = self._journey_finale if self._journey_finale is not None \
+            and self._journey_finale[0] is running else None
+        if running is None:
+            self._journey_finale = None
+        if finale_step is None and running is not None and running.journey.end == "release" \
+                and self.style.genre == "ballad" and self._incoming is None:
+            remaining = running.journey.seconds - t
+            if previous_finale is not None and previous_finale[1] == 0 and remaining > 0:
+                finale_step = 1
+            elif previous_finale is None and 0 < remaining <= 2 * self.bar_seconds + 1e-9:
+                finale_step = 1 if remaining <= self.bar_seconds + 1e-9 else 0
+            if finale_step is not None:
+                self._journey_finale = (running, finale_step)
+        if finale_step is not None and self.style.genre == "ballad":
+            self._schedule_bar(finale_step)
+        else:
+            self._schedule_bar()   # preserve the ordinary scheduling surface (including instrumentation hooks)
         n = int(round(self.bar_seconds * self.sr))
         out = self._take(self._acc, n)
         if self._incoming is not None:
@@ -797,8 +814,8 @@ class Engine:
         master = _blend(self.genre.master(self.style), incoming.genre.master(incoming.style), min(1.0, done / total))
         return self._master(mixed, master)
 
-    def _schedule_bar(self) -> None:
-        p = self.composer.plan(self.bar)
+    def _schedule_bar(self, finale_step: int | None = None) -> None:
+        p = self.composer.finale_plan(self.bar, finale_step) if finale_step is not None else self.composer.plan(self.bar)
         if p.layers & self._masked:
             p = replace(p, layers=p.layers - self._masked)
         self.section, self.layers = p.section, p.layers

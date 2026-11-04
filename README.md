@@ -390,7 +390,7 @@ The layer is added after the master chain, so no reverb, tape wow, tone filter o
 
 ## Journeys
 
-A journey moves the music on its own, stage by stage: tempo, energy and colour glide from where the music is to each stage's values, then the last stage holds forever (`sustain`) or hands the music back as it is (`release`). It runs inside the background player, so it keeps going after you leave the app, and it pauses when the music pauses.
+A journey moves the music on its own, stage by stage: tempo, energy and colour glide from where the music is to each stage's values, then the last stage holds forever (`sustain`) or hands the music back as it is (`release`). A finite `release` journey playing a ballad cues a two-bar V–I cadence at its end, then the music continues; in live playback `sustain`, open-ended stages and an explicit Stop never cue a finale. A finite offline render has its own ending even if the journey sustains. It runs inside the background player, so it keeps going after you leave the app, and it pauses when the music pauses.
 
 ```bash
 gentle-stream journey list             # built-ins, including ambient-to-synthwave
@@ -487,7 +487,7 @@ Values outside the ranges are clamped with a warning, like the other fields. A j
 
 ## Render to a file
 
-`gentle-stream render` writes music to a WAV file with the engine alone: no background player, no audio device, faster than real time.
+`gentle-stream render` writes music to a WAV file with the engine alone: no background player, no audio device, faster than real time. A ballad render ends with a held two-bar dominant-to-tonic cadence (or just the tonic when too short), faded at the file's exact end; other genres render as before.
 
 ```bash
 gentle-stream render --seconds 60 --genre synthwave /tmp/synth.wav   # wrote /tmp/synth.wav: 60 s, synthwave, seed 1234567

@@ -89,6 +89,21 @@ class BalladGenre(Genre):
         e, k, add = p.energy, p.key_offset, piece.add
         chorus = p.section in CHORUS
         keys = v.keys(s.chords)
+        if p.section == "finale":
+            # V–I in held piano and strings: leave the kit silent and let the tonic ring.
+            if "chords" in p.layers:
+                chord = piece.voice([x + k for x in p.chord.tones])
+                for i, midi in enumerate(chord):
+                    add(keys(midi, s.beats * B * 0.9, 0.65), i * 0.012, (i - 1) * 0.25, 0.09)
+                    add(v.strings(midi - 12 if i == 0 else midi, s.beats * B * 0.95, 0.5),
+                        0, (i - 1) * 0.3, 0.07)
+            if "bass" in p.layers:
+                for note in p.bass:
+                    add(v.bass(note.midi, note.length * B * 0.98), note.beat * B, 0, 0.18)
+            if "lead" in p.layers:
+                for note in p.melody:
+                    add(v.keys(s.lead)(note.midi, note.length * B * 0.95, 0.75), note.beat * B, 0.1, 0.18)
+            return
         # a compound bar (6/8, 12/8) breathes in groups of three: a waltz's oom-pah-pah, not four beats stretched
         compound = s.beats > 4
         group = 3 if compound else 2

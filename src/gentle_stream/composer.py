@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -256,6 +256,28 @@ class Composer:
         return BarPlan(bar, b.section, b.section_bar, b.section_len, b.next_section, energy, b.chord, b.passing,
                        b.key_offset,
                        frozenset(layers), b.melody, counter, self._bass(bar, b, nxt, energy))
+
+    def finale_plan(self, bar: int, step: int) -> BarPlan:
+        """A two-bar V–I cadence at an explicit ending, without changing the stream's underlying form.
+
+        This uses planned harmony and consumes no random draws; a release journey continues normally afterwards.
+        """
+        if step not in (0, 1):
+            raise ValueError("finale step must be 0 or 1")
+        with self._lock:
+            ordinary = self._plan(bar)
+            degree = CADENCES[self.style.mode][1] if step == 0 else 1
+            chord = self._chord(degree, step == 0 and self.style.mode in RAISED)
+            key = ordinary.key_offset
+            tonic = (self.ton + key) % 12
+            scale = self._scale(key)
+            pitch = (self._nearest(scale[min(self.anchor + 2, len(scale) - 1)],
+                                   {(self.ton + tone + key) % 12 for tone in chord.tones[:4]})
+                     if step == 0 else self._nearest(scale[self.anchor], {tonic}))
+            layers = frozenset({"chords", "bass"} | ({"lead"} if self.style.lead != "none" else set()))
+            return replace(ordinary, section="finale", section_bar=step, section_len=2, chord=chord, passing=None,
+                           layers=layers, melody=(Note(0, pitch, self.beats),) if "lead" in layers else (),
+                           counter=(), bass=(Note(0, self._bass_midi(chord, key), self.beats),))
 
     def pivot(self, bar: int, semitones: int) -> None:
         """Prepare a key change after `bar`: its passing chord becomes the dominant seventh of the key `semitones`

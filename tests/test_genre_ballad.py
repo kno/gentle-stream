@@ -1,6 +1,8 @@
 """Ballad genre traits (S5): broken-chord piano verses without drums, choruses with block chords, strings and soft
 drums, two chords a bar, long notes, and a last chorus that always lifts the key. Measured from what `schedule`
 plays through a spy voice set."""
+from dataclasses import replace
+
 import numpy as np
 
 from gentle_stream import genres
@@ -55,6 +57,24 @@ def bars(style=STYLE, seed=3, count=None):
         BALLAD.schedule(piece, plan)
         out.append((plan, list(events)))
     return out
+
+
+def test_finale_respects_the_journey_s_masked_layers():
+    composer = Composer(STYLE, 3, 50, BALLAD.chord, profile=BALLAD.profile)
+    plan = composer.finale_plan(1, 1)
+    spy = Spy()
+    piece = Piece(STYLE, np.random.default_rng(3), spy, 50, SR, np.zeros((SR * 8, 2)))
+    played = []
+
+    def add(sig, t, pan=0.0, g=1.0):
+        played.append(spy.pending.pop(0)[0])
+
+    piece.add = add
+    BALLAD.schedule(piece, replace(plan, layers=frozenset({"bass"})))
+    assert played == ["bass"]
+    played.clear()
+    BALLAD.schedule(piece, replace(plan, layers=frozenset()))
+    assert played == []
 
 
 def test_ballad_is_registered_and_offered_to_the_model():

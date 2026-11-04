@@ -674,10 +674,19 @@ def render_style(out: str, seconds: float, seed: int | None, style, procedural: 
     try:
         with open(out, "wb") as f:   # opened first: a long render must not end in a path error
             bars, done = [], 0
+            last_finale = False
             while done < frames:
-                bars.append(engine.render_bar())
+                remaining = (frames - done) / engine.sr
+                bar_seconds = engine.bar_seconds
+                finale = (1 if remaining <= bar_seconds else 0 if remaining <= 2 * bar_seconds else None) \
+                    if engine.style.genre == "ballad" else None
+                bars.append(engine.render_bar(finale) if finale is not None else engine.render_bar())
+                last_finale = finale == 1
                 done += len(bars[-1])
             audio = np.clip(np.concatenate(bars)[:frames], -1, 1)   # the last bar trimmed to the exact length
+            if last_finale:   # a finite WAV ends gently; live release journeys keep playing after the cadence
+                fade = min(len(audio), round(0.35 * engine.sr))
+                audio[-fade:] *= np.linspace(1.0, 0.0, fade)[:, None]
             wavfile.write(f, engine.sr, np.round(audio * 32767).astype(np.int16))
     except OSError as e:
         raise RenderError(f"cannot write {out}: {e.strerror}") from e
@@ -812,7 +821,8 @@ def build_parser() -> argparse.ArgumentParser:
                             help="say: sing the phrase on the next bar's melody, as a lead vocal (needs the sing "
                                  "extra: pip install 'gentle-stream[sing]')")
     render_parser = sub.add_parser("render", help="render music into a 16-bit stereo WAV file (no audio device)",
-                                   description="Render music offline with the engine alone into a WAV file.")
+                                   description="Render music offline with the engine alone into a WAV file; "
+                                               "a ballad ends with a two-bar cadence and a gentle fade.")
     render_parser.add_argument("out", metavar="OUT.wav", help="the WAV file to write")
     render_parser.add_argument("--seconds", type=_render_seconds, default=RENDER_SECONDS, metavar="N",
                                help=f"length, above 0 and at most {MAX_RENDER_SECONDS:g} (default: "
